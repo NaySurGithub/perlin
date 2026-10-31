@@ -8,12 +8,12 @@ using namespace perlin;
 
 namespace {
     int failures = 0;
-#define CHECK(cond)                                                          \
-    do {                                                                     \
-        if (!(cond)) {                                                       \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);      \
-            failures++;                                                      \
-        }                                                                    \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                                      \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
     std::string messages;
@@ -26,9 +26,12 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
     const auto o = static_cast<Op>(op);
     ops.push_back(o);
     abi::Reader r(static_cast<const uint8_t*>(in), inLen);
-    if (o == Op::LocalMessage) messages += r.str() + "\n";
-    if (o == Op::CommandRegister) registeredCommands++;
-    if (o == Op::KeyRegister) registeredKeys++;
+    if (o == Op::LocalMessage)
+        messages += r.str() + "\n";
+    if (o == Op::CommandRegister)
+        registeredCommands++;
+    if (o == Op::KeyRegister)
+        registeredKeys++;
     return 0;
 }
 
@@ -52,7 +55,9 @@ struct Hello : Plugin {
         chats++;
         return chat.message == "cancel" ? Flow::cancel : Flow::pass;
     }
-    void greet(std::string who, std::optional<int> times) { greeted = who + ":" + std::to_string(times.value_or(1)); }
+    void greet(std::string who, std::optional<int> times) {
+        greeted = who + ":" + std::to_string(times.value_or(1));
+    }
     void wave(bool down) { waves += down; }
 };
 PERLIN_REGISTER(Hello)
@@ -62,7 +67,8 @@ namespace {
         abi::Writer w;
         w.write(payload);
         const uint32_t f = perlin_event(static_cast<uint32_t>(id), w.Data(), static_cast<uint32_t>(w.Size()));
-        if (flags) *flags = f;
+        if (flags)
+            *flags = f;
     }
 }
 

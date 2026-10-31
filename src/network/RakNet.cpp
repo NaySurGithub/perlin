@@ -33,18 +33,24 @@ namespace perlin {
 #ifdef _WIN32
         using Socket = SOCKET;
         constexpr Socket kInvalid = INVALID_SOCKET;
-        void CloseSocket(Socket s) { closesocket(s); }
+        void CloseSocket(Socket s) {
+            closesocket(s);
+        }
         struct WsaInit {
             WsaInit() {
                 WSADATA data;
                 WSAStartup(MAKEWORD(2, 2), &data);
             }
         };
-        void EnsureSockets() { static WsaInit init; }
+        void EnsureSockets() {
+            static WsaInit init;
+        }
 #else
         using Socket = int;
         constexpr Socket kInvalid = -1;
-        void CloseSocket(Socket s) { close(s); }
+        void CloseSocket(Socket s) {
+            close(s);
+        }
         void EnsureSockets() {}
 #endif
 
@@ -75,10 +81,22 @@ namespace perlin {
             IdUnconnectedPong = 0x1c,
         };
 
-        enum Reliability : uint8_t { Unreliable = 0, UnreliableSequenced = 1, Reliable = 2, ReliableOrdered = 3, ReliableSequenced = 4 };
-        bool IsReliable(uint8_t r) { return r == Reliable || r == ReliableOrdered || r == ReliableSequenced; }
-        bool IsSequenced(uint8_t r) { return r == UnreliableSequenced || r == ReliableSequenced; }
-        bool IsOrdered(uint8_t r) { return IsSequenced(r) || r == ReliableOrdered; }
+        enum Reliability : uint8_t {
+            Unreliable = 0,
+            UnreliableSequenced = 1,
+            Reliable = 2,
+            ReliableOrdered = 3,
+            ReliableSequenced = 4
+        };
+        bool IsReliable(uint8_t r) {
+            return r == Reliable || r == ReliableOrdered || r == ReliableSequenced;
+        }
+        bool IsSequenced(uint8_t r) {
+            return r == UnreliableSequenced || r == ReliableSequenced;
+        }
+        bool IsOrdered(uint8_t r) {
+            return IsSequenced(r) || r == ReliableOrdered;
+        }
 
         void PutBe16(std::vector<uint8_t>& o, uint16_t v) {
             o.push_back(uint8_t(v >> 8));
@@ -97,10 +115,18 @@ namespace perlin {
             o.push_back(uint8_t(v >> 8));
             o.push_back(uint8_t(v >> 16));
         }
-        uint32_t GetLe24(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16); }
-        uint16_t GetBe16(const uint8_t* p) { return uint16_t((p[0] << 8) | p[1]); }
-        uint32_t GetBe32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (p[1] << 16) | (p[2] << 8) | p[3]; }
-        uint64_t GetBe64(const uint8_t* p) { return (uint64_t(GetBe32(p)) << 32) | GetBe32(p + 4); }
+        uint32_t GetLe24(const uint8_t* p) {
+            return p[0] | (p[1] << 8) | (p[2] << 16);
+        }
+        uint16_t GetBe16(const uint8_t* p) {
+            return uint16_t((p[0] << 8) | p[1]);
+        }
+        uint32_t GetBe32(const uint8_t* p) {
+            return (uint32_t(p[0]) << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
+        }
+        uint64_t GetBe64(const uint8_t* p) {
+            return (uint64_t(GetBe32(p)) << 32) | GetBe32(p + 4);
+        }
 
         struct Address {
             sockaddr_storage storage{};
@@ -142,7 +168,9 @@ namespace perlin {
 
         int64_t NowMs() {
             static const auto start = std::chrono::steady_clock::now();
-            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                         start)
+                .count();
         }
 
         bool Resolve(const std::string& host, uint16_t port, Address& out, std::string& error) {
@@ -210,7 +238,8 @@ namespace perlin {
         }
 
         int Send(Socket s, const std::vector<uint8_t>& d) {
-            return static_cast<int>(send(s, reinterpret_cast<const char*>(d.data()), static_cast<int>(d.size()), 0));
+            return static_cast<int>(
+                send(s, reinterpret_cast<const char*>(d.data()), static_cast<int>(d.size()), 0));
         }
         int Recv(Socket s, uint8_t* buf, size_t cap) {
             return static_cast<int>(recv(s, reinterpret_cast<char*>(buf), static_cast<int>(cap), 0));
@@ -222,8 +251,9 @@ namespace perlin {
             bound.length = sizeof(bound.storage);
             if (getsockname(s, reinterpret_cast<sockaddr*>(&bound.storage), &bound.length) != 0)
                 return out;
-            const uint16_t port = bound.Family() == AF_INET6 ? reinterpret_cast<const sockaddr_in6&>(bound.storage).sin6_port
-                                                             : reinterpret_cast<const sockaddr_in&>(bound.storage).sin_port;
+            const uint16_t port = bound.Family() == AF_INET6
+                                      ? reinterpret_cast<const sockaddr_in6&>(bound.storage).sin6_port
+                                      : reinterpret_cast<const sockaddr_in&>(bound.storage).sin_port;
             const auto add = [&](const sockaddr* a) {
                 if (!a || a->sa_family != family || out.size() >= kInternalAddresses)
                     return;
@@ -363,8 +393,9 @@ namespace perlin {
                 inflight[seq] = {frame, NowMs(), resent};
         }
 
-        static std::vector<uint8_t> BuildFrame(uint8_t rel, uint32_t msgIdx, uint32_t ordIdx, bool split, uint32_t splitCount,
-                                               uint16_t sId, uint32_t splitIdx, const uint8_t* data, size_t n) {
+        static std::vector<uint8_t> BuildFrame(uint8_t rel, uint32_t msgIdx, uint32_t ordIdx, bool split,
+                                               uint32_t splitCount, uint16_t sId, uint32_t splitIdx,
+                                               const uint8_t* data, size_t n) {
             std::vector<uint8_t> f;
             f.reserve(n + 24);
             f.push_back(uint8_t((rel << 5) | (split ? 0x10 : 0)));
@@ -404,12 +435,15 @@ namespace perlin {
                 const size_t off = size_t(i) * chunk;
                 const size_t len = std::min(chunk, n - off);
                 const uint32_t idx = IsReliable(rel) ? (messageIndex++ & 0xFFFFFF) : 0;
-                EmitDatagramLocked(BuildFrame(rel, idx, ord, true, count, sid, i, data + off, len), IsReliable(rel));
+                EmitDatagramLocked(BuildFrame(rel, idx, ord, true, count, sid, i, data + off, len),
+                                   IsReliable(rel));
             }
             return true;
         }
 
-        bool SendControl(const std::vector<uint8_t>& payload, uint8_t rel) { return SendPayload(payload.data(), payload.size(), rel); }
+        bool SendControl(const std::vector<uint8_t>& payload, uint8_t rel) {
+            return SendPayload(payload.data(), payload.size(), rel);
+        }
 
         void FlushAcks() {
             FlushRanges(acks, 0xC0);
@@ -425,7 +459,8 @@ namespace perlin {
             while (i < list.size()) {
                 std::vector<uint8_t> d{header, 0, 0};
                 uint16_t records = 0;
-                while (i < list.size() && d.size() < size_t(mtu) - server.HeaderBytes() - 8 && records < 0xFFFF) {
+                while (i < list.size() && d.size() < size_t(mtu) - server.HeaderBytes() - 8 &&
+                       records < 0xFFFF) {
                     size_t j = i;
                     while (j + 1 < list.size() && list[j + 1] == list[j] + 1)
                         j++;
@@ -515,7 +550,8 @@ namespace perlin {
             const uint32_t ahead = (seq - expectedSeq) & 0xFFFFFF;
             if (ahead >= 0x800000)
                 return;
-            for (uint32_t missing = expectedSeq; missing != seq && naks.size() < 4096; missing = (missing + 1) & 0xFFFFFF)
+            for (uint32_t missing = expectedSeq; missing != seq && naks.size() < 4096;
+                 missing = (missing + 1) & 0xFFFFFF)
                 naks.push_back(missing);
             expectedSeq = (seq + 1) & 0xFFFFFF;
         }
@@ -620,7 +656,8 @@ namespace perlin {
                 Fail("RakNet: too many out-of-order packets");
                 return;
             }
-            for (auto it = ch.pending.find(ch.nextOrder); it != ch.pending.end(); it = ch.pending.find(ch.nextOrder)) {
+            for (auto it = ch.pending.find(ch.nextOrder); it != ch.pending.end();
+                 it = ch.pending.find(ch.nextOrder)) {
                 std::vector<uint8_t> c = std::move(it->second);
                 ch.pending.erase(it);
                 ch.nextOrder = (ch.nextOrder + 1) & 0xFFFFFF;
@@ -629,7 +666,8 @@ namespace perlin {
         }
 
         void Sequenced(Channel& ch, uint32_t ordIdx, uint32_t seqIdx, std::vector<uint8_t> content) {
-            if (Before(ordIdx, ch.sequenceOrder) || (ordIdx == ch.sequenceOrder && Before(seqIdx, ch.nextSequence)))
+            if (Before(ordIdx, ch.sequenceOrder) ||
+                (ordIdx == ch.sequenceOrder && Before(seqIdx, ch.nextSequence)))
                 return;
             ch.sequenceOrder = ordIdx;
             ch.nextSequence = (seqIdx + 1) & 0xFFFFFF;
@@ -730,11 +768,16 @@ namespace perlin {
     };
 
     RakNet::RakNet() = default;
-    RakNet::~RakNet() { Disconnect(); }
+    RakNet::~RakNet() {
+        Disconnect();
+    }
 
-    std::string RakNet::LastError() const { return lastError; }
+    std::string RakNet::LastError() const {
+        return lastError;
+    }
 
-    bool RakNet::Ping(const std::string& host, uint16_t port, std::string& ad, std::string& error, int timeoutMs) {
+    bool RakNet::Ping(const std::string& host, uint16_t port, std::string& ad, std::string& error,
+                      int timeoutMs) {
         Address to{};
         if (!Resolve(host, port, to, error))
             return false;
@@ -800,7 +843,8 @@ namespace perlin {
 #else
             socklen_t fromLen = sizeof(from);
 #endif
-            const int n = static_cast<int>(recvfrom(s, reinterpret_cast<char*>(buf), sizeof(buf), 0, reinterpret_cast<sockaddr*>(&from), &fromLen));
+            const int n = static_cast<int>(recvfrom(s, reinterpret_cast<char*>(buf), sizeof(buf), 0,
+                                                    reinterpret_cast<sockaddr*>(&from), &fromLen));
             std::string ad;
             if (n <= 0 || !ParsePong(buf, n, ad))
                 continue;
@@ -852,7 +896,8 @@ namespace perlin {
                 info.advertisedProtocol = theirs;
                 info.advertisedVersion = parts[3];
                 if (theirs != 0 && theirs != kBedrockProtocol)
-                    Log("raknet", "note: the server advertises protocol {} ({}), Perlin speaks {} ({})", theirs, parts[3], kBedrockProtocol, kBedrockVersion);
+                    Log("raknet", "note: the server advertises protocol {} ({}), Perlin speaks {} ({})",
+                        theirs, parts[3], kBedrockProtocol, kBedrockVersion);
             }
         }
         info.protocol = kBedrockProtocol;
@@ -876,7 +921,8 @@ namespace perlin {
                     if (n <= 0)
                         continue;
                     if (buf[0] == IdIncompatible) {
-                        lastError = "the server does not speak RakNet protocol " + std::to_string(kProtocolVersion);
+                        lastError =
+                            "the server does not speak RakNet protocol " + std::to_string(kProtocolVersion);
                         CloseSocket(s.sock);
                         s.sock = kInvalid;
                         return false;

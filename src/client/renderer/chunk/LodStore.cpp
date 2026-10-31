@@ -10,12 +10,15 @@
 
 namespace perlin {
     namespace {
-        bool Has(const std::string& s, const char* part) { return s.contains(part); }
+        bool Has(const std::string& s, const char* part) {
+            return s.contains(part);
+        }
     }
 
     LodStore::Rgb LodStore::ColourOf(uint16_t id, int biome, bool top, const BlockLibrary& blocks,
                                      const BiomeTints& tints) {
-        const uint32_t key = (static_cast<uint32_t>(id) << 9) | static_cast<uint32_t>(biome & 0xff) << 1 | (top ? 1u : 0u);
+        const uint32_t key =
+            (static_cast<uint32_t>(id) << 9) | static_cast<uint32_t>(biome & 0xff) << 1 | (top ? 1u : 0u);
         const auto cached = colours.find(key);
         if (cached != colours.end())
             return cached->second;
@@ -31,7 +34,9 @@ namespace perlin {
             for (int i = 0; i < px * px; i++) {
                 const uint8_t* p = &atlas[base + static_cast<size_t>(i) * 4];
                 const float a = p[3] / 255.0f;
-                sum[0] += p[0] * a; sum[1] += p[1] * a; sum[2] += p[2] * a;
+                sum[0] += p[0] * a;
+                sum[1] += p[1] * a;
+                sum[2] += p[2] * a;
                 weight += a;
             }
         }
@@ -48,8 +53,9 @@ namespace perlin {
                 tint = tints.Water(biomeName);
             c[0] = c[1] = c[2] = 1.0f;
         } else if (tints.Ready() && (Has(name, "leaves") || Has(name, "vine"))) {
-            tint = Has(name, "birch") ? tints.MapAverage("birch")
-                   : Has(name, "spruce") ? tints.MapAverage("evergreen") : tints.Foliage(biomeName);
+            tint = Has(name, "birch")    ? tints.MapAverage("birch")
+                   : Has(name, "spruce") ? tints.MapAverage("evergreen")
+                                         : tints.Foliage(biomeName);
         } else if (tints.Ready() && (Has(name, "grass") || look.tintTop)) {
             tint = tints.Grass(biomeName);
         } else {
@@ -88,13 +94,15 @@ namespace perlin {
                     for (int y = hi; y >= lo; y--) {
                         uint16_t id = chunk.Get(x, y, z);
                         const uint16_t liquid = chunk.GetLiquid(x, y, z);
-                        const bool isWater = liquid != 0 || (id != 0 && BlockPalette::Instance().Name(id).contains("water"));
+                        const bool isWater =
+                            liquid != 0 || (id != 0 && BlockPalette::Instance().Name(id).contains("water"));
                         if (isWater) {
                             if (waterTop < Chunk::MIN_Y) {
                                 waterTop = y;
                                 waterId = liquid != 0 ? liquid : id;
                             }
-                            if (liquid != 0 && id != 0 && blocks.Look(id).shape == BlockAppearance::Shape::Cube &&
+                            if (liquid != 0 && id != 0 &&
+                                blocks.Look(id).shape == BlockAppearance::Shape::Cube &&
                                 !blocks.Look(id).cutout) {
                                 floorY = y;
                                 floorId = id;
@@ -132,7 +140,9 @@ namespace perlin {
                         cell.depth = static_cast<uint8_t>(std::min(depth, 255));
                     } else {
                         const Rgb f = ColourOf(floorId, biome, true, blocks, tints);
-                        cell.r = f.r; cell.g = f.g; cell.b = f.b;
+                        cell.r = f.r;
+                        cell.g = f.g;
+                        cell.b = f.b;
                         cell.y = static_cast<int16_t>(floorY + 1);
                     }
                 }
@@ -162,8 +172,8 @@ namespace perlin {
         for (const auto& [key, count] : tiles) {
             const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
             const int x0 = tx * kTileChunks, z0 = tz * kTileChunks;
-            const bool inside = x0 >= centreX - radius && x0 + kTileChunks - 1 <= centreX + radius && z0 >= centreZ - radius &&
-                                z0 + kTileChunks - 1 <= centreZ + radius;
+            const bool inside = x0 >= centreX - radius && x0 + kTileChunks - 1 <= centreX + radius &&
+                                z0 >= centreZ - radius && z0 + kTileChunks - 1 <= centreZ + radius;
             if (inside)
                 continue;
             outside.push_back(key);
@@ -183,12 +193,17 @@ namespace perlin {
         }
     }
 
-    bool LodStore::BuildTile(int tileX, int tileZ, int stride, const std::function<bool(const ChunkPos&)>& hidden,
-                             Tessellator& out) const {
+    bool LodStore::BuildTile(int tileX, int tileZ, int stride,
+                             const std::function<bool(const ChunkPos&)>& hidden, Tessellator& out) const {
         constexpr int kSide = LodStore::kTileChunks * LodColumn::kCells;
         const int cellsPerSide = kSide / stride;
         const int blockSize = LodColumn::kCellSize * stride;
-        struct Cell { int y; uint8_t r, g, b; uint8_t water; bool present; };
+        struct Cell {
+            int y;
+            uint8_t r, g, b;
+            uint8_t water;
+            bool present;
+        };
         std::vector<Cell> grid(static_cast<size_t>(cellsPerSide) * cellsPerSide, Cell{0, 0, 0, 0, 0, false});
         const int chunkX0 = tileX * kTileChunks, chunkZ0 = tileZ * kTileChunks;
         bool anyDraw = false;
@@ -232,7 +247,8 @@ namespace perlin {
         // tops first: a run of cells with the same height, water flag and (near enough) colour is one quad. Oceans and
         // plains collapse to a few quads, which is most of what far tiles contain
         const auto similar = [](const Cell& a, const Cell& b) {
-            return b.present && a.y == b.y && a.water == b.water && std::abs(a.r - b.r) <= 2 && std::abs(a.g - b.g) <= 2 && std::abs(a.b - b.b) <= 2;
+            return b.present && a.y == b.y && a.water == b.water && std::abs(a.r - b.r) <= 2 &&
+                   std::abs(a.g - b.g) <= 2 && std::abs(a.b - b.b) <= 2;
         };
         for (int gz = 0; gz < cellsPerSide; gz++)
             for (int gx = 0; gx < cellsPerSide;) {
@@ -242,9 +258,11 @@ namespace perlin {
                     continue;
                 }
                 int run = 1;
-                while (gx + run < cellsPerSide && similar(c, grid[static_cast<size_t>(gz) * cellsPerSide + gx + run]))
+                while (gx + run < cellsPerSide &&
+                       similar(c, grid[static_cast<size_t>(gz) * cellsPerSide + gx + run]))
                     run++;
-                const float xa = x0 + gx * size, xb = xa + size * static_cast<float>(run), za = z0 + gz * size, zb = za + size;
+                const float xa = x0 + gx * size, xb = xa + size * static_cast<float>(run),
+                            za = z0 + gz * size, zb = za + size;
                 const float y = static_cast<float>(c.y) - (c.water ? 0.11f : 0.0f);
                 float col[4][3];
                 const float v[4][3] = {{xa, y, za}, {xb, y, za}, {xb, y, zb}, {xa, y, zb}};
@@ -268,8 +286,10 @@ namespace perlin {
                     if (nx < 0 || nz < 0 || nx >= cellsPerSide || nz >= cellsPerSide) {
                         const int cxw = chunkX0 * LodColumn::kCells + nx * stride;
                         const int czw = chunkZ0 * LodColumn::kCells + nz * stride;
-                        const int ccx = cxw >= 0 ? cxw / LodColumn::kCells : -((-cxw + LodColumn::kCells - 1) / LodColumn::kCells);
-                        const int ccz = czw >= 0 ? czw / LodColumn::kCells : -((-czw + LodColumn::kCells - 1) / LodColumn::kCells);
+                        const int ccx = cxw >= 0 ? cxw / LodColumn::kCells
+                                                 : -((-cxw + LodColumn::kCells - 1) / LodColumn::kCells);
+                        const int ccz = czw >= 0 ? czw / LodColumn::kCells
+                                                 : -((-czw + LodColumn::kCells - 1) / LodColumn::kCells);
                         const ChunkPos np{ccx, ccz};
                         const LodColumn* ncol = Find(np);
                         if (!ncol) {
@@ -293,10 +313,19 @@ namespace perlin {
                         continue;
                     const float yt = y, yb = static_cast<float>(std::max(ny, c.y - 64));
                     float v[4][3];
-                    if (d == 0) { const float q[4][3] = {{xb, yt, za}, {xa, yt, za}, {xa, yb, za}, {xb, yb, za}}; std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]); }
-                    else if (d == 1) { const float q[4][3] = {{xa, yt, zb}, {xb, yt, zb}, {xb, yb, zb}, {xa, yb, zb}}; std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]); }
-                    else if (d == 2) { const float q[4][3] = {{xa, yt, za}, {xa, yt, zb}, {xa, yb, zb}, {xa, yb, za}}; std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]); }
-                    else { const float q[4][3] = {{xb, yt, zb}, {xb, yt, za}, {xb, yb, za}, {xb, yb, zb}}; std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]); }
+                    if (d == 0) {
+                        const float q[4][3] = {{xb, yt, za}, {xa, yt, za}, {xa, yb, za}, {xb, yb, za}};
+                        std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]);
+                    } else if (d == 1) {
+                        const float q[4][3] = {{xa, yt, zb}, {xb, yt, zb}, {xb, yb, zb}, {xa, yb, zb}};
+                        std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]);
+                    } else if (d == 2) {
+                        const float q[4][3] = {{xa, yt, za}, {xa, yt, zb}, {xa, yb, zb}, {xa, yb, za}};
+                        std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]);
+                    } else {
+                        const float q[4][3] = {{xb, yt, zb}, {xb, yt, za}, {xb, yb, za}, {xb, yb, zb}};
+                        std::copy(&q[0][0], &q[0][0] + 12, &v[0][0]);
+                    }
                     shade(c, kShade[d], col);
                     out.AddQuad(v, col, uv, false, 0.0f, 15.0f);
                 }

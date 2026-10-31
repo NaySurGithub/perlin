@@ -83,12 +83,14 @@ namespace perlin::ui {
         }
 
         const char* kStyle =
-            "body { position: absolute; left: 0px; top: 0px; margin: 0; padding: 0; background: transparent; }\n"
+            "body { position: absolute; left: 0px; top: 0px; margin: 0; padding: 0; background: transparent; "
+            "}\n"
             "div { display: block; position: absolute; }\n"
             "#bg { left: 0px; top: 0px; background-color: rgba(0,0,0,150); z-index: 1; }\n"
             "#panel { background-color: rgba(16,16,16,235); z-index: 2; }\n"
             "#clip { overflow: hidden; z-index: 3; }\n"
-            ".t { font-family: minecraft-shadow; white-space: normal; color: #ffffff; font-size: 8px; line-height: 9px; }\n"
+            ".t { font-family: minecraft-shadow; white-space: normal; color: #ffffff; font-size: 8px; "
+            "line-height: 9px; }\n"
             ".c { text-align: center; }\n"
             ".btn { background-color: #000000; z-index: 5; }\n"
             ".btn div { display: block; position: absolute; }\n"
@@ -96,17 +98,21 @@ namespace perlin::ui {
             ".btn .face { left: 2px; top: 2px; background-color: #6f6f6f; }\n"
             ".btn .shade { left: 1px; background-color: #565656; }\n"
             ".btn .edge { top: 1px; background-color: #565656; }\n"
-            ".btn .lbl { font-family: minecraft-shadow; left: 0px; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; overflow: hidden; }\n"
+            ".btn .lbl { font-family: minecraft-shadow; left: 0px; font-size: 8px; line-height: 9px; "
+            "text-align: center; color: #ffffff; white-space: nowrap; overflow: hidden; }\n"
             ".btn:hover { background-color: #ffffff; }\n"
             ".btn:hover .rim { background-color: #afafaf; }\n"
             ".btn:hover .face { background-color: #757575; }\n"
             ".field { background-color: #ffffff; z-index: 5; }\n"
             ".field .in { left: 1px; top: 1px; background-color: #000000; }\n"
             ".field.focus .in { background-color: #101030; }\n"
-            ".field .txt { font-family: minecraft-shadow; left: 4px; top: 5px; font-size: 8px; line-height: 9px; white-space: nowrap; overflow: hidden; color: #e0e0e0; }\n";
+            ".field .txt { font-family: minecraft-shadow; left: 4px; top: 5px; font-size: 8px; line-height: "
+            "9px; white-space: nowrap; overflow: hidden; color: #e0e0e0; }\n";
 
-        const std::string kBuiltinFormHead = std::string("<rml>\n<head>\n<title>form</title>\n<style>\nbody { width: {{w}}px; height: {{h}}px; }\n") +
-                                             kStyle + "</style>\n</head>\n<body>\n";
+        const std::string kBuiltinFormHead =
+            std::string(
+                "<rml>\n<head>\n<title>form</title>\n<style>\nbody { width: {{w}}px; height: {{h}}px; }\n") +
+            kStyle + "</style>\n</head>\n<body>\n";
         const ScreenTemplateDefault kBuiltinFormDefault("server_form_builtin.rml", kBuiltinFormHead);
 
         std::mutex gImageMutex;
@@ -116,36 +122,37 @@ namespace perlin::ui {
         uint64_t gImageEpoch = 0;
 
         // tab stops have no defined advance in the bitmap font: long runs push labels out of view,
-    // so server menus treat them as plain word separators
-    void NormalizeFormText(std::string& text) {
-        for (char& c : text)
-            if (c == '\t')
-                c = '\n';
-        std::string collapsed;
-        collapsed.reserve(text.size());
-        bool lastBreak = true;
-        for (const char c : text) {
-            if (c == '\n') {
-                if (lastBreak)
+        // so server menus treat them as plain word separators
+        void NormalizeFormText(std::string& text) {
+            for (char& c : text)
+                if (c == '\t')
+                    c = '\n';
+            std::string collapsed;
+            collapsed.reserve(text.size());
+            bool lastBreak = true;
+            for (const char c : text) {
+                if (c == '\n') {
+                    if (lastBreak)
+                        continue;
+                    lastBreak = true;
+                    collapsed += c;
                     continue;
-                lastBreak = true;
-                collapsed += c;
-                continue;
-            }
-            if (c == ' ') {
-                collapsed += c;
+                }
+                if (c == ' ') {
+                    collapsed += c;
+                    lastBreak = false;
+                    continue;
+                }
                 lastBreak = false;
-                continue;
+                collapsed += c;
             }
-            lastBreak = false;
-            collapsed += c;
+            while (!collapsed.empty() && collapsed.back() == '\n')
+                collapsed.pop_back();
+            text = std::move(collapsed);
         }
-        while (!collapsed.empty() && collapsed.back() == '\n')
-            collapsed.pop_back();
-        text = std::move(collapsed);
-    }
 
-    std::string ImageSource(const FormButton& b) {            if (b.imageData.empty())
+        std::string ImageSource(const FormButton& b) {
+            if (b.imageData.empty())
                 return {};
             if (b.imageType == "path") {
                 std::string path = b.imageData;
@@ -169,7 +176,8 @@ namespace perlin::ui {
             return std::max(h, static_cast<float>(lines * 9 + 8));
         }
 
-        std::string Button(const std::string& id, const std::string& label, float x, float y, float w, float h) {
+        std::string Button(const std::string& id, const std::string& label, float x, float y, float w,
+                           float h) {
             // fallback-only display copy: tabs have no advance here, wrap them into lines
             std::string shown = label;
             NormalizeFormText(shown);
@@ -177,13 +185,17 @@ namespace perlin::ui {
             const int lines = std::max(1, LineCount(shown, perLine));
             const float hh = ButtonHeight(label, w, h);
             const std::string W = F(w), H = F(hh);
-            std::string s = "<div id=\"" + EscapeRml(id) + "\" class=\"btn\" style=\"left:" + F(x) + "px;top:" + F(y) + "px;width:" + W + "px;height:" + H + "px;\">";
+            std::string s = "<div id=\"" + EscapeRml(id) + "\" class=\"btn\" style=\"left:" + F(x) +
+                            "px;top:" + F(y) + "px;width:" + W + "px;height:" + H + "px;\">";
             s += "<div class=\"rim\" style=\"width:" + F(w - 3) + "px;height:" + F(hh - 4) + "px;\"></div>";
             s += "<div class=\"face\" style=\"width:" + F(w - 4) + "px;height:" + F(hh - 5) + "px;\"></div>";
-            s += "<div class=\"shade\" style=\"top:" + F(hh - 3) + "px;width:" + F(w - 2) + "px;height:2px;\"></div>";
-            s += "<div class=\"edge\" style=\"left:" + F(w - 2) + "px;width:1px;height:" + F(hh - 4) + "px;\"></div>";
-            s += "<div class=\"lbl\" style=\"top:" + F((hh - lines * 9) / 2) + "px;width:" + W + "px;height:" + F(static_cast<float>(lines * 9)) +
-                 "px;\">" + FormatCodesToRmlLines(shown) + "</div></div>\n";
+            s += "<div class=\"shade\" style=\"top:" + F(hh - 3) + "px;width:" + F(w - 2) +
+                 "px;height:2px;\"></div>";
+            s += "<div class=\"edge\" style=\"left:" + F(w - 2) + "px;width:1px;height:" + F(hh - 4) +
+                 "px;\"></div>";
+            s += "<div class=\"lbl\" style=\"top:" + F((hh - lines * 9) / 2) + "px;width:" + W +
+                 "px;height:" + F(static_cast<float>(lines * 9)) + "px;\">" + FormatCodesToRmlLines(shown) +
+                 "</div></div>\n";
             return s;
         }
     }
@@ -215,8 +227,7 @@ namespace perlin::ui {
                 const http::Response r = http::GetUrl(url, {}, 20);
                 if (r.status >= 200 && r.status < 300 && r.body.size() < (8u << 20))
                     body = r.body;
-            } catch (...) {
-            }
+            } catch (...) {}
             {
                 std::lock_guard lock(gImageMutex);
                 // a download from the previous level cannot repopulate the cache
@@ -317,7 +328,8 @@ namespace perlin::ui {
                             el.step = 1;
                         el.number = e.Find("default") ? e.Find("default")->NumberOr(el.min) : el.min;
                     } else if (kind == "step_slider" || kind == "dropdown") {
-                        el.kind = kind == "dropdown" ? FormElement::Kind::Dropdown : FormElement::Kind::StepSlider;
+                        el.kind =
+                            kind == "dropdown" ? FormElement::Kind::Dropdown : FormElement::Kind::StepSlider;
                         const Json* list = e.Find(kind == "dropdown" ? "options" : "steps");
                         if (list && list->IsArray())
                             for (const Json& o : list->array)
@@ -355,7 +367,8 @@ namespace perlin::ui {
         return true;
     }
 
-    std::string BuildFormRml(const FormModel& form, int guiW, int guiH, float scroll, float& contentHeight, float& viewHeight) {
+    std::string BuildFormRml(const FormModel& form, int guiW, int guiH, float scroll, float& contentHeight,
+                             float& viewHeight) {
         const float panelW = static_cast<float>(std::min(guiW - 16, 260));
         const float inner = panelW - 20;
         const int perLine = std::max(8, static_cast<int>(inner / 5.2f));
@@ -369,7 +382,9 @@ namespace perlin::ui {
             NormalizeFormText(shown);
             const int lines = LineCount(shown, perLine);
             const float h = static_cast<float>(lines * 9);
-            body += "<div class=\"t" + std::string(center ? " c" : "") + "\" style=\"left:10px;top:" + F(y) + "px;width:" + F(inner) + "px;height:" + F(h) + "px;\">" + FormatCodesToRmlLines(shown) + "</div>\n";
+            body += "<div class=\"t" + std::string(center ? " c" : "") + "\" style=\"left:10px;top:" + F(y) +
+                    "px;width:" + F(inner) + "px;height:" + F(h) + "px;\">" + FormatCodesToRmlLines(shown) +
+                    "</div>\n";
             y += h + 4.0f;
         };
         if (!form.content.empty() && form.type != FormModel::Type::Custom)
@@ -381,7 +396,9 @@ namespace perlin::ui {
                 h = ButtonHeight(form.buttons[i].text, inner, h);
                 std::string b = Button("b:" + std::to_string(i), form.buttons[i].text, 10, y, inner, h);
                 if (!src.empty()) {
-                    const std::string img = "<mcimg src=\"" + EscapeRml(src) + "\" style=\"left:4px;top:4px;width:24px;height:24px;z-index:8;\"/>";
+                    const std::string img =
+                        "<mcimg src=\"" + EscapeRml(src) +
+                        "\" style=\"left:4px;top:4px;width:24px;height:24px;z-index:8;\"/>";
                     const size_t closeAt = b.rfind("</div>");
                     if (closeAt != std::string::npos)
                         b.insert(closeAt, img);
@@ -399,59 +416,85 @@ namespace perlin::ui {
                 const FormElement& e = form.elements[i];
                 const std::string n = std::to_string(i);
                 switch (e.kind) {
-                    case FormElement::Kind::Label:
+                case FormElement::Kind::Label:
+                    text(e.text, false);
+                    break;
+                case FormElement::Kind::Header:
+                    text(e.text, true);
+                    break;
+                case FormElement::Kind::Divider:
+                    body += "<div style=\"left:10px;top:" + F(y + 2) + "px;width:" + F(inner) +
+                            "px;height:1px;background-color:#707070;\"></div>\n";
+                    y += 6.0f;
+                    break;
+                case FormElement::Kind::Input: {
+                    if (!e.text.empty())
                         text(e.text, false);
-                        break;
-                    case FormElement::Kind::Header:
-                        text(e.text, true);
-                        break;
-                    case FormElement::Kind::Divider:
-                        body += "<div style=\"left:10px;top:" + F(y + 2) + "px;width:" + F(inner) + "px;height:1px;background-color:#707070;\"></div>\n";
-                        y += 6.0f;
-                        break;
-                    case FormElement::Kind::Input: {
-                        if (!e.text.empty())
-                            text(e.text, false);
-                        const bool focus = form.focus == static_cast<int>(i);
-                        const std::string shown = e.value.empty() && !focus ? "\xC2\xA7" "8" + e.placeholder : focus ? TextFieldPlain(e.value, true) : e.value;
-                        body += "<div id=\"i:" + n + "\" class=\"field" + (focus ? " focus" : "") + "\" style=\"left:10px;top:" + F(y) + "px;width:" + F(inner) + "px;height:20px;\">";
-                        body += "<div class=\"in\" style=\"width:" + F(inner - 2) + "px;height:18px;\"></div>";
-                        body += "<div class=\"txt\" style=\"width:" + F(inner - 8) + "px;height:9px;\">" + Rich(shown) + "</div></div>\n";
-                        y += 24.0f;
-                        break;
-                    }
-                    case FormElement::Kind::Toggle:
-                        body += Button("t:" + n, e.text + ": " + (e.flag ? "\xC2\xA7" "aON" : "\xC2\xA7" "cOFF"), 10, y, inner, 20);
-                        y += 24.0f;
-                        break;
-                    case FormElement::Kind::Dropdown:
-                        body += Button("d:" + n, e.text + ": " + e.options[static_cast<size_t>(e.index)], 10, y, inner, 20);
-                        y += 24.0f;
-                        break;
-                    case FormElement::Kind::Slider:
-                    case FormElement::Kind::StepSlider: {
-                        const bool plain = e.kind == FormElement::Kind::Slider;
-                        double frac = 0.0;
-                        if (plain)
-                            frac = e.max > e.min ? (e.number - e.min) / (e.max - e.min) : 0.0;
-                        else
-                            frac = e.options.size() > 1 ? static_cast<double>(e.index) / static_cast<double>(e.options.size() - 1) : 0.0;
-                        frac = std::clamp(frac, 0.0, 1.0);
-                        e.trackX = panelX + 10.0f + 4.0f;
-                        e.trackW = inner - 8.0f;
-                        std::string track = Button("k:" + n, e.text + ": " + (plain ? Num(e.number) : e.options[static_cast<size_t>(e.index)]), 10, y, inner, 20);
-                        const float knobX = 10.0f + 1.0f + static_cast<float>(frac) * (inner - 10.0f);
-                        const std::string knob = "<div style=\"left:" + F(knobX - 10.0f) + "px;top:0px;width:8px;height:20px;background-color:#000000;z-index:7;\">"
-                                                 "<div style=\"left:1px;top:1px;width:6px;height:18px;background-color:#c6c6c6;\"></div>"
-                                                 "<div style=\"left:1px;top:1px;width:5px;height:17px;background-color:#ffffff;\"></div>"
-                                                 "<div style=\"left:2px;top:2px;width:4px;height:16px;background-color:#8b8b8b;\"></div></div>";
-                        const size_t closeAt = track.rfind("</div>");
-                        if (closeAt != std::string::npos)
-                            track.insert(closeAt, knob);
-                        body += track;
-                        y += 24.0f;
-                        break;
-                    }
+                    const bool focus = form.focus == static_cast<int>(i);
+                    const std::string shown = e.value.empty() && !focus ? "\xC2\xA7"
+                                                                          "8" +
+                                                                              e.placeholder
+                                              : focus ? TextFieldPlain(e.value, true)
+                                                      : e.value;
+                    body += "<div id=\"i:" + n + "\" class=\"field" + (focus ? " focus" : "") +
+                            "\" style=\"left:10px;top:" + F(y) + "px;width:" + F(inner) +
+                            "px;height:20px;\">";
+                    body += "<div class=\"in\" style=\"width:" + F(inner - 2) + "px;height:18px;\"></div>";
+                    body += "<div class=\"txt\" style=\"width:" + F(inner - 8) + "px;height:9px;\">" +
+                            Rich(shown) + "</div></div>\n";
+                    y += 24.0f;
+                    break;
+                }
+                case FormElement::Kind::Toggle:
+                    body += Button("t:" + n,
+                                   e.text + ": " +
+                                       (e.flag ? "\xC2\xA7"
+                                                 "aON"
+                                               : "\xC2\xA7"
+                                                 "cOFF"),
+                                   10, y, inner, 20);
+                    y += 24.0f;
+                    break;
+                case FormElement::Kind::Dropdown:
+                    body += Button("d:" + n, e.text + ": " + e.options[static_cast<size_t>(e.index)], 10, y,
+                                   inner, 20);
+                    y += 24.0f;
+                    break;
+                case FormElement::Kind::Slider:
+                case FormElement::Kind::StepSlider: {
+                    const bool plain = e.kind == FormElement::Kind::Slider;
+                    double frac = 0.0;
+                    if (plain)
+                        frac = e.max > e.min ? (e.number - e.min) / (e.max - e.min) : 0.0;
+                    else
+                        frac = e.options.size() > 1
+                                   ? static_cast<double>(e.index) / static_cast<double>(e.options.size() - 1)
+                                   : 0.0;
+                    frac = std::clamp(frac, 0.0, 1.0);
+                    e.trackX = panelX + 10.0f + 4.0f;
+                    e.trackW = inner - 8.0f;
+                    std::string track = Button(
+                        "k:" + n,
+                        e.text + ": " + (plain ? Num(e.number) : e.options[static_cast<size_t>(e.index)]), 10,
+                        y, inner, 20);
+                    const float knobX = 10.0f + 1.0f + static_cast<float>(frac) * (inner - 10.0f);
+                    const std::string knob =
+                        "<div style=\"left:" + F(knobX - 10.0f) +
+                        "px;top:0px;width:8px;height:20px;background-color:#000000;z-index:7;\">"
+                        "<div "
+                        "style=\"left:1px;top:1px;width:6px;height:18px;background-color:#c6c6c6;\"></div>"
+                        "<div "
+                        "style=\"left:1px;top:1px;width:5px;height:17px;background-color:#ffffff;\"></div>"
+                        "<div "
+                        "style=\"left:2px;top:2px;width:4px;height:16px;background-color:#8b8b8b;\"></div></"
+                        "div>";
+                    const size_t closeAt = track.rfind("</div>");
+                    if (closeAt != std::string::npos)
+                        track.insert(closeAt, knob);
+                    body += track;
+                    y += 24.0f;
+                    break;
+                }
                 }
             }
             body += Button("submit", form.submit.empty() ? "Submit" : form.submit, 10, y, inner, 20);
@@ -465,12 +508,17 @@ namespace perlin::ui {
         std::string out = ScreenTemplate("server_form_builtin.rml", kBuiltinFormHead);
         ReplaceAll(out, "w", std::to_string(guiW));
         ReplaceAll(out, "h", std::to_string(guiH));
-        out += "<div id=\"bg\" style=\"width:" + std::to_string(guiW) + "px;height:" + std::to_string(guiH) + "px;\"></div>\n";
-        out += "<div id=\"panel\" style=\"left:" + F(panelX) + "px;top:" + F(viewTop - 18) + "px;width:" + F(panelW) + "px;height:" + F(visible + 24) + "px;\"></div>\n";
-        out += "<div class=\"t c\" style=\"z-index:4;left:" + F(panelX) + "px;top:" + F(viewTop - 13) + "px;width:" + F(panelW) + "px;height:9px;\">" + Rich(form.title) + "</div>\n";
+        out += "<div id=\"bg\" style=\"width:" + std::to_string(guiW) + "px;height:" + std::to_string(guiH) +
+               "px;\"></div>\n";
+        out += "<div id=\"panel\" style=\"left:" + F(panelX) + "px;top:" + F(viewTop - 18) +
+               "px;width:" + F(panelW) + "px;height:" + F(visible + 24) + "px;\"></div>\n";
+        out += "<div class=\"t c\" style=\"z-index:4;left:" + F(panelX) + "px;top:" + F(viewTop - 13) +
+               "px;width:" + F(panelW) + "px;height:9px;\">" + Rich(form.title) + "</div>\n";
         out += Button(kFormCloseId, "x", panelX + panelW - 14, viewTop - 16, 12, 12);
-        out += "<div id=\"clip\" style=\"left:" + F(panelX) + "px;top:" + F(viewTop) + "px;width:" + F(panelW) + "px;height:" + F(visible) + "px;\">\n";
-        out += "<div style=\"left:0px;top:" + F(-s) + "px;width:" + F(panelW) + "px;height:" + F(contentHeight) + "px;\">\n" + body + "</div>\n</div>\n";
+        out += "<div id=\"clip\" style=\"left:" + F(panelX) + "px;top:" + F(viewTop) +
+               "px;width:" + F(panelW) + "px;height:" + F(visible) + "px;\">\n";
+        out += "<div style=\"left:0px;top:" + F(-s) + "px;width:" + F(panelW) +
+               "px;height:" + F(contentHeight) + "px;\">\n" + body + "</div>\n</div>\n";
         out += "</body>\n</rml>\n";
         return out;
     }
@@ -482,12 +530,22 @@ namespace perlin::ui {
             if (i)
                 out += ",";
             switch (e.kind) {
-                case FormElement::Kind::Input: out += JsonString(e.value); break;
-                case FormElement::Kind::Toggle: out += e.flag ? "true" : "false"; break;
-                case FormElement::Kind::Slider: out += Num(e.number); break;
-                case FormElement::Kind::StepSlider:
-                case FormElement::Kind::Dropdown: out += std::to_string(e.index); break;
-                default: out += "null"; break;
+            case FormElement::Kind::Input:
+                out += JsonString(e.value);
+                break;
+            case FormElement::Kind::Toggle:
+                out += e.flag ? "true" : "false";
+                break;
+            case FormElement::Kind::Slider:
+                out += Num(e.number);
+                break;
+            case FormElement::Kind::StepSlider:
+            case FormElement::Kind::Dropdown:
+                out += std::to_string(e.index);
+                break;
+            default:
+                out += "null";
+                break;
             }
         }
         out += "]";
@@ -579,33 +637,49 @@ namespace perlin::ui {
     namespace {
         std::string ElementRowText(const FormElement& e, bool focused) {
             switch (e.kind) {
-                case FormElement::Kind::Toggle:
-                    return e.text + ": " + (e.flag ? "\xC2\xA7" "aON" : "\xC2\xA7" "cOFF");
-                case FormElement::Kind::Dropdown:
-                    return e.text + ": " + e.options[static_cast<size_t>(e.index)];
-                case FormElement::Kind::Slider:
-                    return e.text + ": " + Num(e.number);
-                case FormElement::Kind::StepSlider:
-                    return e.text + ": " + e.options[static_cast<size_t>(e.index)];
-                case FormElement::Kind::Input: {
-                    const std::string shown = e.value.empty() && !focused ? "\xC2\xA7" "8" + e.placeholder : focused ? TextFieldPlain(e.value, true) : e.value;
-                    return e.text.empty() ? shown : e.text + ": " + shown;
-                }
-                default:
-                    return e.text;
+            case FormElement::Kind::Toggle:
+                return e.text + ": " +
+                       (e.flag ? "\xC2\xA7"
+                                 "aON"
+                               : "\xC2\xA7"
+                                 "cOFF");
+            case FormElement::Kind::Dropdown:
+                return e.text + ": " + e.options[static_cast<size_t>(e.index)];
+            case FormElement::Kind::Slider:
+                return e.text + ": " + Num(e.number);
+            case FormElement::Kind::StepSlider:
+                return e.text + ": " + e.options[static_cast<size_t>(e.index)];
+            case FormElement::Kind::Input: {
+                const std::string shown = e.value.empty() && !focused ? "\xC2\xA7"
+                                                                        "8" +
+                                                                            e.placeholder
+                                          : focused ? TextFieldPlain(e.value, true)
+                                                    : e.value;
+                return e.text.empty() ? shown : e.text + ": " + shown;
+            }
+            default:
+                return e.text;
             }
         }
 
         const char* ElementFactoryId(FormElement::Kind kind) {
             switch (kind) {
-                case FormElement::Kind::Label: return "label";
-                case FormElement::Kind::Header: return "header";
-                case FormElement::Kind::Divider: return "divider";
-                case FormElement::Kind::Input: return "input";
-                case FormElement::Kind::Toggle: return "toggle";
-                case FormElement::Kind::Slider: return "slider";
-                case FormElement::Kind::StepSlider: return "step_slider";
-                case FormElement::Kind::Dropdown: return "dropdown";
+            case FormElement::Kind::Label:
+                return "label";
+            case FormElement::Kind::Header:
+                return "header";
+            case FormElement::Kind::Divider:
+                return "divider";
+            case FormElement::Kind::Input:
+                return "input";
+            case FormElement::Kind::Toggle:
+                return "toggle";
+            case FormElement::Kind::Slider:
+                return "slider";
+            case FormElement::Kind::StepSlider:
+                return "step_slider";
+            case FormElement::Kind::Dropdown:
+                return "dropdown";
             }
             return "label";
         }
@@ -694,7 +768,8 @@ namespace perlin::ui {
                 return 0;
             }
 
-            bool CollectionValue(const std::string& collection, int index, const std::string& binding, Json& out) const override {
+            bool CollectionValue(const std::string& collection, int index, const std::string& binding,
+                                 Json& out) const override {
                 if (collection == "custom_form") {
                     if (index < 0 || static_cast<size_t>(index) >= form.elements.size())
                         return false;
@@ -720,14 +795,17 @@ namespace perlin::ui {
                     } else if (binding == "#custom_slider_steps") {
                         out = Json(static_cast<double>(std::max<size_t>(e.options.size(), 1)));
                     } else if (binding == "#custom_slider_text" || binding == "#custom_slider_step_text" ||
-                               binding == "#custom_slider_text_value" || binding == "#custom_slider_step_text_value") {
+                               binding == "#custom_slider_text_value" ||
+                               binding == "#custom_slider_step_text_value") {
                         out = Json(ElementRowText(e, false));
                     } else if (binding == "#custom_tooltip_text") {
                         out = Json(std::string());
-                    } else if (binding == "#custom_input_enabled" || binding == "#custom_toggle_enabled" || binding == "#custom_slider_enabled") {
+                    } else if (binding == "#custom_input_enabled" || binding == "#custom_toggle_enabled" ||
+                               binding == "#custom_slider_enabled") {
                         out = Json(true);
                     } else if (binding == "#dropdown_option_text") {
-                        out = Json(e.options.empty() ? std::string() : e.options[static_cast<size_t>(e.index)]);
+                        out =
+                            Json(e.options.empty() ? std::string() : e.options[static_cast<size_t>(e.index)]);
                     } else if (binding == "#custom_dropdown_length") {
                         out = Json(static_cast<double>(form.openDropdown == index ? e.options.size() : 0));
                     } else {
@@ -762,14 +840,18 @@ namespace perlin::ui {
                     // web images report "loading" until downloaded, as the game does; packs show a spinner
                     if (b.imageType == "url") {
                         std::string bytes;
-                        out = Json(FormImageBytes(b.imageData, bytes) ? (bytes.empty() ? std::string() : "mcurl:" + b.imageData) : std::string("loading"));
+                        out = Json(FormImageBytes(b.imageData, bytes)
+                                       ? (bytes.empty() ? std::string() : "mcurl:" + b.imageData)
+                                       : std::string("loading"));
                     } else {
                         out = Json(b.imageType == "path" ? b.imageData : std::string());
                     }
                     return true;
                 }
                 if (binding == "#form_button_texture_file_system") {
-                    out = Json(std::string(b.imageType == "url" ? "Url" : b.imageType == "path" ? "InUserPackage" : ""));
+                    out = Json(std::string(b.imageType == "url"    ? "Url"
+                                           : b.imageType == "path" ? "InUserPackage"
+                                                                   : ""));
                     return true;
                 }
                 if (binding == "#form_button_contents") {
@@ -782,10 +864,14 @@ namespace perlin::ui {
             std::vector<FactoryItem> Factory(const std::string& name) const override {
                 std::vector<FactoryItem> result;
                 if (name == "server_form_factory") {
-                    result.push_back({form.type == FormModel::Type::Custom ? "custom_form" : "long_form", {}, {}, -1});
+                    result.push_back(
+                        {form.type == FormModel::Type::Custom ? "custom_form" : "long_form", {}, {}, -1});
                 } else if (name == "buttons" && form.type == FormModel::Type::Custom) {
                     for (size_t i = 0; i < form.elements.size(); i++)
-                        result.push_back({ElementFactoryId(form.elements[i].kind), {}, "custom_form", static_cast<int>(i)});
+                        result.push_back({ElementFactoryId(form.elements[i].kind),
+                                          {},
+                                          "custom_form",
+                                          static_cast<int>(i)});
                 } else if (name == "buttons") {
                     for (size_t i = 0; i < items.size(); i++) {
                         const std::string& k = items[i].kind;
@@ -803,7 +889,8 @@ namespace perlin::ui {
 
         const char* kFormTemplate =
             "<rml>\n<head>\n<title>form</title>\n<style>\n"
-            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }\n"
+            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; "
+            "padding: 0; background: transparent; }\n"
             "mcimg, mcitem { display: block; position: absolute; }\n"
             "{{chat_style}}{{rcss}}\n</style>\n</head>\n<body>\n{{chat}}{{hud}}</body>\n</rml>\n";
         const ScreenTemplateDefault kFormTemplateDefault("server_form_screen.rml", kFormTemplate);
@@ -816,7 +903,9 @@ namespace perlin::ui {
         services.lineHeight = [](float s, bool ten) {
             return ten ? TenFont::Instance().LineHeight(s) : static_cast<float>(McFont::kLineHeight) * s;
         };
-        services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
+        services.textureSize = [](const std::string& tex, int& w, int& h) {
+            return UiAssets::Instance().ImageSize(tex, w, h);
+        };
         services.localize = [](const std::string& key) { return UiAssets::Instance().Localize(key); };
         services.anim = &anim;
         services.animDef = [this](const std::string& ref, const std::string& ns) -> Json {
@@ -865,7 +954,8 @@ namespace perlin::ui {
         std::string wanted;
         for (const std::string& d : packDirs)
             wanted += d + "|";
-        wanted += paths::DataDir() + "|" + UiAssets::Instance().VanillaRoot() + "|" + std::to_string(TexturePack::Instance().Generation());
+        wanted += paths::DataDir() + "|" + UiAssets::Instance().VanillaRoot() + "|" +
+                  std::to_string(TexturePack::Instance().Generation());
         if (state.load() == 1)
             return;
         if (state.load() != 0 && wanted == key)
@@ -907,9 +997,10 @@ namespace perlin::ui {
             }
             // modal forms use the game's two-button popup
             Vars modalVars = EngineRootVariables();
-            for (const char* flag : {"$no_buttons_visible", "$single_button_visible", "$single_button_checkbox_visible",
-                                     "$two_buttons_checkbox_visible", "$destructive_two_buttons_visible", "$three_buttons_visible",
-                                     "$destructive_three_buttons_visible", "$show_close_button"})
+            for (const char* flag :
+                 {"$no_buttons_visible", "$single_button_visible", "$single_button_checkbox_visible",
+                  "$two_buttons_checkbox_visible", "$destructive_two_buttons_visible",
+                  "$three_buttons_visible", "$destructive_three_buttons_visible", "$show_close_button"})
                 modalVars[flag] = Json(false);
             modalVars["$two_buttons_visible"] = Json(true);
             modalVars["$button_text_binding_type"] = Json("global");
@@ -932,7 +1023,8 @@ namespace perlin::ui {
         return Ready();
     }
 
-    bool FormUi::Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight) {
+    bool FormUi::Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml,
+                       float& contentHeight, float& viewHeight) {
         if (state.load() != 2 || !tree)
             return false;
         FormData data(form);
@@ -942,26 +1034,29 @@ namespace perlin::ui {
         const Node& screen = wantModal && modalTree ? *modalTree : *tree;
         if (wantModal && !modalTree)
             Log("form", "modal requested but no modal tree, using simple screen");
-        const std::unique_ptr<LNode> root = EvaluateTree(screen, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
+        const std::unique_ptr<LNode> root =
+            EvaluateTree(screen, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
         if (!root) {
             Log("form", "evaluate failed for '{}'", form.title);
             return false;
         }
-        emitter.SetEditText([&form](const LNode& n, std::string& text, std::string& placeholder, bool& focused) {
-            if (n.index < 0 || static_cast<size_t>(n.index) >= form.elements.size())
-                return false;
-            text = form.elements[static_cast<size_t>(n.index)].value;
-            placeholder = form.elements[static_cast<size_t>(n.index)].placeholder;
-            focused = form.focus == n.index;
-            return true;
-        });
+        emitter.SetEditText(
+            [&form](const LNode& n, std::string& text, std::string& placeholder, bool& focused) {
+                if (n.index < 0 || static_cast<size_t>(n.index) >= form.elements.size())
+                    return false;
+                text = form.elements[static_cast<size_t>(n.index)].value;
+                placeholder = form.elements[static_cast<size_t>(n.index)].placeholder;
+                focused = form.focus == n.index;
+                return true;
+            });
         emitter.SetScroll(scroll);
         emitter.SetTemplates(ScreenTemplate("server_form_screen.rml", kFormTemplate), std::string());
         rml = emitter.Emit(*root, static_cast<float>(guiW), static_cast<float>(guiH), std::string(), false);
         contentHeight = emitter.ContentHeight();
         viewHeight = emitter.ViewportHeight();
         for (size_t i = 0; i < form.elements.size(); i++)
-            if (const auto track = emitter.SliderTracks().find("k:" + std::to_string(i)); track != emitter.SliderTracks().end()) {
+            if (const auto track = emitter.SliderTracks().find("k:" + std::to_string(i));
+                track != emitter.SliderTracks().end()) {
                 form.elements[i].trackX = track->second.first;
                 form.elements[i].trackW = track->second.second;
             }
@@ -1003,15 +1098,20 @@ namespace perlin::ui {
                 return false;
             }
         }
-        const size_t buttons = form.type == FormModel::Type::Modal ? 2 : form.type == FormModel::Type::Custom ? 0 : form.buttons.size();
+        const size_t buttons = form.type == FormModel::Type::Modal    ? 2
+                               : form.type == FormModel::Type::Custom ? 0
+                                                                      : form.buttons.size();
         // metadata rows can hide index zero while later collection entries produce the interactive controls
         if (buttons > 0 && !rml.contains("id=\"fb:")) {
             problem = "form buttons were not produced by the ui files";
-            Log("form", "no buttons in rml for '{}' (modal={} hasModalTree={}), rml head: {}", form.title, wantModal, (modalTree != nullptr), rml.substr(0, 600));
+            Log("form", "no buttons in rml for '{}' (modal={} hasModalTree={}), rml head: {}", form.title,
+                wantModal, (modalTree != nullptr), rml.substr(0, 600));
             {
                 std::error_code ec;
                 std::filesystem::create_directories(paths::DataDir() + "/ui_generated", ec);
-                std::ofstream(paths::DataDir() + "/ui_generated/last_form_json_failed.rml", std::ios::binary | std::ios::trunc) << rml;
+                std::ofstream(paths::DataDir() + "/ui_generated/last_form_json_failed.rml",
+                              std::ios::binary | std::ios::trunc)
+                    << rml;
             }
             return false;
         }

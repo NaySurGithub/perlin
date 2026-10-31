@@ -21,6 +21,10 @@
 #include <iostream>
 #include <thread>
 #include "util/Log.hpp"
+#include "util/Platform.hpp"
+#ifdef PERLIN_IOS
+#include "client/platform/ios/DocumentPicker.hpp"
+#endif
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -97,13 +101,16 @@ namespace {
     }
 
     void ApplyWindowIcon(SDL_Window* window) {
-#if !defined(SDL_PLATFORM_ANDROID) && !defined(__EMSCRIPTEN__)
+#if !defined(PERLIN_MOBILE) && !defined(__EMSCRIPTEN__)
         std::string png;
         perlin::Texture icon;
         if (!window || !perlin::resources::Read("perlin_icon.png", png) ||
-            !perlin::LoadTextureMemory(reinterpret_cast<const unsigned char*>(png.data()), png.size(), icon) || icon.width <= 0 || icon.height <= 0)
+            !perlin::LoadTextureMemory(reinterpret_cast<const unsigned char*>(png.data()), png.size(),
+                                       icon) ||
+            icon.width <= 0 || icon.height <= 0)
             return;
-        if (SDL_Surface* surface = SDL_CreateSurfaceFrom(icon.width, icon.height, SDL_PIXELFORMAT_RGBA32, icon.pixels.data(), icon.width * 4)) {
+        if (SDL_Surface* surface = SDL_CreateSurfaceFrom(icon.width, icon.height, SDL_PIXELFORMAT_RGBA32,
+                                                         icon.pixels.data(), icon.width * 4)) {
             SDL_SetWindowIcon(window, surface);
             SDL_DestroySurface(surface);
         }
@@ -148,15 +155,18 @@ namespace {
         command += "\"";
         writeIfChanged(data / "applications" / "io.perlin.client.desktop",
                        "[Desktop Entry]\nType=Application\nName=Perlin\nExec=" + command +
-                           "\nIcon=io.perlin.client\nTerminal=false\nCategories=Game;\nStartupWMClass=io.perlin.client\n");
+                           "\nIcon=io.perlin.client\nTerminal=false\nCategories=Game;\nStartupWMClass=io."
+                           "perlin.client\n");
     }
 #endif
 }
 
 #ifdef __EMSCRIPTEN__
+// clang-format off
 EM_JS(int, perlin_js_confirm, (const char* title, const char* message), {
     return confirm(UTF8ToString(title) + "\n\n" + UTF8ToString(message)) ? 1 : 0;
 });
+// clang-format on
 #endif
 
 std::unique_ptr<perlin::RenderContext> AppPlatform_SDL::CreateRenderContext() {
@@ -197,8 +207,8 @@ namespace {
             break;
         default:
             // should a driver or an odd window order route input here anyway, hand it straight to the game window
-            if (parent && ((message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) || (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
-                           message == WM_MOUSEHWHEEL))
+            if (parent && ((message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ||
+                           (message >= WM_KEYFIRST && message <= WM_KEYLAST) || message == WM_MOUSEHWHEEL))
                 return SendMessageW(parent, message, wParam, lParam);
             break;
         }
@@ -209,7 +219,8 @@ namespace {
 void AppPlatform_SDL::RenewRenderSurface() {
     if (!window)
         return;
-    HWND parent = static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    HWND parent = static_cast<HWND>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     if (!parent)
         return;
     const HINSTANCE instance = GetModuleHandleW(nullptr);
@@ -228,8 +239,9 @@ void AppPlatform_SDL::RenewRenderSurface() {
     }
     RECT rect{};
     GetClientRect(parent, &rect);
-    HWND child = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_NOPARENTNOTIFY, L"PerlinRenderSurface", L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-                                 0, 0, std::max<LONG>(1, rect.right), std::max<LONG>(1, rect.bottom), parent, nullptr, instance, nullptr);
+    HWND child = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_NOPARENTNOTIFY, L"PerlinRenderSurface", L"",
+                                 WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, std::max<LONG>(1, rect.right),
+                                 std::max<LONG>(1, rect.bottom), parent, nullptr, instance, nullptr);
     if (!child) {
         perlin::Log("sdl", "could not create a render surface ({}); keeping the game window", GetLastError());
         return;
@@ -246,13 +258,14 @@ void AppPlatform_SDL::RenewRenderSurface() {
 void AppPlatform_SDL::ResizeRenderSurface() {
     if (!renderSurface || !window)
         return;
-    HWND parent = static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    HWND parent = static_cast<HWND>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     RECT rect{};
     if (parent && GetClientRect(parent, &rect))
-        SetWindowPos(static_cast<HWND>(renderSurface), nullptr, 0, 0, std::max<LONG>(1, rect.right), std::max<LONG>(1, rect.bottom),
-                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
+        SetWindowPos(static_cast<HWND>(renderSurface), nullptr, 0, 0, std::max<LONG>(1, rect.right),
+                     std::max<LONG>(1, rect.bottom), SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
 }
-#elif defined(SDL_PLATFORM_MACOS)
+#elif defined(SDL_PLATFORM_APPLE)
 void AppPlatform_SDL::RenewRenderSurface() {
     if (!window)
         return;
@@ -279,7 +292,8 @@ void AppPlatform_SDL::SetTitle(const std::string& title) {
     titleDirty = true;
 }
 
-void AppPlatform_SDL::SetProgressWindow(bool visible, const std::string& title, const std::string& line1, const std::string& line2, float fraction) {
+void AppPlatform_SDL::SetProgressWindow(bool visible, const std::string& title, const std::string& line1,
+                                        const std::string& line2, float fraction) {
     std::lock_guard lock(progMutex);
     progWant = visible;
     progTitle = title;
@@ -290,7 +304,7 @@ void AppPlatform_SDL::SetProgressWindow(bool visible, const std::string& title, 
 }
 
 void AppPlatform_SDL::UpdateProgressWindow() {
-#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+#if !defined(__EMSCRIPTEN__) && !defined(PERLIN_MOBILE)
     bool want, dirty;
     std::string title, l1, l2;
     float frac;
@@ -402,9 +416,13 @@ void AppPlatform_SDL::Vibrate(int milliseconds) {
         SDL_RumbleGamepad(gamepad, 0xFFFF, 0xFFFF, static_cast<Uint32>(milliseconds));
 }
 
-bool AppPlatform_SDL::WindowFocused() const { return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0; }
+bool AppPlatform_SDL::WindowFocused() const {
+    return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+}
 
-bool AppPlatform_SDL::WindowMinimized() const { return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0; }
+bool AppPlatform_SDL::WindowMinimized() const {
+    return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0;
+}
 
 double AppPlatform_SDL::DisplayRefreshHz() {
     static double cached = 0.0;
@@ -420,7 +438,8 @@ double AppPlatform_SDL::DisplayRefreshHz() {
     SDL_RunOnMainThread(
         [](void* data) {
             auto* q = static_cast<Query*>(data);
-            const SDL_DisplayID display = q->window ? SDL_GetDisplayForWindow(q->window) : SDL_GetPrimaryDisplay();
+            const SDL_DisplayID display =
+                q->window ? SDL_GetDisplayForWindow(q->window) : SDL_GetPrimaryDisplay();
             if (const SDL_DisplayMode* mode = display ? SDL_GetCurrentDisplayMode(display) : nullptr)
                 q->hz = static_cast<double>(mode->refresh_rate);
         },
@@ -438,20 +457,94 @@ void AppPlatform_SDL::OpenUrl(const std::string& url) {
         new std::string(url), false);
 }
 
+namespace {
+    // a picked file is copied into <data>/imports/ and handed to the game as if it had been dropped on the window
+    std::string ImportName(const std::string& kind, const unsigned char* b, size_t size, std::string ext) {
+        if (ext.empty()) {
+            ext = ".png";
+            if (size >= 4 && b[0] == 'P' && b[1] == 'K')
+                ext = ".zip";
+            else if (size >= 4 && b[0] == 0 && b[1] == 'a' && b[2] == 's' && b[3] == 'm')
+                ext = ".wasm";
+        }
+        const std::string prefix = kind == "cape" ? "cape_" : kind == "skin" ? "skin_" : "import_";
+        return prefix + std::to_string(SDL_GetTicks()) + ext;
+    }
+
+    std::string ImportDir() {
+        const std::string dir = perlin::paths::DataDir() + "/imports";
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        return dir;
+    }
+
+#ifdef __EMSCRIPTEN__
+    AppPlatform_SDL* gWebPicker = nullptr;
+#endif
+}
+
+#ifdef __EMSCRIPTEN__
+// the browser's file chooser: the chosen file is written straight into the virtual file system, then reported back
+// clang-format off
+EM_JS(void, perlin_js_pick_file, (const char* accept, const char* dir, const char* prefix), {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = UTF8ToString(accept);
+    const folder = UTF8ToString(dir), pre = UTF8ToString(prefix);
+    input.onchange = async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const data = new Uint8Array(await file.arrayBuffer());
+        const dot = file.name.lastIndexOf('.');
+        const path = folder + '/' + pre + Date.now() + (dot >= 0 ? file.name.substring(dot).toLowerCase() : '');
+        FS.writeFile(path, data);
+        const size = lengthBytesUTF8(path) + 1, ptr = _malloc(size);
+        stringToUTF8(path, ptr, size);
+        _perlin_web_file_picked(ptr);
+        _free(ptr);
+    };
+    input.click();
+});
+// clang-format on
+
+extern "C" EMSCRIPTEN_KEEPALIVE void perlin_web_file_picked(const char* path) {
+    if (gWebPicker && path)
+        gWebPicker->PushDropped(path);
+}
+#endif
+
 bool AppPlatform_SDL::PickFile(const std::string& kind) {
-#ifdef SDL_PLATFORM_ANDROID
+    const bool image = kind == "skin" || kind == "cape";
+#if defined(PERLIN_IOS)
+    return perlin::ios::PickDocument(kind, [this, kind](std::vector<uint8_t> bytes, std::string ext) {
+        const std::string path =
+            ImportDir() + "/" + ImportName(kind, bytes.data(), bytes.size(), std::move(ext));
+        if (FILE* out = std::fopen(path.c_str(), "wb")) {
+            std::fwrite(bytes.data(), 1, bytes.size(), out);
+            std::fclose(out);
+            PushDropped(path);
+        }
+    });
+#elif defined(__EMSCRIPTEN__)
+    gWebPicker = this;
+    const std::string prefix = kind == "cape" ? "cape_" : kind == "skin" ? "skin_" : "import_";
+    perlin_js_pick_file(image ? "image/png" : ".zip,.mcpack,.mcaddon,.mcworld,.mctemplate,.wasm,.png",
+                        ImportDir().c_str(), prefix.c_str());
+    return true;
+#elif defined(SDL_PLATFORM_ANDROID)
     struct Request {
         AppPlatform_SDL* self;
         std::string kind;
+        bool image;
     };
     SDL_RunOnMainThread(
         [](void* data) {
             std::unique_ptr<Request> request(static_cast<Request*>(data));
             static const SDL_DialogFileFilter kImages[] = {{"PNG image", "png"}};
-            const bool image = request->kind == "skin" || request->kind == "cape";
             SDL_PropertiesID props = SDL_CreateProperties();
-            if (image) {
-                SDL_SetPointerProperty(props, SDL_PROP_FILE_DIALOG_FILTERS_POINTER, const_cast<SDL_DialogFileFilter*>(kImages));
+            if (request->image) {
+                SDL_SetPointerProperty(props, SDL_PROP_FILE_DIALOG_FILTERS_POINTER,
+                                       const_cast<SDL_DialogFileFilter*>(kImages));
                 SDL_SetNumberProperty(props, SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, 1);
             }
             SDL_SetBooleanProperty(props, SDL_PROP_FILE_DIALOG_MANY_BOOLEAN, false);
@@ -466,18 +559,8 @@ bool AppPlatform_SDL::PickFile(const std::string& kind) {
                         void* bytes = SDL_LoadFile(*f, &size);
                         if (!bytes)
                             continue;
-                        const unsigned char* b = static_cast<const unsigned char*>(bytes);
-                        std::string ext = ".png";
-                        if (size >= 4 && b[0] == 'P' && b[1] == 'K')
-                            ext = ".zip";
-                        else if (size >= 4 && b[0] == 0 && b[1] == 'a' && b[2] == 's' && b[3] == 'm')
-                            ext = ".wasm";
-                        const std::string dir = perlin::paths::DataDir() + "/imports";
-                        std::error_code ec;
-                        std::filesystem::create_directories(dir, ec);
-                        const std::string name = (req->kind == "cape" ? "cape_" : req->kind == "skin" ? "skin_" : "import_") +
-                                                 std::to_string(SDL_GetTicks()) + ext;
-                        const std::string path = dir + "/" + name;
+                        const auto* b = static_cast<const unsigned char*>(bytes);
+                        const std::string path = ImportDir() + "/" + ImportName(req->kind, b, size, {});
                         if (FILE* out = std::fopen(path.c_str(), "wb")) {
                             std::fwrite(bytes, 1, size, out);
                             std::fclose(out);
@@ -489,10 +572,11 @@ bool AppPlatform_SDL::PickFile(const std::string& kind) {
                 new Request(*request), props);
             SDL_DestroyProperties(props);
         },
-        new Request{this, kind}, false);
+        new Request{this, kind, image}, false);
     return true;
 #else
-    (void)kind;
+    // desktop: the caller opens the folder in the file manager instead, where files can simply be dropped
+    (void)image;
     return false;
 #endif
 }
@@ -563,10 +647,15 @@ bool AppPlatform_SDL::Initialize() {
 #ifdef __EMSCRIPTEN__
     SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 #endif
-#ifdef SDL_PLATFORM_ANDROID
+#ifdef PERLIN_MOBILE
     touchMode = true;
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
+#ifdef SDL_PLATFORM_ANDROID
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+#endif
+#ifdef PERLIN_IOS
+    SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
 #endif
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
@@ -587,10 +676,10 @@ bool AppPlatform_SDL::Initialize() {
 #ifndef __EMSCRIPTEN__
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
 #endif
-#ifdef SDL_PLATFORM_ANDROID
+#ifdef PERLIN_MOBILE
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
 #endif
-#ifdef SDL_PLATFORM_MACOS
+#ifdef SDL_PLATFORM_APPLE
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_METAL_BOOLEAN, true);
 #endif
     window = SDL_CreateWindowWithProperties(props);
@@ -615,8 +704,8 @@ bool AppPlatform_SDL::Initialize() {
     native.window = const_cast<char*>("#canvas");
 #elif defined(SDL_PLATFORM_WIN32)
     native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
-#elif defined(SDL_PLATFORM_MACOS)
-    // metal and webgpu both draw into this layer
+#elif defined(SDL_PLATFORM_APPLE)
+    // metal and webgpu both draw into this layer (an NSView on macOS, a UIView on iOS)
     metalView = SDL_Metal_CreateView(window);
     native.window = metalView ? SDL_Metal_GetLayer(static_cast<SDL_MetalView>(metalView)) : nullptr;
 #elif defined(SDL_PLATFORM_ANDROID)
@@ -652,7 +741,8 @@ bool AppPlatform_SDL::Initialize() {
     if (args.hidden && args.controlPort)
         SetCursorCaptured(true);
 #ifndef __EMSCRIPTEN__
-    if (!args.hidden) SDL_RaiseWindow(window);
+    if (!args.hidden)
+        SDL_RaiseWindow(window);
     if (!args.hidden && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
         SetCursorCaptured(true);
 #endif
@@ -660,7 +750,7 @@ bool AppPlatform_SDL::Initialize() {
 }
 
 void AppPlatform_SDL::SetFullscreen(bool fullscreen) {
-#ifdef SDL_PLATFORM_ANDROID
+#ifdef PERLIN_MOBILE
     (void)fullscreen;
 #else
     if (!window || args.hidden || touchMode)
@@ -670,7 +760,7 @@ void AppPlatform_SDL::SetFullscreen(bool fullscreen) {
 }
 
 bool AppPlatform_SDL::IsFullscreen() const {
-#ifdef SDL_PLATFORM_ANDROID
+#ifdef PERLIN_MOBILE
     return false;
 #else
     return window && !args.hidden && (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
@@ -680,7 +770,8 @@ bool AppPlatform_SDL::IsFullscreen() const {
 void AppPlatform_SDL::SetCursorCaptured(bool captured) {
     if (args.hidden) {
         cursorCaptured = captured && args.controlPort != 0;
-        if (game) game->GetInput().SetCaptured(cursorCaptured);
+        if (game)
+            game->GetInput().SetCaptured(cursorCaptured);
         return;
     }
     if (touchMode) {
@@ -715,7 +806,8 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
                 progCancel = true;
             else if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
                 progCancel = true;
-            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.x >= 250 && e.button.x <= 366 && e.button.y >= 84 && e.button.y <= 108)
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.x >= 250 && e.button.x <= 366 &&
+                     e.button.y >= 84 && e.button.y <= 108)
                 progCancel = true;
             return;
         }
@@ -740,7 +832,8 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_WINDOW_FOCUS_LOST:
     case SDL_EVENT_WINDOW_MINIMIZED:
     case SDL_EVENT_WINDOW_HIDDEN:
-        if (args.hidden) break;
+        if (args.hidden)
+            break;
         if (input && (input->pauseOnLostFocus || e.type != SDL_EVENT_WINDOW_FOCUS_LOST))
             input->ReleaseAll();
         SetCursorCaptured(false);
@@ -748,6 +841,18 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_SCREEN_KEYBOARD_HIDDEN:
         keyboardShown = false;
         break;
+#ifdef PERLIN_IOS
+    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+        backgrounded = true;
+        if (input)
+            input->ReleaseAll();
+        SetCursorCaptured(false);
+        break;
+    case SDL_EVENT_DID_ENTER_FOREGROUND:
+        backgrounded = false;
+        surfaceChanged = true;
+        break;
+#endif
     case SDL_EVENT_GAMEPAD_ADDED:
         if (!gamepad && (gamepad = SDL_OpenGamepad(e.gdevice.which)) && input)
             input->SetPadConnected(true);
@@ -831,12 +936,13 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         if (!touchMode && touch.Editing() && input) {
             if (editMouseDown) {
                 const float d = SDL_GetWindowPixelDensity(window);
-                touch.FingerMove(*input, 9999, e.motion.x * d, e.motion.y * d, e.motion.xrel * d, e.motion.yrel * d);
+                touch.FingerMove(*input, 9999, e.motion.x * d, e.motion.y * d, e.motion.xrel * d,
+                                 e.motion.yrel * d);
             }
             break;
         }
         if (touchMode) {
-#ifdef SDL_PLATFORM_ANDROID
+#ifdef PERLIN_MOBILE
             break;
 #else
             SetTouchMode(false);
@@ -845,7 +951,8 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         if (input) {
             if (cursorCaptured)
                 input->OnMouseDelta(e.motion.xrel, e.motion.yrel);
-            input->OnMouseMove(e.motion.x * SDL_GetWindowPixelDensity(window), e.motion.y * SDL_GetWindowPixelDensity(window));
+            input->OnMouseMove(e.motion.x * SDL_GetWindowPixelDensity(window),
+                               e.motion.y * SDL_GetWindowPixelDensity(window));
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -859,7 +966,7 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             break;
         }
         if (touchMode) {
-#ifdef SDL_PLATFORM_ANDROID
+#ifdef PERLIN_MOBILE
             break;
 #else
             SetTouchMode(false);
@@ -894,8 +1001,7 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
                 if (input->Keyboard())
                     keyboardPending = 4;
                 touch.FingerDown(*input, id, x, y);
-            }
-            else if (e.type == SDL_EVENT_FINGER_MOTION)
+            } else if (e.type == SDL_EVENT_FINGER_MOTION)
                 touch.FingerMove(*input, id, x, y, e.tfinger.dx * w, e.tfinger.dy * h);
             else if (e.type == SDL_EVENT_FINGER_UP)
                 touch.FingerUp(*input, id, x, y);
@@ -924,13 +1030,17 @@ void AppPlatform_SDL::PumpGamepad() {
         return;
     perlin::Input& in = game->GetInput();
     const auto now = std::chrono::steady_clock::now();
-    const float dt = padLast.time_since_epoch().count() == 0 ? 0.0f : std::min(0.1f, std::chrono::duration<float>(now - padLast).count());
+    const float dt = padLast.time_since_epoch().count() == 0
+                         ? 0.0f
+                         : std::min(0.1f, std::chrono::duration<float>(now - padLast).count());
     padLast = now;
     if (!gamepad) {
         in.SetPadLook(0, 0);
         return;
     }
-    const auto axis = [&](SDL_GamepadAxis a) { return static_cast<float>(SDL_GetGamepadAxis(gamepad, a)) / 32767.0f; };
+    const auto axis = [&](SDL_GamepadAxis a) {
+        return static_cast<float>(SDL_GetGamepadAxis(gamepad, a)) / 32767.0f;
+    };
     const float lx = axis(SDL_GAMEPAD_AXIS_LEFTX), ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
     const float rx = axis(SDL_GAMEPAD_AXIS_RIGHTX), ry = axis(SDL_GAMEPAD_AXIS_RIGHTY);
     const float lt = axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER), rt = axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
@@ -952,7 +1062,8 @@ void AppPlatform_SDL::PumpGamepad() {
             float x = 0, y = 0;
             SDL_GetMouseState(&x, &y);
             const float speed = 700.0f * dt / std::max(1.0f, SDL_GetWindowPixelDensity(window));
-            SDL_WarpMouseInWindow(window, x + sx * std::fabs(sx) * speed * 1.4f, y + sy * std::fabs(sy) * speed * 1.4f);
+            SDL_WarpMouseInWindow(window, x + sx * std::fabs(sx) * speed * 1.4f,
+                                  y + sy * std::fabs(sy) * speed * 1.4f);
         }
         padScroll += -shape(ry) * dt * 9.0f;
         if (std::fabs(padScroll) >= 1.0f) {
@@ -963,13 +1074,16 @@ void AppPlatform_SDL::PumpGamepad() {
     }
 
     in.SetPadLook(shape(rx), shape(ry));
-    struct Virtual { int code; bool on; };
+    struct Virtual {
+        int code;
+        bool on;
+    };
     const float hi = 0.5f;
     const Virtual virtuals[] = {
-        {perlin::Pad::LeftTrigger, lt > 0.4f}, {perlin::Pad::RightTrigger, rt > 0.4f},
-        {perlin::Pad::LeftStickUp, ly < -hi}, {perlin::Pad::LeftStickDown, ly > hi},
-        {perlin::Pad::LeftStickLeft, lx < -hi}, {perlin::Pad::LeftStickRight, lx > hi},
-        {perlin::Pad::RightStickUp, ry < -hi}, {perlin::Pad::RightStickDown, ry > hi},
+        {perlin::Pad::LeftTrigger, lt > 0.4f},   {perlin::Pad::RightTrigger, rt > 0.4f},
+        {perlin::Pad::LeftStickUp, ly < -hi},    {perlin::Pad::LeftStickDown, ly > hi},
+        {perlin::Pad::LeftStickLeft, lx < -hi},  {perlin::Pad::LeftStickRight, lx > hi},
+        {perlin::Pad::RightStickUp, ry < -hi},   {perlin::Pad::RightStickDown, ry > hi},
         {perlin::Pad::RightStickLeft, rx < -hi}, {perlin::Pad::RightStickRight, rx > hi}};
     for (const Virtual& v : virtuals) {
         if (padState[v.code] == v.on)
@@ -986,11 +1100,17 @@ void AppPlatform_SDL::PumpFrame() {
     SDL_Event e;
     while (SDL_PollEvent(&e))
         HandleEvent(e);
+#ifdef PERLIN_IOS
+    // iOS kills apps that submit gpu work from the background: sleep on the event queue until it is in front again
+    while (backgrounded && isRunning && SDL_WaitEvent(&e))
+        HandleEvent(e);
+#endif
     PumpGamepad();
 
 #ifdef SDL_PLATFORM_ANDROID
     {
-        void* nw = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+        void* nw = SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                          SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
         if (!nw) {
             surfaceLost = true;
         } else if (nw != lastNativeWindow || surfaceLost) {

@@ -11,15 +11,23 @@ namespace perlin::lan {
         return nullptr;
     }
     void Session::Scan() {}
-    std::vector<Host> Session::Hosts() const { return {}; }
-    bool Session::WaitFor(uint64_t, int) { return false; }
+    std::vector<Host> Session::Hosts() const {
+        return {};
+    }
+    bool Session::WaitFor(uint64_t, int) {
+        return false;
+    }
     bool Session::Send(const std::string&, const std::string&, bool, std::string& error) {
         error = "not available";
         return false;
     }
     void Session::SetHandler(std::function<void(const std::string&, const std::string&)>) {}
-    bool Session::Credentials(std::vector<friendworld::IceServerInfo>&, std::string&) { return true; }
-    bool Session::Alive() const { return false; }
+    bool Session::Credentials(std::vector<friendworld::IceServerInfo>&, std::string&) {
+        return true;
+    }
+    bool Session::Alive() const {
+        return false;
+    }
     void Session::Close() {}
 }
 
@@ -61,7 +69,9 @@ namespace perlin::lan {
 #ifdef _WIN32
         using Socket = SOCKET;
         constexpr Socket kInvalid = INVALID_SOCKET;
-        void CloseSocket(Socket s) { closesocket(s); }
+        void CloseSocket(Socket s) {
+            closesocket(s);
+        }
         void EnsureSockets() {
             static const bool once = [] {
                 WSADATA data;
@@ -73,7 +83,9 @@ namespace perlin::lan {
 #else
         using Socket = int;
         constexpr Socket kInvalid = -1;
-        void CloseSocket(Socket s) { close(s); }
+        void CloseSocket(Socket s) {
+            close(s);
+        }
         void EnsureSockets() {}
 #endif
 
@@ -97,10 +109,11 @@ namespace perlin::lan {
                 return false;
             out.assign(in.size() + 16, 0);
             int n = 0, m = 0;
-            const bool ok = EVP_CipherInit_ex(ctx, EVP_aes_256_ecb(), nullptr, Key(), nullptr, encrypt ? 1 : 0) == 1 &&
-                            EVP_CIPHER_CTX_set_padding(ctx, 0) == 1 &&
-                            EVP_CipherUpdate(ctx, out.data(), &n, in.data(), static_cast<int>(in.size())) == 1 &&
-                            EVP_CipherFinal_ex(ctx, out.data() + n, &m) == 1;
+            const bool ok =
+                EVP_CipherInit_ex(ctx, EVP_aes_256_ecb(), nullptr, Key(), nullptr, encrypt ? 1 : 0) == 1 &&
+                EVP_CIPHER_CTX_set_padding(ctx, 0) == 1 &&
+                EVP_CipherUpdate(ctx, out.data(), &n, in.data(), static_cast<int>(in.size())) == 1 &&
+                EVP_CipherFinal_ex(ctx, out.data() + n, &m) == 1;
             EVP_CIPHER_CTX_free(ctx);
             out.resize(ok ? static_cast<size_t>(n + m) : 0);
             return ok;
@@ -227,7 +240,8 @@ namespace perlin::lan {
                 return false;
             std::vector<uint8_t> data;
             for (uint32_t i = 0; i < n; i += 2) {
-                const int hi = HexValue(static_cast<char>(body[4 + i])), lo = HexValue(static_cast<char>(body[5 + i]));
+                const int hi = HexValue(static_cast<char>(body[4 + i])),
+                          lo = HexValue(static_cast<char>(body[5 + i]));
                 if (hi < 0 || lo < 0)
                     return false;
                 data.push_back(static_cast<uint8_t>(hi * 16 + lo));
@@ -237,8 +251,9 @@ namespace perlin::lan {
                 return false;
             int32_t protocol = 0, players = 0, maxPlayers = 0, gameType = 0;
             std::string name, version, level;
-            if (!ReadString(data, at, name) || !ReadVarint(data, at, protocol) || !ReadString(data, at, version) ||
-                !ReadString(data, at, level) || !ReadVarint(data, at, players) || !ReadVarint(data, at, maxPlayers) ||
+            if (!ReadString(data, at, name) || !ReadVarint(data, at, protocol) ||
+                !ReadString(data, at, version) || !ReadString(data, at, level) ||
+                !ReadVarint(data, at, players) || !ReadVarint(data, at, maxPlayers) ||
                 !ReadVarint(data, at, gameType) || at + 4 > data.size())
                 return false;
             host.name = name;
@@ -321,7 +336,9 @@ namespace perlin::lan {
     };
 
     Session::Session() : impl(std::make_unique<Impl>()) {}
-    Session::~Session() { Close(); }
+    Session::~Session() {
+        Close();
+    }
 
     std::shared_ptr<Session> Session::Open(std::string& error) {
         EnsureSockets();
@@ -354,8 +371,8 @@ namespace perlin::lan {
 #ifndef _WIN32
         if (ifaddrs* list = nullptr; getifaddrs(&list) == 0) {
             for (ifaddrs* a = list; a; a = a->ifa_next) {
-                if (!a->ifa_addr || a->ifa_addr->sa_family != AF_INET || !(a->ifa_flags & IFF_BROADCAST) || !(a->ifa_flags & IFF_UP) ||
-                    !a->ifa_broadaddr)
+                if (!a->ifa_addr || a->ifa_addr->sa_family != AF_INET || !(a->ifa_flags & IFF_BROADCAST) ||
+                    !(a->ifa_flags & IFF_UP) || !a->ifa_broadaddr)
                     continue;
                 sockaddr_in b = *reinterpret_cast<sockaddr_in*>(a->ifa_broadaddr);
                 b.sin_port = htons(kPort);
@@ -374,8 +391,8 @@ namespace perlin::lan {
 #else
                 socklen_t fromLen = sizeof from;
 #endif
-                const int n = static_cast<int>(recvfrom(raw->sock, reinterpret_cast<char*>(buf), sizeof buf, 0,
-                                                        reinterpret_cast<sockaddr*>(&from), &fromLen));
+                const int n = static_cast<int>(recvfrom(raw->sock, reinterpret_cast<char*>(buf), sizeof buf,
+                                                        0, reinterpret_cast<sockaddr*>(&from), &fromLen));
                 if (n > 0)
                     raw->Handle(buf, static_cast<size_t>(n), from);
             }
@@ -402,11 +419,12 @@ namespace perlin::lan {
     bool Session::WaitFor(uint64_t networkId, int timeoutMs) {
         const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
         std::unique_lock lock(impl->mutex);
-        while (!impl->hosts.count(networkId)) {
+        while (!impl->hosts.contains(networkId)) {
             lock.unlock();
             Scan();
             lock.lock();
-            if (impl->cv.wait_for(lock, std::chrono::milliseconds(500), [&] { return impl->hosts.count(networkId) != 0; }))
+            if (impl->cv.wait_for(lock, std::chrono::milliseconds(500),
+                                  [&] { return impl->hosts.contains(networkId); }))
                 break;
             if (std::chrono::steady_clock::now() > end)
                 return false;
@@ -444,9 +462,13 @@ namespace perlin::lan {
         impl->handler = std::move(handler);
     }
 
-    bool Session::Credentials(std::vector<friendworld::IceServerInfo>&, std::string&) { return true; }
+    bool Session::Credentials(std::vector<friendworld::IceServerInfo>&, std::string&) {
+        return true;
+    }
 
-    bool Session::Alive() const { return impl && impl->sock != kInvalid && !impl->stop; }
+    bool Session::Alive() const {
+        return impl && impl->sock != kInvalid && !impl->stop;
+    }
 
     void Session::Close() {
         if (!impl || impl->stop.exchange(true))

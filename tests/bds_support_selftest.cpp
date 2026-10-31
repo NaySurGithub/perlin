@@ -59,14 +59,15 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 10; ++i)
             if (actual[i] != expected[i]) {
                 if (failures < 20)
-                    std::fprintf(stderr, "Case %d field %d: %08x != BDS %08x\n",
-                                 cases, i, actual[i], expected[i]);
+                    std::fprintf(stderr, "Case %d field %d: %08x != BDS %08x\n", cases, i, actual[i],
+                                 expected[i]);
                 ++failures;
             }
         ++cases;
     }
     if (!input.eof() || cases != 1280)
         return 1;
-    std::printf("BDS supporting-shape conformance: %d cases, %d mismatching fields (bit-exact)\n", cases, failures);
+    std::printf("BDS supporting-shape conformance: %d cases, %d mismatching fields (bit-exact)\n", cases,
+                failures);
     return failures ? 1 : 0;
 }

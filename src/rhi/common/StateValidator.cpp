@@ -5,9 +5,12 @@
 namespace rhi {
     uint32_t StateValidator::LayerCount(const TextureDesc& desc) {
         switch (desc.dim) {
-        case TextureDim::Tex2DArray: return (std::max)(1u, desc.depthOrLayers);
-        case TextureDim::Cube: return 6;
-        default: return 1;
+        case TextureDim::Tex2DArray:
+            return (std::max)(1u, desc.depthOrLayers);
+        case TextureDim::Cube:
+            return 6;
+        default:
+            return 1;
         }
     }
 
@@ -86,15 +89,16 @@ namespace rhi {
         const uint32_t m0 = barrier.range.baseMip;
         const uint32_t m1 = barrier.range.mipCount ? (std::min)(mips, m0 + barrier.range.mipCount) : mips;
         const uint32_t l0 = barrier.range.baseLayer;
-        const uint32_t l1 = barrier.range.layerCount ? (std::min)(info.layers, l0 + barrier.range.layerCount) : info.layers;
+        const uint32_t l1 =
+            barrier.range.layerCount ? (std::min)(info.layers, l0 + barrier.range.layerCount) : info.layers;
         for (uint32_t m = m0; m < m1; m++)
             for (uint32_t l = l0; l < l1; l++) {
                 State& state = info.states[static_cast<size_t>(l) * mips + m];
                 // Undefined as `before` means "contents may be discarded": always legal
                 if (barrier.before != State::Undefined && barrier.before != state) {
-                    Report(std::string("texture '") + (info.desc.name ? info.desc.name : "?") + "' mip " + std::to_string(m) +
-                           " layer " + std::to_string(l) + ": barrier says it was " + StateName(barrier.before) + " but it was left " +
-                           StateName(state));
+                    Report(std::string("texture '") + (info.desc.name ? info.desc.name : "?") + "' mip " +
+                           std::to_string(m) + " layer " + std::to_string(l) + ": barrier says it was " +
+                           StateName(barrier.before) + " but it was left " + StateName(state));
                     state = barrier.after;
                     continue;
                 }
@@ -113,13 +117,16 @@ namespace rhi {
         // cpu-visible classes sit in a fixed state on every api; barriers on them are ignored
         if (info.desc.memory == MemoryClass::Upload || info.desc.memory == MemoryClass::Readback)
             return;
-        if (barrier.before != State::Undefined && info.state != State::Undefined && barrier.before != info.state)
-            Report(std::string("buffer '") + (info.desc.name ? info.desc.name : "?") + "': barrier says it was " +
-                   StateName(barrier.before) + " but it was left " + StateName(info.state));
+        if (barrier.before != State::Undefined && info.state != State::Undefined &&
+            barrier.before != info.state)
+            Report(std::string("buffer '") + (info.desc.name ? info.desc.name : "?") +
+                   "': barrier says it was " + StateName(barrier.before) + " but it was left " +
+                   StateName(info.state));
         info.state = barrier.after;
     }
 
-    void StateValidator::ExpectTexture(TextureHandle handle, const SubresourceRange& range, State want, const char* what) {
+    void StateValidator::ExpectTexture(TextureHandle handle, const SubresourceRange& range, State want,
+                                       const char* what) {
         std::lock_guard lock(mutex);
         auto it = textures.find(handle.value);
         if (it == textures.end()) {
@@ -136,8 +143,9 @@ namespace rhi {
             for (uint32_t l = l0; l < l1; l++) {
                 const State state = info.states[static_cast<size_t>(l) * mips + m];
                 if ((static_cast<uint32_t>(state) & static_cast<uint32_t>(want)) == 0) {
-                    Report(std::string(what) + ": texture '" + (info.desc.name ? info.desc.name : "?") + "' mip " + std::to_string(m) +
-                           " layer " + std::to_string(l) + " is " + StateName(state) + ", needs " + StateName(want));
+                    Report(std::string(what) + ": texture '" + (info.desc.name ? info.desc.name : "?") +
+                           "' mip " + std::to_string(m) + " layer " + std::to_string(l) + " is " +
+                           StateName(state) + ", needs " + StateName(want));
                     return;
                 }
             }
@@ -157,8 +165,8 @@ namespace rhi {
         if (info.state == State::Undefined)
             return;
         if ((static_cast<uint32_t>(info.state) & static_cast<uint32_t>(want)) == 0)
-            Report(std::string(what) + ": buffer '" + (info.desc.name ? info.desc.name : "?") + "' is " + StateName(info.state) +
-                   ", needs " + StateName(want));
+            Report(std::string(what) + ": buffer '" + (info.desc.name ? info.desc.name : "?") + "' is " +
+                   StateName(info.state) + ", needs " + StateName(want));
     }
 
     void StateValidator::ExpectAll(const std::vector<BoundResource>& resources, const char* what) {

@@ -10,15 +10,15 @@
 #include <stdint.h>
 
 #if defined(PERLIN_SERVER_STATIC)
-#  define PS_API
+#define PS_API
 #elif defined(_WIN32)
-#  if defined(PERLIN_SERVER_BUILD_SHARED)
-#    define PS_API __declspec(dllexport)
-#  else
-#    define PS_API __declspec(dllimport)
-#  endif
+#if defined(PERLIN_SERVER_BUILD_SHARED)
+#define PS_API __declspec(dllexport)
 #else
-#  define PS_API __attribute__((visibility("default")))
+#define PS_API __declspec(dllimport)
+#endif
+#else
+#define PS_API __attribute__((visibility("default")))
 #endif
 
 #ifdef __cplusplus

@@ -76,19 +76,25 @@ namespace rhi {
             }
             void RunOps();
 
-            void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) override;
+            void Barrier(std::span<const TextureBarrier> textures,
+                         std::span<const BufferBarrier> buffers) override;
             void UavBarrier(BufferHandle) override;
             void UavBarrier(TextureHandle) override;
-            void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) override;
-            void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) override;
-            void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) override;
-            void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) override;
+            void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                            uint64_t size) override;
+            void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                     std::span<const BufferTextureCopy> regions) override;
+            void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                     std::span<const BufferTextureCopy> regions) override;
+            void CopyTexture(TextureHandle dst, TextureHandle src,
+                             std::span<const TextureCopy> regions) override;
             void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) override;
             void ResolveTexture(TextureHandle dst, TextureHandle src) override;
             void BeginRendering(const RenderingDesc& desc) override;
             void EndRendering() override;
             void SetPipeline(PipelineHandle pipeline) override;
-            void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) override;
+            void SetBindGroup(uint32_t set, BindGroupHandle group,
+                              std::span<const uint32_t> dynamicOffsets) override;
             void PushConstants(const void* data, uint32_t bytes, uint32_t offset) override;
             void SetViewport(const Viewport&) override {}
             void SetScissor(const Rect&) override {}
@@ -96,10 +102,12 @@ namespace rhi {
             void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset) override;
             void SetStencilReference(uint32_t) override {}
             void Draw(uint32_t, uint32_t, uint32_t, uint32_t) override { CheckDraw("Draw"); }
-            void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t, uint32_t) override;
-            void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) override;
-            void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset,
-                                          uint32_t maxDraws, uint32_t stride) override;
+            void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t,
+                             uint32_t) override;
+            void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                     uint32_t stride) override;
+            void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                          uint64_t countOffset, uint32_t maxDraws, uint32_t stride) override;
             void Dispatch(uint32_t, uint32_t, uint32_t) override;
             void DispatchIndirect(BufferHandle args, uint64_t offset) override;
             void WriteTimestamp(QuerySetHandle, uint32_t) override {}
@@ -151,8 +159,9 @@ namespace rhi {
                 caps.limits.maxAnisotropy = 16.0f;
                 caps.limits.maxSampledTexturesPerStage = 128;
                 for (size_t i = 1; i < caps.formats.size(); i++)
-                    caps.formats[i] = FormatUse::Sampled | FormatUse::SampledLinear | FormatUse::ColorTarget | FormatUse::Blendable |
-                                      FormatUse::DepthTarget | FormatUse::Storage | FormatUse::Msaa;
+                    caps.formats[i] = FormatUse::Sampled | FormatUse::SampledLinear | FormatUse::ColorTarget |
+                                      FormatUse::Blendable | FormatUse::DepthTarget | FormatUse::Storage |
+                                      FormatUse::Msaa;
             }
 
             ~NullDevice() override { retire.FlushAll(); }
@@ -187,7 +196,9 @@ namespace rhi {
                     layer.resize(t.desc.mips);
                     for (uint32_t m = 0; m < t.desc.mips; m++) {
                         const uint32_t w = MipExtent(desc.width, m), h = MipExtent(desc.height, m);
-                        layer[m].assign(static_cast<size_t>(RowBytes(desc.format, w)) * RowBlocks(desc.format, h) * DepthOf(desc), 0);
+                        layer[m].assign(static_cast<size_t>(RowBytes(desc.format, w)) *
+                                            RowBlocks(desc.format, h) * DepthOf(desc),
+                                        0);
                         bytes += layer[m].size();
                     }
                 }
@@ -199,7 +210,9 @@ namespace rhi {
                 return h;
             }
 
-            SamplerHandle CreateSampler(const SamplerDesc& desc) override { return samplers.Alloc(NullSampler{desc}); }
+            SamplerHandle CreateSampler(const SamplerDesc& desc) override {
+                return samplers.Alloc(NullSampler{desc});
+            }
             ShaderHandle CreateShader(const ShaderDesc& desc) override {
                 NullShader s;
                 s.desc = desc;
@@ -225,7 +238,8 @@ namespace rhi {
                         if (e.binding == le.binding)
                             found++;
                     if (found < le.count)
-                        ReportDeviceError("CreateBindGroup: binding " + std::to_string(le.binding) + " is not fully populated");
+                        ReportDeviceError("CreateBindGroup: binding " + std::to_string(le.binding) +
+                                          " is not fully populated");
                 }
                 stats.liveBindGroups++;
                 return bindGroups.Alloc(std::move(g));
@@ -246,7 +260,7 @@ namespace rhi {
                 NullPipeline p;
                 p.graphics = desc;
                 stats.livePipelines++;
-                return pipelines.Alloc(std::move(p));
+                return pipelines.Alloc(p);
             }
             PipelineHandle CreateComputePipeline(const ComputePipelineDesc& desc) override {
                 if (!shaders.Get(desc.compute))
@@ -255,9 +269,11 @@ namespace rhi {
                 p.compute = true;
                 p.computeDesc = desc;
                 stats.livePipelines++;
-                return pipelines.Alloc(std::move(p));
+                return pipelines.Alloc(p);
             }
-            QuerySetHandle CreateQuerySet(const QuerySetDesc& desc) override { return queries.Alloc(NullQuery{desc.count}); }
+            QuerySetHandle CreateQuerySet(const QuerySetDesc& desc) override {
+                return queries.Alloc(NullQuery{desc.count});
+            }
 
             void Destroy(BufferHandle h) override {
                 NullBuffer* b = buffers.Get(h);
@@ -279,21 +295,31 @@ namespace rhi {
                 validator.OnDestroy(h);
                 Retire([this, h] { textures.Free(h); });
             }
-            void Destroy(SamplerHandle h) override { Retire([this, h] { samplers.Free(h); }); }
-            void Destroy(ShaderHandle h) override { Retire([this, h] { shaders.Free(h); }); }
-            void Destroy(BindLayoutHandle h) override { Retire([this, h] { bindLayouts.Free(h); }); }
+            void Destroy(SamplerHandle h) override {
+                Retire([this, h] { samplers.Free(h); });
+            }
+            void Destroy(ShaderHandle h) override {
+                Retire([this, h] { shaders.Free(h); });
+            }
+            void Destroy(BindLayoutHandle h) override {
+                Retire([this, h] { bindLayouts.Free(h); });
+            }
             void Destroy(BindGroupHandle h) override {
                 if (bindGroups.Get(h))
                     stats.liveBindGroups--;
                 Retire([this, h] { bindGroups.Free(h); });
             }
-            void Destroy(PipelineLayoutHandle h) override { Retire([this, h] { pipelineLayouts.Free(h); }); }
+            void Destroy(PipelineLayoutHandle h) override {
+                Retire([this, h] { pipelineLayouts.Free(h); });
+            }
             void Destroy(PipelineHandle h) override {
                 if (pipelines.Get(h))
                     stats.livePipelines--;
                 Retire([this, h] { pipelines.Free(h); });
             }
-            void Destroy(QuerySetHandle h) override { Retire([this, h] { queries.Free(h); }); }
+            void Destroy(QuerySetHandle h) override {
+                Retire([this, h] { queries.Free(h); });
+            }
 
             const BufferDesc* GetDesc(BufferHandle h) const override {
                 NullBuffer* b = buffers.Get(h);
@@ -324,7 +350,9 @@ namespace rhi {
                 NullFence* f = fences.Get(h);
                 return f ? f->value : 0;
             }
-            bool WaitFence(FenceHandle h, uint64_t value, uint64_t) override { return FenceValue(h) >= value; }
+            bool WaitFence(FenceHandle h, uint64_t value, uint64_t) override {
+                return FenceValue(h) >= value;
+            }
             void SignalFence(FenceHandle h, uint64_t value) override {
                 if (NullFence* f = fences.Get(h))
                     f->value = std::max<uint64_t>(f->value, value);
@@ -341,7 +369,9 @@ namespace rhi {
             }
             void EndFrame() override { retire.Collect(submitted); }
             uint64_t FrameNumber() const override { return frame; }
-            uint32_t FrameSlot() const override { return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight)); }
+            uint32_t FrameSlot() const override {
+                return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight));
+            }
             void WaitIdle() override { retire.Collect(submitted); }
 
             MemoryBudget QueryMemoryBudget() override {
@@ -385,7 +415,6 @@ namespace rhi {
             uint64_t frame = 0;
         };
 
-
         void NullCommandList::Error(const std::string& message) {
             device.ReportDeviceError(message);
         }
@@ -395,7 +424,8 @@ namespace rhi {
                 Error("EndDebugLabel without BeginDebugLabel");
         }
 
-        void NullCommandList::Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) {
+        void NullCommandList::Barrier(std::span<const TextureBarrier> textures,
+                                      std::span<const BufferBarrier> buffers) {
             for (const TextureBarrier& b : textures) {
                 if (inRendering)
                     Error("barrier recorded inside a rendering pass");
@@ -410,10 +440,15 @@ namespace rhi {
             }
         }
 
-        void NullCommandList::UavBarrier(BufferHandle) { device.stats.barriers++; }
-        void NullCommandList::UavBarrier(TextureHandle) { device.stats.barriers++; }
+        void NullCommandList::UavBarrier(BufferHandle) {
+            device.stats.barriers++;
+        }
+        void NullCommandList::UavBarrier(TextureHandle) {
+            device.stats.barriers++;
+        }
 
-        void NullCommandList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) {
+        void NullCommandList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src,
+                                         uint64_t srcOffset, uint64_t size) {
             device.Validator().ExpectBuffer(src, State::CopySrc, "CopyBuffer src");
             device.Validator().ExpectBuffer(dst, State::CopyDst, "CopyBuffer dst");
             ops.push_back([this, dst, dstOffset, src, srcOffset, size] {
@@ -427,11 +462,13 @@ namespace rhi {
             });
         }
 
-        void NullCommandList::CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) {
+        void NullCommandList::CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                                  std::span<const BufferTextureCopy> regions) {
             device.Validator().ExpectBuffer(src, State::CopySrc, "CopyBufferToTexture src");
             std::vector<BufferTextureCopy> copy(regions.begin(), regions.end());
             for (const auto& r : copy)
-                device.Validator().ExpectTexture(dst, {r.mip, 1, r.layer, 1}, State::CopyDst, "CopyBufferToTexture dst");
+                device.Validator().ExpectTexture(dst, {r.mip, 1, r.layer, 1}, State::CopyDst,
+                                                 "CopyBufferToTexture dst");
             ops.push_back([this, dst, src, copy] {
                 NullTexture* t = device.textures.Get(dst);
                 NullBuffer* b = device.buffers.Get(src);
@@ -449,9 +486,14 @@ namespace rhi {
                     const uint32_t rows = RowBlocks(t->desc.format, r.height);
                     for (uint32_t z = 0; z < r.depth; z++)
                         for (uint32_t row = 0; row < rows; row++) {
-                            const uint64_t srcOff = r.bufferOffset + (static_cast<uint64_t>(z) * rows + row) * pitch;
-                            const uint64_t dstOff = (static_cast<uint64_t>(r.z + z) * RowBlocks(t->desc.format, MipExtent(t->desc.height, r.mip)) +
-                                                     r.y / fi.blockHeight + row) * texRow + (r.x / fi.blockWidth) * fi.bytesPerBlock;
+                            const uint64_t srcOff =
+                                r.bufferOffset + (static_cast<uint64_t>(z) * rows + row) * pitch;
+                            const uint64_t dstOff =
+                                (static_cast<uint64_t>(r.z + z) *
+                                     RowBlocks(t->desc.format, MipExtent(t->desc.height, r.mip)) +
+                                 r.y / fi.blockHeight + row) *
+                                    texRow +
+                                (r.x / fi.blockWidth) * fi.bytesPerBlock;
                             if (srcOff + rowBytes > b->data.size() || dstOff + rowBytes > mip.size()) {
                                 device.ReportDeviceError("CopyBufferToTexture out of range");
                                 return;
@@ -462,11 +504,13 @@ namespace rhi {
             });
         }
 
-        void NullCommandList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) {
+        void NullCommandList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                                  std::span<const BufferTextureCopy> regions) {
             device.Validator().ExpectBuffer(dst, State::CopyDst, "CopyTextureToBuffer dst");
             std::vector<BufferTextureCopy> copy(regions.begin(), regions.end());
             for (const auto& r : copy)
-                device.Validator().ExpectTexture(src, {r.mip, 1, r.layer, 1}, State::CopySrc, "CopyTextureToBuffer src");
+                device.Validator().ExpectTexture(src, {r.mip, 1, r.layer, 1}, State::CopySrc,
+                                                 "CopyTextureToBuffer src");
             ops.push_back([this, dst, src, copy] {
                 NullTexture* t = device.textures.Get(src);
                 NullBuffer* b = device.buffers.Get(dst);
@@ -484,9 +528,14 @@ namespace rhi {
                     const uint32_t rows = RowBlocks(t->desc.format, r.height);
                     for (uint32_t z = 0; z < r.depth; z++)
                         for (uint32_t row = 0; row < rows; row++) {
-                            const uint64_t dstOff = r.bufferOffset + (static_cast<uint64_t>(z) * rows + row) * pitch;
-                            const uint64_t srcOff = (static_cast<uint64_t>(r.z + z) * RowBlocks(t->desc.format, MipExtent(t->desc.height, r.mip)) +
-                                                     r.y / fi.blockHeight + row) * texRow + (r.x / fi.blockWidth) * fi.bytesPerBlock;
+                            const uint64_t dstOff =
+                                r.bufferOffset + (static_cast<uint64_t>(z) * rows + row) * pitch;
+                            const uint64_t srcOff =
+                                (static_cast<uint64_t>(r.z + z) *
+                                     RowBlocks(t->desc.format, MipExtent(t->desc.height, r.mip)) +
+                                 r.y / fi.blockHeight + row) *
+                                    texRow +
+                                (r.x / fi.blockWidth) * fi.bytesPerBlock;
                             if (dstOff + rowBytes > b->data.size() || srcOff + rowBytes > mip.size()) {
                                 device.ReportDeviceError("CopyTextureToBuffer out of range");
                                 return;
@@ -497,11 +546,14 @@ namespace rhi {
             });
         }
 
-        void NullCommandList::CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) {
+        void NullCommandList::CopyTexture(TextureHandle dst, TextureHandle src,
+                                          std::span<const TextureCopy> regions) {
             std::vector<TextureCopy> copy(regions.begin(), regions.end());
             for (const auto& r : copy) {
-                device.Validator().ExpectTexture(src, {r.srcMip, 1, r.srcLayer, 1}, State::CopySrc, "CopyTexture src");
-                device.Validator().ExpectTexture(dst, {r.dstMip, 1, r.dstLayer, 1}, State::CopyDst, "CopyTexture dst");
+                device.Validator().ExpectTexture(src, {r.srcMip, 1, r.srcLayer, 1}, State::CopySrc,
+                                                 "CopyTexture src");
+                device.Validator().ExpectTexture(dst, {r.dstMip, 1, r.dstLayer, 1}, State::CopyDst,
+                                                 "CopyTexture dst");
             }
             ops.push_back([this, dst, src, copy] {
                 NullTexture* d = device.textures.Get(dst);
@@ -518,8 +570,10 @@ namespace rhi {
                     const uint32_t dRow = RowBytes(d->desc.format, MipExtent(d->desc.width, r.dstMip));
                     const uint32_t rowBytes = RowBytes(s->desc.format, r.width);
                     for (uint32_t y = 0; y < r.height; y++) {
-                        const uint64_t so = static_cast<uint64_t>(r.srcY + y) * sRow + r.srcX / fi.blockWidth * fi.bytesPerBlock;
-                        const uint64_t dO = static_cast<uint64_t>(r.dstY + y) * dRow + r.dstX / fi.blockWidth * fi.bytesPerBlock;
+                        const uint64_t so = static_cast<uint64_t>(r.srcY + y) * sRow +
+                                            r.srcX / fi.blockWidth * fi.bytesPerBlock;
+                        const uint64_t dO = static_cast<uint64_t>(r.dstY + y) * dRow +
+                                            r.dstX / fi.blockWidth * fi.bytesPerBlock;
                         if (so + rowBytes > sm.size() || dO + rowBytes > dm.size()) {
                             device.ReportDeviceError("CopyTexture out of range");
                             return;
@@ -563,7 +617,8 @@ namespace rhi {
                 colorFormats[i] = td->format;
                 if (!Has(td->usage, TextureUsage::ColorTarget))
                     Error("BeginRendering: texture '" + std::string(td->name) + "' lacks ColorTarget usage");
-                device.Validator().ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, State::ColorTarget, "BeginRendering colour");
+                device.Validator().ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, State::ColorTarget,
+                                                 "BeginRendering colour");
             }
             depthFormat = Format::Unknown;
             if (desc.depth.texture) {
@@ -573,9 +628,11 @@ namespace rhi {
                 } else {
                     depthFormat = td->format;
                     if (!Has(td->usage, TextureUsage::DepthTarget))
-                        Error("BeginRendering: texture '" + std::string(td->name) + "' lacks DepthTarget usage");
-                    device.Validator().ExpectTexture(desc.depth.texture, {desc.depth.mip, 1, desc.depth.layer, 1},
-                                                     desc.depth.readOnly ? State::DepthRead : State::DepthWrite, "BeginRendering depth");
+                        Error("BeginRendering: texture '" + std::string(td->name) +
+                              "' lacks DepthTarget usage");
+                    device.Validator().ExpectTexture(
+                        desc.depth.texture, {desc.depth.mip, 1, desc.depth.layer, 1},
+                        desc.depth.readOnly ? State::DepthRead : State::DepthWrite, "BeginRendering depth");
                 }
             }
         }
@@ -593,12 +650,14 @@ namespace rhi {
                 return;
             }
             if (p->compute == inRendering)
-                Error(p->compute ? "compute pipeline set inside a rendering pass" : "graphics pipeline set outside a rendering pass");
+                Error(p->compute ? "compute pipeline set inside a rendering pass"
+                                 : "graphics pipeline set outside a rendering pass");
             device.stats.pipelineBinds++;
             pipeline = handle;
         }
 
-        void NullCommandList::SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> offsets) {
+        void NullCommandList::SetBindGroup(uint32_t set, BindGroupHandle group,
+                                           std::span<const uint32_t> offsets) {
             NullBindGroup* g = device.bindGroups.Get(group);
             if (!g || set >= kMaxBindGroups) {
                 Error("SetBindGroup: unknown group or set index");
@@ -636,14 +695,16 @@ namespace rhi {
                         r.buffer = e.buffer.buffer;
                         r.want = State::UniformBuffer;
                         break;
-                    case BindingType::Sampler: break;
+                    case BindingType::Sampler:
+                        break;
                     }
                     if (r.texture || r.buffer)
                         bound.push_back(r);
                 }
             }
             if (dynamicCount != offsets.size())
-                Error("SetBindGroup: expected " + std::to_string(dynamicCount) + " dynamic offsets, got " + std::to_string(offsets.size()));
+                Error("SetBindGroup: expected " + std::to_string(dynamicCount) + " dynamic offsets, got " +
+                      std::to_string(offsets.size()));
             device.Validator().ExpectAll(bound, "SetBindGroup");
             boundSets[set] = group;
             device.stats.bindGroupBinds++;
@@ -679,11 +740,13 @@ namespace rhi {
             }
             const GraphicsPipelineDesc& g = p->graphics;
             if (g.colorCount != colorCount)
-                Error(std::string(what) + ": pipeline has " + std::to_string(g.colorCount) + " colour targets, pass has " + std::to_string(colorCount));
+                Error(std::string(what) + ": pipeline has " + std::to_string(g.colorCount) +
+                      " colour targets, pass has " + std::to_string(colorCount));
             else
                 for (uint32_t i = 0; i < colorCount; i++)
                     if (g.colorFormats[i] != colorFormats[i])
-                        Error(std::string(what) + ": colour target " + std::to_string(i) + " format differs from the pipeline's");
+                        Error(std::string(what) + ": colour target " + std::to_string(i) +
+                              " format differs from the pipeline's");
             if (g.depthFormat != depthFormat)
                 Error(std::string(what) + ": depth format differs from the pipeline's");
             for (uint32_t i = 0; i < g.streamCount; i++)
@@ -710,11 +773,12 @@ namespace rhi {
             device.stats.indirectDraws++;
         }
 
-        void NullCommandList::DrawIndexedIndirectCount(BufferHandle args, uint64_t, BufferHandle countBuffer, uint64_t, uint32_t,
-                                                       uint32_t) {
+        void NullCommandList::DrawIndexedIndirectCount(BufferHandle args, uint64_t, BufferHandle countBuffer,
+                                                       uint64_t, uint32_t, uint32_t) {
             CheckDraw("DrawIndexedIndirectCount");
             device.Validator().ExpectBuffer(args, State::IndirectArgument, "DrawIndexedIndirectCount args");
-            device.Validator().ExpectBuffer(countBuffer, State::IndirectArgument, "DrawIndexedIndirectCount count");
+            device.Validator().ExpectBuffer(countBuffer, State::IndirectArgument,
+                                            "DrawIndexedIndirectCount count");
             if (!indexBuffer)
                 Error("DrawIndexedIndirectCount without an index buffer");
             device.stats.indirectDraws++;
@@ -755,7 +819,8 @@ namespace rhi {
         void NullDevice::Submit(QueueType queue, const SubmitDesc& desc) {
             for (const FenceOp& w : desc.waits)
                 if (FenceValue(w.fence) < w.value)
-                    ReportDeviceError("Submit waits on a fence value that was never signalled (would deadlock)");
+                    ReportDeviceError(
+                        "Submit waits on a fence value that was never signalled (would deadlock)");
             for (CommandList* list : desc.lists) {
                 auto* null = static_cast<NullCommandList*>(list);
                 if (null->labelDepth != 0)
@@ -771,7 +836,9 @@ namespace rhi {
 
         class NullSwapchain final : public Swapchain {
         public:
-            NullSwapchain(NullDevice& device, const SwapchainDesc& desc) : device(device), desc(desc) { Build(); }
+            NullSwapchain(NullDevice& device, const SwapchainDesc& desc) : device(device), desc(desc) {
+                Build();
+            }
             ~NullSwapchain() override { Free(); }
 
             bool Acquire(Image& out) override {
@@ -810,7 +877,8 @@ namespace rhi {
                     td.format = Format::BGRA8Unorm;
                     td.width = width;
                     td.height = height;
-                    td.usage = TextureUsage::ColorTarget | TextureUsage::CopySrc | (desc.allowSampling ? TextureUsage::Sampled : TextureUsage::None);
+                    td.usage = TextureUsage::ColorTarget | TextureUsage::CopySrc |
+                               (desc.allowSampling ? TextureUsage::Sampled : TextureUsage::None);
                     td.name = "backbuffer";
                     images.push_back(device.CreateTexture(td));
                 }
@@ -853,7 +921,9 @@ namespace rhi {
     }
 
     namespace backends {
-        std::unique_ptr<Instance> CreateNullInstance(const InstanceOptions&) { return std::make_unique<NullInstance>(); }
+        std::unique_ptr<Instance> CreateNullInstance(const InstanceOptions&) {
+            return std::make_unique<NullInstance>();
+        }
     }
 
     // test hooks: validator state of a null device

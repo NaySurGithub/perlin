@@ -136,42 +136,51 @@ namespace rhi::vk {
 
     class CmdList final : public CommandList {
     public:
-        CmdList(Device& device, QueueType queue, VkCommandBuffer cmd) : device(device), queue(queue), cmd(cmd) {}
+        CmdList(Device& device, QueueType queue, VkCommandBuffer cmd)
+            : device(device), queue(queue), cmd(cmd) {}
 
         QueueType Queue() const override { return queue; }
         void Begin();
         void End();
         VkCommandBuffer Cmd() const { return cmd; }
 
-        void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) override;
+        void Barrier(std::span<const TextureBarrier> textures,
+                     std::span<const BufferBarrier> buffers) override;
         void UavBarrier(BufferHandle buffer) override;
         void UavBarrier(TextureHandle texture) override;
-        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) override;
-        void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) override;
-        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) override;
+        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                        uint64_t size) override;
+        void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
+        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
         void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) override;
         void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) override;
         void ResolveTexture(TextureHandle dst, TextureHandle src) override;
         void BeginRendering(const RenderingDesc& desc) override;
         void EndRendering() override;
         void SetPipeline(PipelineHandle pipeline) override;
-        void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) override;
+        void SetBindGroup(uint32_t set, BindGroupHandle group,
+                          std::span<const uint32_t> dynamicOffsets) override;
         void PushConstants(const void* data, uint32_t bytes, uint32_t offset) override;
         void SetViewport(const Viewport& viewport) override;
         void SetScissor(const Rect& rect) override;
         void SetVertexBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset) override;
         void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset) override;
         void SetStencilReference(uint32_t value) override;
-        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) override;
-        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset,
-                         uint32_t firstInstance) override;
-        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) override;
-        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset,
-                                      uint32_t maxDraws, uint32_t stride) override;
+        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                  uint32_t firstInstance) override;
+        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                         int32_t vertexOffset, uint32_t firstInstance) override;
+        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                 uint32_t stride) override;
+        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                      uint64_t countOffset, uint32_t maxDraws, uint32_t stride) override;
         void Dispatch(uint32_t x, uint32_t y, uint32_t z) override;
         void DispatchIndirect(BufferHandle args, uint64_t offset) override;
         void WriteTimestamp(QuerySetHandle set, uint32_t index) override;
-        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) override;
+        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                            uint64_t dstOffset) override;
         void BeginDebugLabel(const char* name, uint32_t rgba) override;
         void EndDebugLabel() override;
         void* NativeHandle() override { return cmd; }
@@ -231,7 +240,8 @@ namespace rhi::vk {
 
     class Device final : public rhi::Device {
     public:
-        Device(std::shared_ptr<InstanceState> inst, const PhysicalInfo& phys, const AdapterInfo& adapter, const DeviceOptions& options);
+        Device(std::shared_ptr<InstanceState> inst, const PhysicalInfo& phys, const AdapterInfo& adapter,
+               const DeviceOptions& options);
         ~Device() override;
         bool Init(std::string& error);
 
@@ -292,7 +302,8 @@ namespace rhi::vk {
         float TimestampPeriodNs() const override { return caps.limits.timestampPeriodNs; }
 
         VkFormat FormatToVk(Format f) const;
-        VkImageView View(TextureRec& tex, const SubresourceRange& range, TextureDim dim, Format format, bool stencil);
+        VkImageView View(TextureRec& tex, const SubresourceRange& range, TextureDim dim, Format format,
+                         bool stencil);
         VkImageView AttachmentView(TextureHandle h, uint32_t mip, uint32_t layer);
         TextureHandle WrapSwapchainImage(VkImage image, const TextureDesc& desc, VkFormat format);
         void DestroyWrapped(TextureHandle h);
@@ -336,8 +347,8 @@ namespace rhi::vk {
 
         std::array<QueueInfo, kQueueCount> queues;
         mutable DeviceStats stats;
-        std::atomic<uint64_t> drawCount{0}, dispatchCount{0}, indirectCount{0}, barrierCount{0}, pipelineBindCount{0},
-            groupBindCount{0}, submitCount{0};
+        std::atomic<uint64_t> drawCount{0}, dispatchCount{0}, indirectCount{0}, barrierCount{0},
+            pipelineBindCount{0}, groupBindCount{0}, submitCount{0};
         std::atomic<int64_t> bufferBytes{0}, textureBytes{0};
         std::atomic<int32_t> liveBuffers{0}, liveTextures{0}, livePipelines{0}, liveGroups{0};
 
@@ -361,7 +372,8 @@ namespace rhi::vk {
         std::array<float, 8> queuePriorities{};
         std::array<uint32_t, kQueueCount> queueIndex{};
         VkDescriptorSetLayout emptySetLayout = VK_NULL_HANDLE;
-        VkImageView MakeView(TextureRec& tex, const SubresourceRange& range, VkImageViewType type, VkFormat format, VkImageAspectFlags aspect);
+        VkImageView MakeView(TextureRec& tex, const SubresourceRange& range, VkImageViewType type,
+                             VkFormat format, VkImageAspectFlags aspect);
 
         std::mutex descriptorMutex;
         std::vector<VkDescriptorPool> persistentPools;

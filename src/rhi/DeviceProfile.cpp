@@ -10,22 +10,32 @@
 namespace rhi {
     const char* TierName(Tier tier) {
         switch (tier) {
-        case Tier::Minimal: return "minimal";
-        case Tier::Low: return "low";
-        case Tier::Medium: return "medium";
-        case Tier::High: return "high";
-        case Tier::Ultra: return "ultra";
+        case Tier::Minimal:
+            return "minimal";
+        case Tier::Low:
+            return "low";
+        case Tier::Medium:
+            return "medium";
+        case Tier::High:
+            return "high";
+        case Tier::Ultra:
+            return "ultra";
         }
         return "medium";
     }
 
     const char* UpscalerName(Upscaler u) {
         switch (u) {
-        case Upscaler::Native: return "native";
-        case Upscaler::Spatial: return "spatial";
-        case Upscaler::Fsr: return "fsr";
-        case Upscaler::XeSS: return "xess";
-        case Upscaler::Dlss: return "dlss";
+        case Upscaler::Native:
+            return "native";
+        case Upscaler::Spatial:
+            return "spatial";
+        case Upscaler::Fsr:
+            return "fsr";
+        case Upscaler::XeSS:
+            return "xess";
+        case Upscaler::Dlss:
+            return "dlss";
         }
         return "native";
     }
@@ -35,25 +45,30 @@ namespace rhi {
 
         uint64_t UsableMemory(const AdapterInfo& a) {
             // integrated parts share system memory; only part of it is realistically the gpu's
-            return a.type == AdapterType::Discrete ? a.dedicatedVram : (std::max)(a.dedicatedVram, a.sharedMemory / 2);
+            return a.type == AdapterType::Discrete ? a.dedicatedVram
+                                                   : (std::max)(a.dedicatedVram, a.sharedMemory / 2);
         }
 
-        bool IsSoftware(const AdapterInfo& a) { return a.type == AdapterType::Cpu || a.type == AdapterType::Virtual; }
+        bool IsSoftware(const AdapterInfo& a) {
+            return a.type == AdapterType::Cpu || a.type == AdapterType::Virtual;
+        }
 
         // packed VK_API_VERSION 1.3: a driver this new is recent enough to trust with the whole renderer
         constexpr uint32_t kVulkan13 = (1u << 22) | (3u << 12);
 
         bool Contains(const std::string& haystack, const char* needle) {
             std::string h = haystack;
-            std::transform(h.begin(), h.end(), h.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            std::transform(h.begin(), h.end(), h.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
             return h.contains(needle);
         }
 
         // vulkan implemented on top of another api, or in software: works, but never beats the native path
         bool IsTranslationLayer(const AdapterInfo& a) {
-            return a.api == Api::Vulkan && (Contains(a.driverName, "dozen") || Contains(a.driverName, "moltenvk") ||
-                                           Contains(a.driverName, "gfxstream") || Contains(a.driverName, "venus") ||
-                                           Contains(a.name, "d3d12") || Contains(a.name, "microsoft direct3d"));
+            return a.api == Api::Vulkan &&
+                   (Contains(a.driverName, "dozen") || Contains(a.driverName, "moltenvk") ||
+                    Contains(a.driverName, "gfxstream") || Contains(a.driverName, "venus") ||
+                    Contains(a.name, "d3d12") || Contains(a.name, "microsoft direct3d"));
         }
 
         // what this adapter's driver says about its api: positive favours it, negative steers to another api for the same gpu
@@ -96,18 +111,25 @@ namespace rhi {
                     return -40.0;
                 }
                 return 0.0;
-            default: return 0.0;
+            default:
+                return 0.0;
             }
         }
 
         double ApiBase(Api api, bool windows, bool apple) {
             switch (api) {
-            case Api::Vulkan: return windows ? 100.0 : 110.0;
-            case Api::D3D12: return windows ? 110.0 : 0.0;
-            case Api::Metal: return apple ? 120.0 : 0.0;
-            case Api::D3D11: return 40.0;
-            case Api::WebGPU: return 30.0;
-            default: return 0.0;
+            case Api::Vulkan:
+                return windows ? 100.0 : 110.0;
+            case Api::D3D12:
+                return windows ? 110.0 : 0.0;
+            case Api::Metal:
+                return apple ? 120.0 : 0.0;
+            case Api::D3D11:
+                return 40.0;
+            case Api::WebGPU:
+                return 30.0;
+            default:
+                return 0.0;
             }
         }
     }
@@ -121,11 +143,21 @@ namespace rhi {
             return -1e9;
         // the api score only breaks ties between adapters of the same quality; the adapter class dominates
         switch (a.type) {
-        case AdapterType::Discrete: s += 1000; break;
-        case AdapterType::Integrated: s += 300; break;
-        case AdapterType::Unknown: s += 200; break;
-        case AdapterType::Virtual: s -= 400; break;
-        case AdapterType::Cpu: s -= 800; break;
+        case AdapterType::Discrete:
+            s += 1000;
+            break;
+        case AdapterType::Integrated:
+            s += 300;
+            break;
+        case AdapterType::Unknown:
+            s += 200;
+            break;
+        case AdapterType::Virtual:
+            s -= 400;
+            break;
+        case AdapterType::Cpu:
+            s -= 800;
+            break;
         }
         const double gib = static_cast<double>(UsableMemory(a)) / static_cast<double>(kGiB);
         s += 40.0 * std::log2(1.0 + gib);
@@ -143,7 +175,8 @@ namespace rhi {
                 s -= 60;
         }
         // d3d12 on pre-xe intel and old mobile parts is the more mature path
-        if (windows && a.vendorId == vendor_id::kIntel && a.type == AdapterType::Integrated && a.api == Api::Vulkan)
+        if (windows && a.vendorId == vendor_id::kIntel && a.type == AdapterType::Integrated &&
+            a.api == Api::Vulkan)
             s -= 30;
         s += DriverAdjust(a, windows, apple, nullptr);
         return s;
@@ -180,7 +213,8 @@ namespace rhi {
     }
 
     void Probe::Sort() {
-        std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
+        std::stable_sort(candidates.begin(), candidates.end(),
+                         [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
     }
 
     Probe ProbeSystem(const ProbeOptions& options) {
@@ -244,15 +278,15 @@ namespace rhi {
     namespace {
         bool Failed(const std::vector<KnownFailure>& failures, const AdapterInfo& a) {
             for (const KnownFailure& f : failures)
-                if (f.api == a.api && f.vendorId == a.vendorId && f.deviceId == a.deviceId && f.driverVersion == a.driverVersion &&
-                    f.count >= 2)
+                if (f.api == a.api && f.vendorId == a.vendorId && f.deviceId == a.deviceId &&
+                    f.driverVersion == a.driverVersion && f.count >= 2)
                     return true;
             return false;
         }
     }
 
-    RenderProfile ChooseProfile(const Probe& probe, const UserChoice& user, const std::vector<KnownFailure>& failures, bool windows,
-                                bool apple) {
+    RenderProfile ChooseProfile(const Probe& probe, const UserChoice& user,
+                                const std::vector<KnownFailure>& failures, bool windows, bool apple) {
         RenderProfile p;
         std::vector<Candidate> pool;
         for (Candidate c : probe.candidates) {
@@ -268,7 +302,8 @@ namespace rhi {
             }
             pool.push_back(std::move(c));
         }
-        std::stable_sort(pool.begin(), pool.end(), [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
+        std::stable_sort(pool.begin(), pool.end(),
+                         [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
 
         // the user's pick goes first, the rest stay behind it as fallbacks
         if (user.api != Api::None || user.adapterIndex >= 0) {
@@ -319,7 +354,9 @@ namespace rhi {
         p.renderDistance = t.render;
         p.lodDistance = t.lod;
         p.maxMeshBuildsPerFrame = t.builds;
-        p.maxAnisotropy = haveCaps ? (std::min)(t.anisotropy, (std::max)(1.0f, best.caps.limits.maxAnisotropy)) : t.anisotropy;
+        p.maxAnisotropy = haveCaps
+                              ? (std::min)(t.anisotropy, (std::max)(1.0f, best.caps.limits.maxAnisotropy))
+                              : t.anisotropy;
         p.msaa = 1;
         p.lodMaxLevel = p.tier >= Tier::High ? 4 : 3;
 
@@ -350,7 +387,8 @@ namespace rhi {
         p.upscalers.push_back(Upscaler::Native);
 
         // frame generation needs headroom and an explicit-api swapchain; it is offered, the vendor layer confirms it
-        p.frameGeneration = user.allowFrameGeneration && p.tier >= Tier::High && best.adapter.type == AdapterType::Discrete &&
+        p.frameGeneration = user.allowFrameGeneration && p.tier >= Tier::High &&
+                            best.adapter.type == AdapterType::Discrete &&
                             (p.api == Api::D3D12 || p.api == Api::Vulkan);
         p.neuralFeatures = haveCaps && (f.cooperativeVector || f.cooperativeMatrix);
         p.renderScale = 1.0f;
@@ -365,7 +403,8 @@ namespace rhi {
     std::string SerializeFailures(const std::vector<KnownFailure>& failures) {
         std::ostringstream out;
         for (const KnownFailure& f : failures)
-            out << ApiId(f.api) << ' ' << f.vendorId << ' ' << f.deviceId << ' ' << f.driverVersion << ' ' << f.count << '\n';
+            out << ApiId(f.api) << ' ' << f.vendorId << ' ' << f.deviceId << ' ' << f.driverVersion << ' '
+                << f.count << '\n';
         return out.str();
     }
 
@@ -384,7 +423,8 @@ namespace rhi {
 
     void RecordFailure(std::vector<KnownFailure>& failures, const AdapterInfo& a) {
         for (KnownFailure& f : failures)
-            if (f.api == a.api && f.vendorId == a.vendorId && f.deviceId == a.deviceId && f.driverVersion == a.driverVersion) {
+            if (f.api == a.api && f.vendorId == a.vendorId && f.deviceId == a.deviceId &&
+                f.driverVersion == a.driverVersion) {
                 f.count++;
                 return;
             }

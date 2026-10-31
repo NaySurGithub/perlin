@@ -529,7 +529,7 @@ namespace perlin {
                 std::string p = ExportDirectory(c);
                 fs::create_directories(p, ec);
                 std::replace(p.begin(), p.end(), '\\', '/');
-                platform->OpenUrl("file:///" + (p.size() && p[0] == '/' ? p.substr(1) : p));
+                platform->OpenUrl("file:///" + (!p.empty() && p[0] == '/' ? p.substr(1) : p));
             } else if (hover == "ex_dl") {
                 if (!u.downloader)
                     u.downloader = std::make_unique<ffmpeg::Downloader>();

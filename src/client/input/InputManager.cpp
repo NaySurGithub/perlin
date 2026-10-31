@@ -57,7 +57,8 @@ namespace perlin {
                     pluginEvents.push_back(p);
                     continue;
                 }
-                if (grabKeyboard && (ev.type == InputEvent::KeyDown || ev.type == InputEvent::KeyUp || ev.type == InputEvent::KeyRepeat)) {
+                if (grabKeyboard && (ev.type == InputEvent::KeyDown || ev.type == InputEvent::KeyUp ||
+                                     ev.type == InputEvent::KeyRepeat)) {
                     p.type = PluginInput::Type::Key;
                     p.code = ev.key;
                     p.down = ev.type != InputEvent::KeyUp;
@@ -66,7 +67,8 @@ namespace perlin {
                     if (ev.type == InputEvent::KeyDown && ev.key == Key::Escape) {
                         const auto now = std::chrono::steady_clock::now();
                         escapes = {escapes[1], escapes[2], now};
-                        if (escapes[0].time_since_epoch().count() != 0 && now - escapes[0] < std::chrono::milliseconds(1500))
+                        if (escapes[0].time_since_epoch().count() != 0 &&
+                            now - escapes[0] < std::chrono::milliseconds(1500))
                             failsafe = true;
                     }
                     continue;
@@ -100,15 +102,15 @@ namespace perlin {
                 if (ev.type == InputEvent::Char)
                     typed.push_back({true, ev.key, false});
                 else if (ev.type == InputEvent::KeyDown || ev.type == InputEvent::KeyRepeat)
-                    typed.push_back({false, ev.key, input.IsKeyDown(Key::Control), input.IsKeyDown(Key::Shift)});
+                    typed.push_back(
+                        {false, ev.key, input.IsKeyDown(Key::Control), input.IsKeyDown(Key::Shift)});
                 continue;
             }
             if (ev.type == InputEvent::KeyDown) {
                 if (ev.key != Key::F3 && input.IsKeyDown(Key::F3))
                     continue;
                 Dispatch(Binding::KeyboardKey(ev.key));
-            }
-            else if (ev.type == InputEvent::MouseDown)
+            } else if (ev.type == InputEvent::MouseDown)
                 Dispatch(Binding::MouseButton(ev.key));
             else if (ev.type == InputEvent::PadDown)
                 Dispatch(Binding::PadButton(ev.key));
@@ -137,7 +139,9 @@ namespace perlin {
             look.yaw = dx * sens;
             look.pitch = dy * sens * (options.invertMouse ? 1.0f : -1.0f);
             const auto now = std::chrono::steady_clock::now();
-            const float dt = lastPoll.time_since_epoch().count() == 0 ? 0.0f : std::min(0.1f, std::chrono::duration<float>(now - lastPoll).count());
+            const float dt = lastPoll.time_since_epoch().count() == 0
+                                 ? 0.0f
+                                 : std::min(0.1f, std::chrono::duration<float>(now - lastPoll).count());
             lastPoll = now;
             const float sx = input.PadLookX(), sy = input.PadLookY();
             if (dt > 0.0f && (sx != 0.0f || sy != 0.0f)) {
@@ -154,7 +158,8 @@ namespace perlin {
         lastMouseX = mx;
         lastMouseY = my;
         haveMouse = true;
-        if (!blocked && !input.TextMode()) pressed |= controlPressed;
+        if (!blocked && !input.TextMode())
+            pressed |= controlPressed;
         controlPressed.reset();
     }
 
@@ -166,13 +171,32 @@ namespace perlin {
         if (locks) {
             const bool all = (locks & 4u) != 0;
             switch (action) {
-                case Action::Forward: if (all || (locks & 512u)) return false; break;
-                case Action::Back: if (all || (locks & 1024u)) return false; break;
-                case Action::Left: if (all || (locks & 2048u) || (locks & 16u)) return false; break;
-                case Action::Right: if (all || (locks & 4096u) || (locks & 16u)) return false; break;
-                case Action::Jump: if (all || (locks & 64u)) return false; break;
-                case Action::Sneak: if (locks & 32u) return false; break;
-                default: break;
+            case Action::Forward:
+                if (all || (locks & 512u))
+                    return false;
+                break;
+            case Action::Back:
+                if (all || (locks & 1024u))
+                    return false;
+                break;
+            case Action::Left:
+                if (all || (locks & 2048u) || (locks & 16u))
+                    return false;
+                break;
+            case Action::Right:
+                if (all || (locks & 4096u) || (locks & 16u))
+                    return false;
+                break;
+            case Action::Jump:
+                if (all || (locks & 64u))
+                    return false;
+                break;
+            case Action::Sneak:
+                if (locks & 32u)
+                    return false;
+                break;
+            default:
+                break;
             }
         }
         if (controlled)
@@ -183,7 +207,8 @@ namespace perlin {
         if (pb.device == Binding::Device::Gamepad && input.IsPadDown(pb.code))
             return true;
         const Binding& b = options.GetKey(action);
-        if ((grabMouse && b.device == Binding::Device::Mouse) || (grabKeyboard && b.device == Binding::Device::Keyboard))
+        if ((grabMouse && b.device == Binding::Device::Mouse) ||
+            (grabKeyboard && b.device == Binding::Device::Keyboard))
             return false;
         switch (b.device) {
         case Binding::Device::Keyboard:

@@ -37,7 +37,8 @@
 #include <vector>
 
 namespace rhi::d3d11 {
-    using CompileFn = HRESULT(WINAPI*)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob**, ID3DBlob**);
+    using CompileFn = HRESULT(WINAPI*)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR,
+                                       LPCSTR, UINT, UINT, ID3DBlob**, ID3DBlob**);
 
     struct Library {
         HMODULE d3d11 = nullptr;
@@ -174,38 +175,52 @@ namespace rhi::d3d11 {
         // a recorded list keeps its resources alive; swapchain buffers cannot be resized while one does
         void ReleaseFinished() { finished = nullptr; }
 
-        void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) override;
+        void Barrier(std::span<const TextureBarrier> textures,
+                     std::span<const BufferBarrier> buffers) override;
         void UavBarrier(BufferHandle) override;
         void UavBarrier(TextureHandle) override;
-        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) override;
-        void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) override;
-        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) override;
+        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                        uint64_t size) override;
+        void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
+        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
         void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) override;
         void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) override;
         void ResolveTexture(TextureHandle dst, TextureHandle src) override;
         void BeginRendering(const RenderingDesc& desc) override;
         void EndRendering() override;
         void SetPipeline(PipelineHandle pipeline) override;
-        void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) override;
+        void SetBindGroup(uint32_t set, BindGroupHandle group,
+                          std::span<const uint32_t> dynamicOffsets) override;
         void PushConstants(const void* data, uint32_t bytes, uint32_t offset) override;
         void SetViewport(const Viewport& viewport) override;
         void SetScissor(const Rect& rect) override;
         void SetVertexBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset) override;
         void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset) override;
         void SetStencilReference(uint32_t value) override;
-        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) override;
-        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) override;
-        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) override;
-        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset, uint32_t maxDraws,
-                                      uint32_t stride) override;
+        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                  uint32_t firstInstance) override;
+        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                         int32_t vertexOffset, uint32_t firstInstance) override;
+        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                 uint32_t stride) override;
+        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                      uint64_t countOffset, uint32_t maxDraws, uint32_t stride) override;
         void Dispatch(uint32_t x, uint32_t y, uint32_t z) override;
         void DispatchIndirect(BufferHandle args, uint64_t offset) override;
         void WriteTimestamp(QuerySetHandle set, uint32_t index) override;
-        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) override;
+        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                            uint64_t dstOffset) override;
         void BeginDebugLabel(const char* name, uint32_t rgba) override;
         void EndDebugLabel() override;
         void* NativeHandle() override { return ctx.get(); }
-        void InvalidateBoundState() override { dirtySets = 0xF; pipelineDirty = true; vertexDirty = 0xFF; indexDirty = true; }
+        void InvalidateBoundState() override {
+            dirtySets = 0xF;
+            pipelineDirty = true;
+            vertexDirty = 0xFF;
+            indexDirty = true;
+        }
 
     private:
         bool PrepareDraw();
@@ -267,7 +282,8 @@ namespace rhi::d3d11 {
 
     class Device final : public rhi::Device {
     public:
-        Device(std::shared_ptr<InstanceState> instance, winrt::com_ptr<IDXGIAdapter1> adapter, const AdapterInfo& info, const DeviceOptions& options);
+        Device(std::shared_ptr<InstanceState> instance, winrt::com_ptr<IDXGIAdapter1> adapter,
+               const AdapterInfo& info, const DeviceOptions& options);
         ~Device() override;
 
         bool Init(std::string& error);
@@ -318,7 +334,9 @@ namespace rhi::d3d11 {
         void BeginFrame() override;
         void EndFrame() override;
         uint64_t FrameNumber() const override { return frame; }
-        uint32_t FrameSlot() const override { return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight)); }
+        uint32_t FrameSlot() const override {
+            return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight));
+        }
         void WaitIdle() override;
 
         MemoryBudget QueryMemoryBudget() override;
@@ -335,7 +353,8 @@ namespace rhi::d3d11 {
         void ReportError(const std::string& message);
         std::unique_lock<std::mutex> LockContext() { return std::unique_lock<std::mutex>(ctxMutex); }
 
-        ID3D11ShaderResourceView* SrvOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format, bool stencil);
+        ID3D11ShaderResourceView* SrvOf(Texture& texture, const SubresourceRange& range, TextureDim dim,
+                                        Format format, bool stencil);
         ID3D11UnorderedAccessView* UavOf(Texture& texture, const SubresourceRange& range, TextureDim dim);
         ID3D11RenderTargetView* RtvOf(Texture& texture, uint32_t mip, uint32_t layer);
         ID3D11DepthStencilView* DsvOf(Texture& texture, uint32_t mip, uint32_t layer, bool readOnly);
@@ -360,8 +379,8 @@ namespace rhi::d3d11 {
     private:
         friend class CmdList;
         void FillCaps();
-        bool CompileStage(const Shader& shader, const PipelineLayoutDesc& layout, uint32_t stageIndex, std::vector<StageSlot>& slots,
-                          winrt::com_ptr<ID3DBlob>& blob, std::string& error);
+        bool CompileStage(const Shader& shader, const PipelineLayoutDesc& layout, uint32_t stageIndex,
+                          std::vector<StageSlot>& slots, winrt::com_ptr<ID3DBlob>& blob, std::string& error);
         void PollFence(Fence& fence);
         void MarkSubmitted(FenceHandle fence, uint64_t value);
 

@@ -40,9 +40,14 @@ int main(int argc, char** argv) {
             Float3 multiplier{f(0), f(1), f(2)}, movement{f(3), f(4), f(5)}, velocity{f(6), f(7), f(8)};
             ApplyBlockSlowdown(multiplier, movement, velocity);
             for (int axis = 0; axis < 3; ++axis) {
-                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{multiplier.x, multiplier.y, multiplier.z}[axis])) == words[axis + 9];
-                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{movement.x, movement.y, movement.z}[axis])) == words[axis + 12];
-                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{velocity.x, velocity.y, velocity.z}[axis])) == words[axis + 15];
+                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{
+                             multiplier.x, multiplier.y, multiplier.z}[axis])) == words[axis + 9];
+                equal &=
+                    std::bit_cast<uint32_t>(
+                        (std::array<float, 3>{movement.x, movement.y, movement.z}[axis])) == words[axis + 12];
+                equal &=
+                    std::bit_cast<uint32_t>(
+                        (std::array<float, 3>{velocity.x, velocity.y, velocity.z}[axis])) == words[axis + 15];
             }
             ++direct;
         } else if (kind == 'P') {
@@ -55,14 +60,16 @@ int main(int argc, char** argv) {
             AccumulateBlockSlowdown(multiplier, {f(4), f(5), f(6)}, first);
             equal = first && static_cast<uint32_t>(*first) + 1 == words[7];
             for (int axis = 0; axis < 3; ++axis)
-                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{multiplier.x, multiplier.y, multiplier.z}[axis])) == words[axis + 8];
+                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{
+                             multiplier.x, multiplier.y, multiplier.z}[axis])) == words[axis + 8];
             ++producer;
         } else if (kind == 'I') {
             Float3 multiplier{f(1), f(2), f(3)};
             std::optional<bool> first;
             ApplyPlayerSlowdownImmunity(multiplier, first, words[0] & 1, words[0] & 4);
             for (int axis = 0; axis < 3; ++axis)
-                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{multiplier.x, multiplier.y, multiplier.z}[axis])) == words[axis + 4];
+                equal &= std::bit_cast<uint32_t>((std::array<float, 3>{
+                             multiplier.x, multiplier.y, multiplier.z}[axis])) == words[axis + 4];
             ++immunity;
         } else {
             if (words[0] > 255)
@@ -75,13 +82,17 @@ int main(int argc, char** argv) {
         if (!equal) {
             if (failures < 20)
                 std::fprintf(stderr, "BDS slowdown %c case %d differs\n", kind,
-                             kind == 'D' ? direct - 1 : kind == 'P' ? producer - 1 : kind == 'I' ? immunity - 1 : fall - 1);
+                             kind == 'D'   ? direct - 1
+                             : kind == 'P' ? producer - 1
+                             : kind == 'I' ? immunity - 1
+                                           : fall - 1);
             ++failures;
         }
     }
     if (!input.eof() || direct != 1024 || producer != 768 || fall != 256 || immunity != 256)
         return 1;
-    std::printf("BDS slowdown: %d apply, %d accumulation, %d fall-distance, %d immunity cases, %d mismatches (bit-exact)\n",
+    std::printf("BDS slowdown: %d apply, %d accumulation, %d fall-distance, %d immunity cases, %d mismatches "
+                "(bit-exact)\n",
                 direct, producer, fall, immunity, failures);
     return failures ? 1 : 0;
 }

@@ -32,7 +32,9 @@ namespace perlin {
         if (PERLIN_ENV("PERLIN_JAVA_DBG")) {
             static int q = 0;
             if (q++ == 0) {
-                std::fprintf(stderr, "[javadbg] quad0 v0=(%.2f,%.2f,%.2f) uv0=(%.4f,%.4f) light0=(%.1f,%.1f) block=%u flip=%d\n",
+                std::fprintf(stderr,
+                             "[javadbg] quad0 v0=(%.2f,%.2f,%.2f) uv0=(%.4f,%.4f) light0=(%.1f,%.1f) "
+                             "block=%u flip=%d\n",
                              v[0][0], v[0][1], v[0][2], uv[0][0], uv[0][1], light[0][0], light[0][1],
                              static_cast<unsigned>(curBlock), flip ? 1 : 0);
             }
@@ -166,7 +168,8 @@ namespace perlin {
                     i + 1 < n ? sections[i + 1].start[l] : static_cast<uint32_t>(indices[l].size());
                 sections[i].count[l] = end - sections[i].start[l];
             }
-        std::erase_if(sections,
-                      [](const MeshSection& s) { return !s.count[0] && !s.count[1] && !s.count[2] && !s.count[3] && !s.count[4]; });
+        std::erase_if(sections, [](const MeshSection& s) {
+            return !s.count[0] && !s.count[1] && !s.count[2] && !s.count[3] && !s.count[4];
+        });
     }
 }

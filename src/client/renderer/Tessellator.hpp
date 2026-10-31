@@ -63,7 +63,12 @@ namespace perlin {
     public:
         static void SetCaptureQuadInfo(bool on) { capture.store(on, std::memory_order_relaxed); }
         static bool CaptureQuadInfo() { return capture.load(std::memory_order_relaxed); }
-        void SetBlock(uint16_t id, float x, float y, float z) { curBlock = id; curX = x; curY = y; curZ = z; }
+        void SetBlock(uint16_t id, float x, float y, float z) {
+            curBlock = id;
+            curX = x;
+            curY = y;
+            curZ = z;
+        }
         const std::vector<QuadInfo>& Quads() const { return quads; }
 
         void Begin();

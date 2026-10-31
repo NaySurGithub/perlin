@@ -13,43 +13,95 @@ namespace perlin::entity {
     namespace {
         float BedYaw(int direction) {
             switch (direction & 3) {
-                case 0: return 0.0f;
-                case 1: return 90.0f;
-                case 2: return 180.0f;
-                default: return 270.0f;
+            case 0:
+                return 0.0f;
+            case 1:
+                return 90.0f;
+            case 2:
+                return 180.0f;
+            default:
+                return 270.0f;
             }
         }
 
         void BedStep(int direction, int& dx, int& dz) {
             switch (direction & 3) {
-                case 0: dx = 0; dz = 1; break;
-                case 1: dx = -1; dz = 0; break;
-                case 2: dx = 0; dz = -1; break;
-                default: dx = 1; dz = 0; break;
+            case 0:
+                dx = 0;
+                dz = 1;
+                break;
+            case 1:
+                dx = -1;
+                dz = 0;
+                break;
+            case 2:
+                dx = 0;
+                dz = -1;
+                break;
+            default:
+                dx = 1;
+                dz = 0;
+                break;
             }
         }
 
         float FacingYaw(int facing) {
             switch (facing) {
-                case 2: return 180.0f;
-                case 4: return 90.0f;
-                case 5: return 270.0f;
-                default: return 0.0f;
+            case 2:
+                return 180.0f;
+            case 4:
+                return 90.0f;
+            case 5:
+                return 270.0f;
+            default:
+                return 0.0f;
             }
         }
 
         const char* BannerPatternName(const std::string& code) {
             static const std::unordered_map<std::string, const char*> kNames = {
-                {"bl", "square_bottom_left"}, {"br", "square_bottom_right"}, {"tl", "square_top_left"}, {"tr", "square_top_right"},
-                {"bs", "stripe_bottom"}, {"ts", "stripe_top"}, {"ls", "stripe_left"}, {"rs", "stripe_right"},
-                {"cs", "stripe_center"}, {"ms", "stripe_middle"}, {"drs", "stripe_downright"}, {"dls", "stripe_downleft"},
-                {"ss", "small_stripes"}, {"cr", "cross"}, {"sc", "straight_cross"}, {"bt", "triangle_bottom"},
-                {"tt", "triangle_top"}, {"bts", "triangles_bottom"}, {"tts", "triangles_top"}, {"ld", "diagonal_left"},
-                {"rd", "diagonal_up_right"}, {"lud", "diagonal_up_left"}, {"rud", "diagonal_right"}, {"mc", "circle"},
-                {"mr", "rhombus"}, {"vh", "half_vertical"}, {"hh", "half_horizontal"}, {"vhr", "half_vertical_right"},
-                {"hhb", "half_horizontal_bottom"}, {"bo", "border"}, {"cbo", "curly_border"}, {"gra", "gradient"},
-                {"gru", "gradient_up"}, {"bri", "bricks"}, {"glb", "globe"}, {"cre", "creeper"}, {"sku", "skull"},
-                {"flo", "flower"}, {"moj", "mojang"}, {"pig", "piglin"}, {"flw", "flow"}, {"gus", "guster"}};
+                {"bl", "square_bottom_left"},
+                {"br", "square_bottom_right"},
+                {"tl", "square_top_left"},
+                {"tr", "square_top_right"},
+                {"bs", "stripe_bottom"},
+                {"ts", "stripe_top"},
+                {"ls", "stripe_left"},
+                {"rs", "stripe_right"},
+                {"cs", "stripe_center"},
+                {"ms", "stripe_middle"},
+                {"drs", "stripe_downright"},
+                {"dls", "stripe_downleft"},
+                {"ss", "small_stripes"},
+                {"cr", "cross"},
+                {"sc", "straight_cross"},
+                {"bt", "triangle_bottom"},
+                {"tt", "triangle_top"},
+                {"bts", "triangles_bottom"},
+                {"tts", "triangles_top"},
+                {"ld", "diagonal_left"},
+                {"rd", "diagonal_up_right"},
+                {"lud", "diagonal_up_left"},
+                {"rud", "diagonal_right"},
+                {"mc", "circle"},
+                {"mr", "rhombus"},
+                {"vh", "half_vertical"},
+                {"hh", "half_horizontal"},
+                {"vhr", "half_vertical_right"},
+                {"hhb", "half_horizontal_bottom"},
+                {"bo", "border"},
+                {"cbo", "curly_border"},
+                {"gra", "gradient"},
+                {"gru", "gradient_up"},
+                {"bri", "bricks"},
+                {"glb", "globe"},
+                {"cre", "creeper"},
+                {"sku", "skull"},
+                {"flo", "flower"},
+                {"moj", "mojang"},
+                {"pig", "piglin"},
+                {"flw", "flow"},
+                {"gus", "guster"}};
             const auto it = kNames.find(code);
             return it == kNames.end() ? nullptr : it->second;
         }
@@ -63,7 +115,8 @@ namespace perlin::entity {
                 layers = be->patterns;
                 if (be->bannerType == 1 && layers.empty()) {
                     base = 15;
-                    layers = {{"mr", 6}, {"bs", 7}, {"cs", 8}, {"bo", 7}, {"ms", 0}, {"hh", 7}, {"mc", 7}, {"bo", 0}};
+                    layers = {{"mr", 6}, {"bs", 7}, {"cs", 8}, {"bo", 7},
+                              {"ms", 0}, {"hh", 7}, {"mc", 7}, {"bo", 0}};
                 }
             } else if (const char* forced = std::getenv("PERLIN_PREVIEW_BANNER")) {
                 std::string spec = forced;
@@ -83,20 +136,26 @@ namespace perlin::entity {
             d.color = 15 - std::clamp(base, 0, 15);
             for (const auto& [code, colour] : layers)
                 if (const char* name = BannerPatternName(code))
-                    d.patterns.emplace_back(std::string("textures/entity/banner/banner_") + name, 15 - std::clamp(colour, 0, 15));
+                    d.patterns.emplace_back(std::string("textures/entity/banner/banner_") + name,
+                                            15 - std::clamp(colour, 0, 15));
         }
 
         int FacingToGround(int facing) {
             switch (facing) {
-                case 2: return 8;
-                case 4: return 4;
-                case 5: return 12;
-                default: return 0;
+            case 2:
+                return 8;
+            case 4:
+                return 4;
+            case 5:
+                return 12;
+            default:
+                return 0;
             }
         }
     }
 
-    void BuildBlockEntityDraws(const std::vector<SpecialBlock>& specials, const BlockEntityStore& store, std::vector<BlockEntityDraw>& out) {
+    void BuildBlockEntityDraws(const std::vector<SpecialBlock>& specials, const BlockEntityStore& store,
+                               std::vector<BlockEntityDraw>& out) {
         BlockPalette& palette = BlockPalette::Instance();
         std::set<std::tuple<int, int, int>> beds;
         const char* forced = std::getenv("PERLIN_PREVIEW_SIGNTEXT");
@@ -126,7 +185,8 @@ namespace perlin::entity {
                 out.push_back(std::move(d));
                 continue;
             }
-            if (shortName == "chest" || shortName == "trapped_chest" || shortName == "ender_chest" || shortName.ends_with("copper_chest")) {
+            if (shortName == "chest" || shortName == "trapped_chest" || shortName == "ender_chest" ||
+                shortName.ends_with("copper_chest")) {
                 std::string dir = palette.StateString(s.id, "minecraft:cardinal_direction", "");
                 if (dir.empty()) {
                     static const char* const kFacing[] = {"south", "south", "north", "south", "west", "east"};
@@ -136,7 +196,12 @@ namespace perlin::entity {
                 d.kind = BlockEntityDraw::Kind::Skull;
                 d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
                 d.yaw = dir == "north" ? 180.0f : dir == "west" ? 90.0f : dir == "east" ? 270.0f : 0.0f;
-                const int rx = dir == "south" ? 1 : dir == "north" ? -1 : 0, rz = dir == "west" ? 1 : dir == "east" ? -1 : 0;
+                const int rx = dir == "south"   ? 1
+                               : dir == "north" ? -1
+                                                : 0,
+                          rz = dir == "west"   ? 1
+                               : dir == "east" ? -1
+                                               : 0;
                 const bool gallery = std::getenv("PERLIN_PREVIEW_GALLERY") != nullptr;
                 const auto pairedWith = [&](int ox, int oz) {
                     BlockEntity other;
@@ -151,7 +216,9 @@ namespace perlin::entity {
                 };
                 int side = 0;
                 if (store.Get(s.x, s.y, s.z, be) && be.paired) {
-                    side = be.pairX == s.x + rx && be.pairZ == s.z + rz ? 1 : be.pairX == s.x - rx && be.pairZ == s.z - rz ? -1 : 0;
+                    side = be.pairX == s.x + rx && be.pairZ == s.z + rz   ? 1
+                           : be.pairX == s.x - rx && be.pairZ == s.z - rz ? -1
+                                                                          : 0;
                 } else if (pairedWith(s.x - rx, s.z - rz)) {
                     side = -1;
                 } else if (pairedWith(s.x + rx, s.z + rz)) {
@@ -162,11 +229,11 @@ namespace perlin::entity {
                 bool large = side > 0;
                 const int px = s.x + rx, pz = s.z + rz;
                 const bool ender = shortName == "ender_chest", trapped = shortName == "trapped_chest";
-                const int copper = shortName.contains("oxidized")   ? 4
-                                   : shortName.contains("weathered") ? 3
-                                   : shortName.contains("exposed")   ? 2
-                                   : shortName.ends_with("copper_chest")              ? 1
-                                                                                      : 0;
+                const int copper = shortName.contains("oxidized")        ? 4
+                                   : shortName.contains("weathered")     ? 3
+                                   : shortName.contains("exposed")       ? 2
+                                   : shortName.ends_with("copper_chest") ? 1
+                                                                         : 0;
                 if (ender)
                     large = false;
                 if (large)
@@ -181,8 +248,9 @@ namespace perlin::entity {
                 out.push_back(std::move(d));
                 continue;
             }
-            static const char* const kSkulls[] = {"skeleton_skull", "wither_skeleton_skull", "zombie_head", "player_head",
-                                                   "creeper_head", "dragon_head", "piglin_head"};
+            static const char* const kSkulls[] = {"skeleton_skull", "wither_skeleton_skull", "zombie_head",
+                                                  "player_head",    "creeper_head",          "dragon_head",
+                                                  "piglin_head"};
             int skull = -1;
             for (int k = 0; k < 7; k++)
                 if (shortName == kSkulls[k])
@@ -196,7 +264,8 @@ namespace perlin::entity {
                     d.yaw = FacingYaw(palette.StateInt(s.id, "facing_direction", 3));
                 } else {
                     d.skull = 12;
-                    d.yaw = static_cast<float>(palette.StateInt(s.id, "ground_sign_direction", 0) % 16) * 22.5f;
+                    d.yaw =
+                        static_cast<float>(palette.StateInt(s.id, "ground_sign_direction", 0) % 16) * 22.5f;
                 }
                 const bool has = store.Get(s.x, s.y, s.z, be);
                 BannerLayers(has ? &be : nullptr, d);
@@ -212,9 +281,10 @@ namespace perlin::entity {
                 continue;
             }
             if (shortName.contains("copper_golem_statue")) {
-                const int level = shortName.contains("oxidized") ? 3
+                const int level = shortName.contains("oxidized")    ? 3
                                   : shortName.contains("weathered") ? 2
-                                  : shortName.contains("exposed") ? 1 : 0;
+                                  : shortName.contains("exposed")   ? 1
+                                                                    : 0;
                 BlockEntityDraw d;
                 d.kind = BlockEntityDraw::Kind::Skull;
                 d.skull = 7 + level;
@@ -265,7 +335,8 @@ namespace perlin::entity {
                 const bool hangs = palette.StateInt(s.id, "hanging", 0) != 0;
                 if (hangs) {
                     const bool attached = palette.StateInt(s.id, "attached_bit", 0) != 0;
-                    const int k = attached ? palette.StateInt(s.id, "ground_sign_direction", 0) % 16 : FacingToGround(facing);
+                    const int k = attached ? palette.StateInt(s.id, "ground_sign_direction", 0) % 16
+                                           : FacingToGround(facing);
                     d.yaw = static_cast<float>(k) * 22.5f;
                 } else
                     d.yaw = FacingYaw(facing);

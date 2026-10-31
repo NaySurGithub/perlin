@@ -1,4 +1,5 @@
 #include "client/PerlinPause.hpp"
+#include "client/update/Updater.hpp"
 #include "util/Log.hpp"
 
 namespace perlin {
@@ -513,6 +514,8 @@ namespace perlin {
                  });
         m.Toggle(detail::TrOr("options.vsync", "VSync"), options.vsync);
         m.Toggle(detail::TrOr("options.fullscreen", "Fullscreen"), options.fullscreen);
+        if (update::Supported())
+            m.Toggle(detail::TrOr("perlin.options.autoUpdate", "Auto Update"), options.autoUpdate);
         m.rows.push_back({std::string("GUI Scale"),
                           options.guiScale == 0 ? detail::TrOr("options.guiScale.auto", "Auto")
                                                 : std::to_string(options.guiScale),
@@ -560,7 +563,7 @@ namespace perlin {
         {
             std::vector<std::pair<std::string, std::string>> apis = {{"auto", "Auto"}};
             for (rhi::Api api : rhi::CompiledApis())
-                apis.push_back({rhi::ApiId(api), rhi::ApiName(api)});
+                apis.emplace_back(rhi::ApiId(api), rhi::ApiName(api));
             size_t at = 0;
             for (size_t i = 0; i < apis.size(); i++)
                 if (apis[i].first == options.renderer)

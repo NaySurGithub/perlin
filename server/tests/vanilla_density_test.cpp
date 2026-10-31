@@ -17,8 +17,14 @@ int main(int argc, char** argv) {
     auto pack = DataPack::Embedded();
     DensityGraph graph(*pack, 12345);
     const char* names[] = {"temp", "veg", "cont", "ero", "depth", "ridges", "surf", "final"};
-    const char* ids[] = {"overworld/temperature", "overworld/vegetation", "overworld/continents", "overworld/erosion", "overworld/depth", "overworld/ridges",
-                         "overworld/chunk_surface_level", "overworld/final_density"};
+    const char* ids[] = {"overworld/temperature",
+                         "overworld/vegetation",
+                         "overworld/continents",
+                         "overworld/erosion",
+                         "overworld/depth",
+                         "overworld/ridges",
+                         "overworld/chunk_surface_level",
+                         "overworld/final_density"};
     std::ifstream in(argv[1]);
     std::string line;
     int bad = 0, checked = 0, skipped = 0;
@@ -41,7 +47,11 @@ int main(int argc, char** argv) {
             for (int k = 0; k < 8; k++)
                 if (name == names[k]) {
                     DfPtr node = graph.Load(ids[k]);
-                    if (!node) { std::printf("missing %s\n", ids[k]); bad++; continue; }
+                    if (!node) {
+                        std::printf("missing %s\n", ids[k]);
+                        bad++;
+                        continue;
+                    }
                     const float got = node->Eval(x, y, z);
                     checked++;
                     if (got != want) {

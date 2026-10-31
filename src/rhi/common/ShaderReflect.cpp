@@ -5,8 +5,12 @@
 
 namespace rhi {
     namespace {
-        bool IsIdent(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'; }
-        bool IsSpace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+        bool IsIdent(char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+        }
+        bool IsSpace(char c) {
+            return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+        }
 
         struct Cursor {
             std::string_view text;
@@ -114,7 +118,9 @@ namespace rhi {
                     r.dim = TextureDim::Cube;
                 } else if (type == "RWTexture2D" || type == "RWTexture2DArray" || type == "RWTexture3D") {
                     r.kind = ResourceKind::StorageTexture;
-                    r.dim = type == "RWTexture2DArray" ? TextureDim::Tex2DArray : type == "RWTexture3D" ? TextureDim::Tex3D : TextureDim::Tex2D;
+                    r.dim = type == "RWTexture2DArray" ? TextureDim::Tex2DArray
+                            : type == "RWTexture3D"    ? TextureDim::Tex3D
+                                                       : TextureDim::Tex2D;
                 } else if (type == "StructuredBuffer" || type == "ByteAddressBuffer") {
                     r.kind = ResourceKind::StorageBuffer;
                 } else if (type == "RWStructuredBuffer" || type == "RWByteAddressBuffer") {
@@ -151,7 +157,8 @@ namespace rhi {
                     out.usesPushConstants = true;
                 if (line.empty() || line[0] != '@')
                     continue;
-                if (line.find("@binding(") == std::string_view::npos || line.find("@group(") == std::string_view::npos)
+                if (line.find("@binding(") == std::string_view::npos ||
+                    line.find("@group(") == std::string_view::npos)
                     continue;
                 ShaderResource r;
                 uint32_t binding = 0, group = 0;
@@ -198,7 +205,8 @@ namespace rhi {
                 if (space.substr(0, 7) == "uniform") {
                     r.kind = ResourceKind::UniformBuffer;
                 } else if (space.substr(0, 7) == "storage") {
-                    r.kind = space.contains("read_write") ? ResourceKind::StorageBufferRW : ResourceKind::StorageBuffer;
+                    r.kind = space.contains("read_write") ? ResourceKind::StorageBufferRW
+                                                          : ResourceKind::StorageBuffer;
                 } else if (starts("sampler_comparison")) {
                     r.kind = ResourceKind::Sampler;
                     r.comparison = true;
@@ -206,16 +214,21 @@ namespace rhi {
                     r.kind = ResourceKind::Sampler;
                 } else if (starts("texture_storage_")) {
                     r.kind = ResourceKind::StorageTexture;
-                    r.dim = starts("texture_storage_2d_array") ? TextureDim::Tex2DArray : starts("texture_storage_3d") ? TextureDim::Tex3D : TextureDim::Tex2D;
+                    r.dim = starts("texture_storage_2d_array") ? TextureDim::Tex2DArray
+                            : starts("texture_storage_3d")     ? TextureDim::Tex3D
+                                                               : TextureDim::Tex2D;
                 } else if (starts("texture_depth_")) {
                     r.kind = ResourceKind::SampledTexture;
                     r.depth = true;
-                    r.dim = starts("texture_depth_2d_array") ? TextureDim::Tex2DArray : starts("texture_depth_cube") ? TextureDim::Cube : TextureDim::Tex2D;
+                    r.dim = starts("texture_depth_2d_array") ? TextureDim::Tex2DArray
+                            : starts("texture_depth_cube")   ? TextureDim::Cube
+                                                             : TextureDim::Tex2D;
                 } else if (starts("texture_")) {
                     r.kind = ResourceKind::SampledTexture;
-                    r.dim = starts("texture_2d_array") ? TextureDim::Tex2DArray : starts("texture_3d") ? TextureDim::Tex3D
-                            : starts("texture_cube")        ? TextureDim::Cube
-                                                            : TextureDim::Tex2D;
+                    r.dim = starts("texture_2d_array") ? TextureDim::Tex2DArray
+                            : starts("texture_3d")     ? TextureDim::Tex3D
+                            : starts("texture_cube")   ? TextureDim::Cube
+                                                       : TextureDim::Tex2D;
                 } else {
                     continue;
                 }
@@ -273,13 +286,17 @@ namespace rhi {
                     if (starts("depth")) {
                         r.depth = true;
                         r.kind = ResourceKind::SampledTexture;
-                        r.dim = starts("depth2d_array") ? TextureDim::Tex2DArray : starts("depthcube") ? TextureDim::Cube : TextureDim::Tex2D;
+                        r.dim = starts("depth2d_array") ? TextureDim::Tex2DArray
+                                : starts("depthcube")   ? TextureDim::Cube
+                                                        : TextureDim::Tex2D;
                     } else {
-                        const bool write = decl.contains("access::write") || decl.contains("access::read_write");
+                        const bool write =
+                            decl.contains("access::write") || decl.contains("access::read_write");
                         r.kind = write ? ResourceKind::StorageTexture : ResourceKind::SampledTexture;
-                        r.dim = starts("texture2d_array") ? TextureDim::Tex2DArray : starts("texture3d") ? TextureDim::Tex3D
-                                : starts("texturecube")        ? TextureDim::Cube
-                                                               : TextureDim::Tex2D;
+                        r.dim = starts("texture2d_array") ? TextureDim::Tex2DArray
+                                : starts("texture3d")     ? TextureDim::Tex3D
+                                : starts("texturecube")   ? TextureDim::Cube
+                                                          : TextureDim::Tex2D;
                     }
                 } else {
                     r.set = 0;
@@ -306,10 +323,17 @@ namespace rhi {
     ShaderInterface ReflectShader(ShaderFormat format, std::string_view source) {
         ShaderInterface out;
         switch (format) {
-        case ShaderFormat::Wgsl: ReflectWgsl(source, out); break;
-        case ShaderFormat::Hlsl: ReflectHlsl(source, out); break;
-        case ShaderFormat::Msl: ReflectMsl(source, out); break;
-        default: break;
+        case ShaderFormat::Wgsl:
+            ReflectWgsl(source, out);
+            break;
+        case ShaderFormat::Hlsl:
+            ReflectHlsl(source, out);
+            break;
+        case ShaderFormat::Msl:
+            ReflectMsl(source, out);
+            break;
+        default:
+            break;
         }
         return out;
     }

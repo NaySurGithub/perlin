@@ -23,30 +23,14 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include "util/Platform.hpp"
 
 namespace perlin {
-    namespace {
-        constexpr uint32_t kControl = static_cast<uint32_t>(abi::Permission::Control);
-        constexpr uint32_t kNetwork = static_cast<uint32_t>(abi::Permission::Network);
-        constexpr uint32_t kPackets = static_cast<uint32_t>(abi::Permission::Packets);
-    }
 
     namespace {
         using abi::Status;
 
-        const char* PlatformName() {
-#if defined(__EMSCRIPTEN__)
-            return "web";
-#elif defined(__ANDROID__)
-            return "android";
-#elif defined(_WIN32)
-            return "windows";
-#elif defined(__APPLE__)
-            return "macos";
-#else
-            return "linux";
-#endif
-        }
+        constexpr const char* PlatformName() { return platform::kName; }
 
         abi::Item ToItem(const BedrockSession::ItemStackInfo& s) {
             abi::Item i;
@@ -157,19 +141,8 @@ namespace perlin {
             return i;
         }
 
-        bool BlockIsAir(const std::string& name) {
-            return name.empty() || name == "minecraft:air" || name == "minecraft:cave_air" ||
-                   name == "minecraft:void_air";
-        }
-
         bool Finite(double v) {
             return std::isfinite(v) && std::fabs(v) < 1.0e7;
-        }
-
-        std::string Trim(std::string s) {
-            while (!s.empty() && (s.back() == ' ' || s.back() == '\n' || s.back() == '\r'))
-                s.pop_back();
-            return s;
         }
 
         struct OptionAccess {
@@ -318,82 +291,63 @@ namespace perlin {
             return Status::Ok;
         });
 
-        mm.Register(
-            Op::InventorySelect,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const int32_t slot = r.get<int32_t>();
-                if (!r.Ok() || slot < 0 || slot > 8)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                hudState.selectedSlot = slot;
-                modLive->SelectHotbarSlot(slot);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::InventorySelect, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t slot = r.get<int32_t>();
+            if (!r.Ok() || slot < 0 || slot > 8)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            hudState.selectedSlot = slot;
+            modLive->SelectHotbarSlot(slot);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::InventoryDrop,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const int32_t count = r.get<int32_t>();
-                if (!r.Ok() || count < 1 || count > 64)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                modLive->SendDropSelected(count);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::InventoryDrop, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t count = r.get<int32_t>();
+            if (!r.Ok() || count < 1 || count > 64)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->SendDropSelected(count);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::InventorySwap,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const int32_t a = r.get<int32_t>(), b = r.get<int32_t>();
-                if (!r.Ok() || a < 0 || b < 0 || a >= BedrockSession::kInvSlots ||
-                    b >= BedrockSession::kInvSlots)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                modLive->SwapInventorySlots(a, b);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::InventorySwap, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t a = r.get<int32_t>(), b = r.get<int32_t>();
+            if (!r.Ok() || a < 0 || b < 0 || a >= BedrockSession::kInvSlots || b >= BedrockSession::kInvSlots)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->SwapInventorySlots(a, b);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::InventoryClick,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const int32_t slot = r.get<int32_t>();
-                const bool right = r.boolean();
-                const bool shift = r.boolean();
-                if (!r.Ok() || slot < 0 || slot >= BedrockSession::kInvSlots)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                if (shift)
-                    modLive->InvShiftClick(slot);
-                else
-                    modLive->InvClick(slot, right);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::InventoryClick, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t slot = r.get<int32_t>();
+            const bool right = r.boolean();
+            const bool shift = r.boolean();
+            if (!r.Ok() || slot < 0 || slot >= BedrockSession::kInvSlots)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            if (shift)
+                modLive->InvShiftClick(slot);
+            else
+                modLive->InvClick(slot, right);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::InventoryOpen,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                if (!modLive)
-                    return Status::Unavailable;
-                return modLive->OpenInventory() ? Status::Ok : Status::Failed;
-            },
-            kControl);
+        mm.Register(Op::InventoryOpen, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            return modLive->OpenInventory() ? Status::Ok : Status::Failed;
+        });
 
-        mm.Register(
-            Op::InventoryClose,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                if (!modLive)
-                    return Status::Unavailable;
-                return modLive->CloseInventory() ? Status::Ok : Status::Failed;
-            },
-            kControl);
+        mm.Register(Op::InventoryClose, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            return modLive->CloseInventory() ? Status::Ok : Status::Failed;
+        });
     }
 
     void Perlin::SetupModWorldApi() {
@@ -567,7 +521,7 @@ namespace perlin {
                 return Status::BadArguments;
             NameCache names;
             std::unordered_map<std::string, uint16_t> index;
-            region.palette.push_back(std::string());
+            region.palette.emplace_back();
             index[std::string()] = 0;
             region.cells.reserve(static_cast<size_t>(region.sx) * static_cast<size_t>(region.sy) *
                                  static_cast<size_t>(region.sz));
@@ -948,25 +902,22 @@ namespace perlin {
             return Status::NotFound;
         });
 
-        mm.Register(
-            Op::OptionSet,
-            [this, optionTable](CallContext&, abi::Reader& r, abi::Writer&) {
-                const std::string key = r.str();
-                const std::string value = r.str();
-                if (!r.Ok())
-                    return Status::BadArguments;
-                for (const OptionAccess& o : optionTable())
-                    if (o.key == key) {
-                        if (!o.set)
-                            return Status::Denied;
-                        if (!o.set(value))
-                            return Status::BadArguments;
-                        options.Save();
-                        return Status::Ok;
-                    }
-                return Status::NotFound;
-            },
-            kControl);
+        mm.Register(Op::OptionSet, [this, optionTable](CallContext&, abi::Reader& r, abi::Writer&) {
+            const std::string key = r.str();
+            const std::string value = r.str();
+            if (!r.Ok())
+                return Status::BadArguments;
+            for (const OptionAccess& o : optionTable())
+                if (o.key == key) {
+                    if (!o.set)
+                        return Status::Denied;
+                    if (!o.set(value))
+                        return Status::BadArguments;
+                    options.Save();
+                    return Status::Ok;
+                }
+            return Status::NotFound;
+        });
 
         mm.Register(Op::Screen, [this](CallContext&, abi::Reader&, abi::Writer& w) {
             abi::ScreenState s;
@@ -1002,14 +953,11 @@ namespace perlin {
             return Status::Ok;
         });
 
-        mm.Register(
-            Op::ReloadResources,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                packUi.foundAt = {};
-                hotTexStamp = "reload";
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::ReloadResources, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            packUi.foundAt = {};
+            hotTexStamp = "reload";
+            return Status::Ok;
+        });
 
         mm.Register(Op::InputActions, [](CallContext&, abi::Reader&, abi::Writer& w) {
             w.put<uint32_t>(static_cast<uint32_t>(kActionCount));
@@ -1077,6 +1025,7 @@ namespace perlin {
 
         mm.Register(Op::ResourcePacks, [this](CallContext&, abi::Reader&, abi::Writer& w) {
             std::vector<abi::PackEntry> out;
+            out.reserve(options.texturePacks.size());
             for (const std::string& name : options.texturePacks)
                 out.push_back({name, false});
             for (const std::string& dir : ServerPacks::Instance().Directories())
@@ -1118,76 +1067,61 @@ namespace perlin {
             return Status::Ok;
         });
 
-        mm.Register(
-            Op::NativeInfo,
-            [this](CallContext&, abi::Reader&, abi::Writer& w) {
-                std::lock_guard lock(modNativeMutex);
-                if (!modNativeReady)
-                    return Status::Unavailable;
-                w.write(modNative);
-                return Status::Ok;
-            },
-            static_cast<uint32_t>(abi::Permission::Native));
+        mm.Register(Op::NativeInfo, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            std::lock_guard lock(modNativeMutex);
+            if (!modNativeReady)
+                return Status::Unavailable;
+            w.write(modNative);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::InputOverride,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const abi::InputOverrideState s = r.read<abi::InputOverrideState>();
-                if (!r.Ok())
-                    return Status::BadArguments;
-                const auto until = std::chrono::steady_clock::now() +
-                                   std::chrono::milliseconds(std::clamp(s.ticks, 0, 200) * 50);
-                const auto epoch = std::chrono::steady_clock::time_point{};
-                inputManager.Hold(Action::Forward, s.forward > 0.3f ? until : epoch);
-                inputManager.Hold(Action::Back, s.forward < -0.3f ? until : epoch);
-                inputManager.Hold(Action::Right, s.strafe > 0.3f ? until : epoch);
-                inputManager.Hold(Action::Left, s.strafe < -0.3f ? until : epoch);
-                inputManager.Hold(Action::Jump, s.jump ? until : epoch);
-                inputManager.Hold(Action::Sneak, s.sneak ? until : epoch);
-                inputManager.Hold(Action::Sprint, s.sprint ? until : epoch);
-                inputManager.Hold(Action::Attack, s.attack ? until : epoch);
-                inputManager.Hold(Action::Use, s.use ? until : epoch);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::InputOverride, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const abi::InputOverrideState s = r.read<abi::InputOverrideState>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            const auto until = std::chrono::steady_clock::now() +
+                               std::chrono::milliseconds(std::clamp(s.ticks, 0, 200) * 50);
+            const auto epoch = std::chrono::steady_clock::time_point{};
+            inputManager.Hold(Action::Forward, s.forward > 0.3f ? until : epoch);
+            inputManager.Hold(Action::Back, s.forward < -0.3f ? until : epoch);
+            inputManager.Hold(Action::Right, s.strafe > 0.3f ? until : epoch);
+            inputManager.Hold(Action::Left, s.strafe < -0.3f ? until : epoch);
+            inputManager.Hold(Action::Jump, s.jump ? until : epoch);
+            inputManager.Hold(Action::Sneak, s.sneak ? until : epoch);
+            inputManager.Hold(Action::Sprint, s.sprint ? until : epoch);
+            inputManager.Hold(Action::Attack, s.attack ? until : epoch);
+            inputManager.Hold(Action::Use, s.use ? until : epoch);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::Jump,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                inputManager.Hold(Action::Jump,
-                                  std::chrono::steady_clock::now() + std::chrono::milliseconds(120));
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::Jump, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            inputManager.Hold(Action::Jump,
+                              std::chrono::steady_clock::now() + std::chrono::milliseconds(120));
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::Chat,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                std::string text = r.str();
-                if (!r.Ok() || text.empty() || text.size() > 512)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                if (text[0] == '/')
-                    modLive->SendCommand(text.substr(1));
-                else
-                    modLive->SendChat(text);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::Chat, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            std::string text = r.str();
+            if (!r.Ok() || text.empty() || text.size() > 512)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            if (text[0] == '/')
+                modLive->SendCommand(text.substr(1));
+            else
+                modLive->SendChat(text);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::Command,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                std::string text = r.str();
-                if (!r.Ok() || text.empty() || text.size() > 512)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                modLive->SendCommand(text[0] == '/' ? text.substr(1) : text);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::Command, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            std::string text = r.str();
+            if (!r.Ok() || text.empty() || text.size() > 512)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->SendCommand(text[0] == '/' ? text.substr(1) : text);
+            return Status::Ok;
+        });
 
         mm.Register(Op::LocalMessage, [this](CallContext&, abi::Reader& r, abi::Writer&) {
             const std::string text = r.str();
@@ -1230,151 +1164,124 @@ namespace perlin {
             return Status::Ok;
         });
 
-        mm.Register(
-            Op::SwingArm,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                if (!modLive)
-                    return Status::Unavailable;
-                handRenderer.Swing(options.hand);
-                modLive->SendSwingArm("build");
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::SwingArm, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("build");
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::UseItem,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                if (!modLive)
-                    return Status::Unavailable;
-                const float eye[3] = {camera.x, camera.y, camera.z};
-                modLive->SendUseItemInAir(eye, false);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::UseItem, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            modLive->SendUseItemInAir(eye, false);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::UseOnBlock,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>(),
-                              face = r.get<int32_t>();
-                if (!r.Ok() || face < 0 || face > 5)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                static const int kOff[6][3] = {{0, -1, 0}, {0, 1, 0},  {0, 0, -1},
-                                               {0, 0, 1},  {-1, 0, 0}, {1, 0, 0}};
-                const auto nameAt = [&](int bx, int by, int bz) {
-                    bool loaded = false;
-                    const uint16_t id = modLive->NetLevel().GetBlock(bx, by, bz, loaded);
-                    return loaded ? BlockPalette::Instance().Name(id) : std::string();
-                };
-                const ui::HudItem& held = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
-                int clicked[3] = {x, y, z};
-                const blockuse::Result use = blockuse::Classify(
-                    nameAt(x, y, z), nameAt(x + kOff[face][0], y + kOff[face][1], z + kOff[face][2]), clicked,
-                    face, !held.Empty(), !held.Empty() && held.blockRuntimeId != 0, player.Sneaking());
-                const float click[3] = {0.5f, 0.5f, 0.5f};
-                const float eye[3] = {camera.x, camera.y, camera.z};
-                int dest[3];
-                std::copy(use.dest, use.dest + 3, dest);
-                handRenderer.Swing(options.hand);
-                modLive->SendSwingArm("build");
-                modLive->SendUseItemOnBlock(x, y, z, face, click, eye, static_cast<int>(use.use), dest);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::UseOnBlock, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>(),
+                          face = r.get<int32_t>();
+            if (!r.Ok() || face < 0 || face > 5)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            static const int kOff[6][3] = {{0, -1, 0}, {0, 1, 0},  {0, 0, -1},
+                                           {0, 0, 1},  {-1, 0, 0}, {1, 0, 0}};
+            const auto nameAt = [&](int bx, int by, int bz) {
+                bool loaded = false;
+                const uint16_t id = modLive->NetLevel().GetBlock(bx, by, bz, loaded);
+                return loaded ? BlockPalette::Instance().Name(id) : std::string();
+            };
+            const ui::HudItem& held = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
+            int clicked[3] = {x, y, z};
+            const blockuse::Result use = blockuse::Classify(
+                nameAt(x, y, z), nameAt(x + kOff[face][0], y + kOff[face][1], z + kOff[face][2]), clicked,
+                face, !held.Empty(), !held.Empty() && held.blockRuntimeId != 0, player.Sneaking());
+            const float click[3] = {0.5f, 0.5f, 0.5f};
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            int dest[3];
+            std::copy(use.dest, use.dest + 3, dest);
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("build");
+            modLive->SendUseItemOnBlock(x, y, z, face, click, eye, static_cast<int>(use.use), dest);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::AttackEntity,
-            [this, ModEntityClick](CallContext&, abi::Reader& r, abi::Writer&) {
-                const uint64_t id = r.get<uint64_t>();
-                if (!r.Ok())
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                entity::Entity e;
-                if (!modLive->Entities().Find(id, e))
-                    return Status::NotFound;
-                const float eye[3] = {camera.x, camera.y, camera.z};
-                const glm::vec3 offset = ModEntityClick(e);
-                const float click[3] = {offset.x, offset.y, offset.z};
-                handRenderer.Swing(options.hand);
-                modLive->SendSwingArm("attack");
-                modLive->SendAttackEntity(id, eye, click);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::AttackEntity, [this, ModEntityClick](CallContext&, abi::Reader& r, abi::Writer&) {
+            const uint64_t id = r.get<uint64_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            entity::Entity e;
+            if (!modLive->Entities().Find(id, e))
+                return Status::NotFound;
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            const glm::vec3 offset = ModEntityClick(e);
+            const float click[3] = {offset.x, offset.y, offset.z};
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("attack");
+            modLive->SendAttackEntity(id, eye, click);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::InteractEntity,
-            [this, ModEntityClick](CallContext&, abi::Reader& r, abi::Writer&) {
-                const uint64_t id = r.get<uint64_t>();
-                if (!r.Ok())
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                entity::Entity e;
-                if (!modLive->Entities().Find(id, e))
-                    return Status::NotFound;
-                const float eye[3] = {camera.x, camera.y, camera.z};
-                const glm::vec3 offset = ModEntityClick(e);
-                const float click[3] = {offset.x, offset.y, offset.z};
-                handRenderer.Swing(options.hand);
-                modLive->SendSwingArm("interact");
-                modLive->SendInteractEntity(id, eye, click);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::InteractEntity, [this, ModEntityClick](CallContext&, abi::Reader& r, abi::Writer&) {
+            const uint64_t id = r.get<uint64_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            entity::Entity e;
+            if (!modLive->Entities().Find(id, e))
+                return Status::NotFound;
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            const glm::vec3 offset = ModEntityClick(e);
+            const float click[3] = {offset.x, offset.y, offset.z};
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("interact");
+            modLive->SendInteractEntity(id, eye, click);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::BreakBlock,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>(),
-                              face = r.get<int32_t>();
-                if (!r.Ok() || face < 0 || face > 5)
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                handRenderer.Swing(options.hand);
-                modLive->SendSwingArm("mine");
-                modLive->SendPlayerAuthInputBlockAction(0, x, y, z, face);
-                if (modLive->GameType() == 1)
-                    modLive->SendPlayerAuthInputBlockAction(1, x, y, z, face);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::BreakBlock, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>(),
+                          face = r.get<int32_t>();
+            if (!r.Ok() || face < 0 || face > 5)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("mine");
+            modLive->SendPlayerAuthInputBlockAction(0, x, y, z, face);
+            if (modLive->GameType() == 1)
+                modLive->SendPlayerAuthInputBlockAction(1, x, y, z, face);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::Look,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const float yaw = r.get<float>(), pitch = r.get<float>();
-                if (!r.Ok() || !std::isfinite(yaw) || !std::isfinite(pitch))
-                    return Status::BadArguments;
-                camera.yaw = yaw + 90.0f;
-                camera.pitch = std::clamp(-pitch, -89.0f, 89.0f);
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::Look, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const float yaw = r.get<float>(), pitch = r.get<float>();
+            if (!r.Ok() || !std::isfinite(yaw) || !std::isfinite(pitch))
+                return Status::BadArguments;
+            camera.yaw = yaw + 90.0f;
+            camera.pitch = std::clamp(-pitch, -89.0f, 89.0f);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::Respawn,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                if (!modLive)
-                    return Status::Unavailable;
-                modLive->RequestRespawn();
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::Respawn, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->RequestRespawn();
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::Disconnect,
-            [this](CallContext&, abi::Reader&, abi::Writer&) {
-                if (!platform)
-                    return Status::Unavailable;
-                platform->isRunning = false;
-                return Status::Ok;
-            },
-            kControl);
+        mm.Register(Op::Disconnect, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!platform)
+                return Status::Unavailable;
+            platform->isRunning = false;
+            return Status::Ok;
+        });
 
         mm.Register(Op::PlaySound, [this](CallContext&, abi::Reader& r, abi::Writer&) {
             const std::string name = r.str();
@@ -1398,45 +1305,39 @@ namespace perlin {
             return Status::Ok;
         });
 
-        mm.Register(
-            Op::HttpRequest,
-            [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
-                const uint32_t id = r.get<uint32_t>();
-                std::string method = r.str();
-                std::string url = r.str();
-                const int32_t timeout = r.get<int32_t>();
-                const uint32_t count = r.get<uint32_t>();
-                std::vector<std::pair<std::string, std::string>> headers;
-                for (uint32_t i = 0; i < count && i < 64 && r.Ok(); i++) {
-                    std::string k = r.str();
-                    headers.emplace_back(std::move(k), r.str());
-                }
-                std::vector<uint8_t> body = r.bytes();
-                if (!r.Ok() || body.size() > (4u << 20))
-                    return Status::BadArguments;
-                if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE" &&
-                    method != "PATCH" && method != "HEAD")
-                    return Status::BadArguments;
-                if (modHttpActive.load() >= 6)
-                    return Status::Unavailable;
-                StartModHttp(ctx.plugin, id, std::move(method), std::move(url),
-                             std::clamp(timeout, 500, 60000), std::move(headers), std::move(body));
-                return Status::Ok;
-            },
-            kNetwork);
+        mm.Register(Op::HttpRequest, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const uint32_t id = r.get<uint32_t>();
+            std::string method = r.str();
+            std::string url = r.str();
+            const int32_t timeout = r.get<int32_t>();
+            const uint32_t count = r.get<uint32_t>();
+            std::vector<std::pair<std::string, std::string>> headers;
+            for (uint32_t i = 0; i < count && i < 64 && r.Ok(); i++) {
+                std::string k = r.str();
+                headers.emplace_back(std::move(k), r.str());
+            }
+            std::vector<uint8_t> body = r.bytes();
+            if (!r.Ok() || body.size() > (4u << 20))
+                return Status::BadArguments;
+            if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE" &&
+                method != "PATCH" && method != "HEAD")
+                return Status::BadArguments;
+            if (modHttpActive.load() >= 6)
+                return Status::Unavailable;
+            StartModHttp(ctx.plugin, id, std::move(method), std::move(url), std::clamp(timeout, 500, 60000),
+                         std::move(headers), std::move(body));
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::PacketSend,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const uint32_t id = r.get<uint32_t>();
-                std::vector<uint8_t> body = r.bytes();
-                if (!r.Ok() || body.size() > (64u << 20))
-                    return Status::BadArguments;
-                if (!modLive)
-                    return Status::Unavailable;
-                return modLive->SendRaw(id, body) ? Status::Ok : Status::Failed;
-            },
-            kPackets);
+        mm.Register(Op::PacketSend, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const uint32_t id = r.get<uint32_t>();
+            std::vector<uint8_t> body = r.bytes();
+            if (!r.Ok() || body.size() > (64u << 20))
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            return modLive->SendRaw(id, body) ? Status::Ok : Status::Failed;
+        });
 
         mm.Register(Op::PacketName, [](CallContext&, abi::Reader& r, abi::Writer& w) {
             const uint32_t id = r.get<uint32_t>();
@@ -1483,8 +1384,6 @@ namespace perlin {
         using abi::Op;
         using abi::Status;
         using mods::CallContext;
-        const uint32_t network = static_cast<uint32_t>(abi::Permission::Network);
-        const uint32_t files = static_cast<uint32_t>(abi::Permission::Files);
 
         mm.Register(Op::OpenScreen, [this](CallContext&, abi::Reader& r, abi::Writer&) {
             const auto screen = r.read<abi::Screen>();
@@ -1554,19 +1453,16 @@ namespace perlin {
             return Status::Ok;
         });
 
-        mm.Register(
-            Op::OpenUrl,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                std::string url = r.str();
-                if (!r.Ok() || !url.starts_with("https://") || url.size() > 2048)
-                    return Status::BadArguments;
-                mods::ModManager::Instance().PostMain([this, url = std::move(url)] {
-                    if (platform)
-                        platform->OpenUrl(url);
-                });
-                return Status::Ok;
-            },
-            network);
+        mm.Register(Op::OpenUrl, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            std::string url = r.str();
+            if (!r.Ok() || !url.starts_with("https://") || url.size() > 2048)
+                return Status::BadArguments;
+            mods::ModManager::Instance().PostMain([this, url = std::move(url)] {
+                if (platform)
+                    platform->OpenUrl(url);
+            });
+            return Status::Ok;
+        });
 
         mm.Register(Op::ToggleHud, [this](CallContext&, abi::Reader&, abi::Writer&) {
             mods::ModManager::Instance().PostMain([this] { options.showHud = !options.showHud; });
@@ -1625,31 +1521,26 @@ namespace perlin {
             }
             return ec ? Status::Failed : Status::Ok;
         };
-        mm.Register(
-            Op::CopyFile,
-            [transfer](CallContext& ctx, abi::Reader& r, abi::Writer&) { return transfer(false, ctx, r); },
-            files);
-        mm.Register(
-            Op::MoveFile,
-            [transfer](CallContext& ctx, abi::Reader& r, abi::Writer&) { return transfer(true, ctx, r); },
-            files);
-        mm.Register(
-            Op::DownloadFile,
-            [this, resolve](CallContext& ctx, abi::Reader& r, abi::Writer&) {
-                const uint32_t request = r.get<uint32_t>();
-                const std::string url = r.str();
-                const auto to = r.read<abi::FileLocation>();
-                std::filesystem::path dst;
-                if (!r.Ok() || !url.starts_with("https://") || url.size() > 2048 || !resolve(ctx, to, dst))
-                    return Status::BadArguments;
-                std::error_code ec;
-                if (to.area != abi::Area::Mod && std::filesystem::exists(dst, ec))
-                    return Status::Failed;
-                if (modHttpActive.load() >= 6)
-                    return Status::Unavailable;
-                StartModHttp(ctx.plugin, request, "GET", url, 30000, {}, {}, dst.string());
-                return Status::Ok;
-            },
-            network | files);
+        mm.Register(Op::CopyFile, [transfer](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            return transfer(false, ctx, r);
+        });
+        mm.Register(Op::MoveFile, [transfer](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            return transfer(true, ctx, r);
+        });
+        mm.Register(Op::DownloadFile, [this, resolve](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const uint32_t request = r.get<uint32_t>();
+            const std::string url = r.str();
+            const auto to = r.read<abi::FileLocation>();
+            std::filesystem::path dst;
+            if (!r.Ok() || !url.starts_with("https://") || url.size() > 2048 || !resolve(ctx, to, dst))
+                return Status::BadArguments;
+            std::error_code ec;
+            if (to.area != abi::Area::Mod && std::filesystem::exists(dst, ec))
+                return Status::Failed;
+            if (modHttpActive.load() >= 6)
+                return Status::Unavailable;
+            StartModHttp(ctx.plugin, request, "GET", url, 30000, {}, {}, dst.string());
+            return Status::Ok;
+        });
     }
 }

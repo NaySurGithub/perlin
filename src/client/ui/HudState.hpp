@@ -30,8 +30,9 @@ namespace perlin::ui {
         }
         bool operator==(const HudItem& o) const {
             return name == o.name && count == o.count && aux == o.aux && blockRuntimeId == o.blockRuntimeId &&
-                   maxDamage == o.maxDamage && enchanted == o.enchanted && customName == o.customName && hasColor == o.hasColor &&
-                   color == o.color && nbtTags == o.nbtTags && enchants == o.enchants && lore == o.lore;
+                   maxDamage == o.maxDamage && enchanted == o.enchanted && customName == o.customName &&
+                   hasColor == o.hasColor && color == o.color && nbtTags == o.nbtTags &&
+                   enchants == o.enchants && lore == o.lore;
         }
     };
 

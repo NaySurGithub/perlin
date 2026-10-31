@@ -57,7 +57,8 @@ namespace perlin::server {
                 const rhi::Candidate* pick = nullptr;
                 rhi::ShaderLibrary library;
                 std::string packError;
-                if (!library.Load(std::span<const uint8_t>(kTerrainShaderPack, kTerrainShaderPackSize), &packError)) {
+                if (!library.Load(std::span<const uint8_t>(kTerrainShaderPack, kTerrainShaderPackSize),
+                                  &packError)) {
                     note = "terrain shader pack: " + packError;
                     return false;
                 }
@@ -70,13 +71,18 @@ namespace perlin::server {
                 for (const rhi::Candidate& c : probe.candidates) {
                     if (!c.adapter.usable)
                         continue;
-                    if (library.Code(*program, rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(c.adapter.api)).empty())
+                    if (library
+                            .Code(*program, rhi::ShaderStage::Compute,
+                                  rhi::ShaderLibrary::TargetFor(c.adapter.api))
+                            .empty())
                         continue;
                     pick = &c;
                     break;
                 }
                 if (!pick) {
-                    note = po.allowSoftware ? "no graphics device with a compute shader for it" : "no hardware graphics device (software devices are skipped in auto mode)";
+                    note = po.allowSoftware
+                               ? "no graphics device with a compute shader for it"
+                               : "no hardware graphics device (software devices are skipped in auto mode)";
                     return false;
                 }
 
@@ -95,12 +101,14 @@ namespace perlin::server {
                     return false;
                 }
                 const rhi::Api api = pick->adapter.api;
-                const auto code = library.Code(*program, rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(api));
+                const auto code =
+                    library.Code(*program, rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(api));
                 rhi::ShaderDesc sd;
                 sd.stage = rhi::ShaderStage::Compute;
                 sd.format = rhi::ShaderLibrary::FormatFor(rhi::ShaderLibrary::TargetFor(api));
                 sd.code = code;
-                sd.entry = rhi::ShaderLibrary::EntryFor(rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(api));
+                sd.entry = rhi::ShaderLibrary::EntryFor(rhi::ShaderStage::Compute,
+                                                        rhi::ShaderLibrary::TargetFor(api));
                 sd.name = "terrain_flat";
                 shader = device->CreateShader(sd);
 
@@ -196,7 +204,8 @@ namespace perlin::server {
                 cmd->SetBindGroup(0, bindGroup);
                 PushParams push{count, static_cast<uint32_t>(seed), static_cast<uint32_t>(seed >> 32), 0};
                 cmd->PushConstants(&push, sizeof push);
-                const uint32_t groups = static_cast<uint32_t>((static_cast<uint64_t>(count) * kCellsPerChunk + 63) / 64);
+                const uint32_t groups =
+                    static_cast<uint32_t>((static_cast<uint64_t>(count) * kCellsPerChunk + 63) / 64);
                 cmd->Dispatch(groups, 1, 1);
                 rhi::BufferBarrier toCopy;
                 toCopy.buffer = cellBuffer;

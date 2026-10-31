@@ -9,7 +9,8 @@ namespace rhi::metal {
         class SwapchainImpl final : public Swapchain {
         public:
             SwapchainImpl(Device& device, const SwapchainDesc& desc)
-                : device(device), desc(desc), width(desc.width), height(desc.height), presentMode(desc.present), hdr(desc.hdr) {}
+                : device(device), desc(desc), width(desc.width), height(desc.height),
+                  presentMode(desc.present), hdr(desc.hdr) {}
 
             ~SwapchainImpl() override {
                 device.WaitIdle();
@@ -22,7 +23,8 @@ namespace rhi::metal {
                 id object = (__bridge id)desc.window.window;
                 if ([object isKindOfClass:[CAMetalLayer class]]) {
                     layer = object;
-                } else if ([object respondsToSelector:NSSelectorFromString([NSString stringWithUTF8String:"layer"])]) {
+                } else if ([object respondsToSelector:NSSelectorFromString(
+                                                          [NSString stringWithUTF8String:"layer"])]) {
                     // an NSView / UIView whose backing layer is the metal layer
                     id backing = [object valueForKey:[NSString stringWithUTF8String:"layer"]];
                     if ([backing isKindOfClass:[CAMetalLayer class]])
@@ -34,7 +36,9 @@ namespace rhi::metal {
                 layer.device = device.Dev();
                 layer.pixelFormat = hdr ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
                 layer.framebufferOnly = !desc.allowSampling;
-                layer.maximumDrawableCount = std::clamp(desc.imageCount, 2u, 3u);
+                // three drawables whatever was asked: with two, nextDrawable blocks whenever the display holds one and
+                // the gpu the other, which is a whole refresh of stall every time a frame runs a little long
+                layer.maximumDrawableCount = 3;
 #if TARGET_OS_OSX
                 if (hdr) {
                     layer.wantsExtendedDynamicRangeContent = YES;
@@ -116,10 +120,14 @@ namespace rhi::metal {
 
         uint32_t VendorOf(NSString* name) {
             NSString* n = [name lowercaseString];
-            if ([n containsString:@"apple"]) return vendor_id::kApple;
-            if ([n containsString:@"amd"] || [n containsString:@"radeon"]) return vendor_id::kAmd;
-            if ([n containsString:@"nvidia"] || [n containsString:@"geforce"]) return vendor_id::kNvidia;
-            if ([n containsString:@"intel"]) return vendor_id::kIntel;
+            if ([n containsString:@"apple"])
+                return vendor_id::kApple;
+            if ([n containsString:@"amd"] || [n containsString:@"radeon"])
+                return vendor_id::kAmd;
+            if ([n containsString:@"nvidia"] || [n containsString:@"geforce"])
+                return vendor_id::kNvidia;
+            if ([n containsString:@"intel"])
+                return vendor_id::kIntel;
             return 0;
         }
 
@@ -152,15 +160,17 @@ namespace rhi::metal {
                     a.dedicatedVram = d.hasUnifiedMemory ? 0 : d.recommendedMaxWorkingSetSize;
                     a.sharedMemory = d.hasUnifiedMemory ? d.recommendedMaxWorkingSetSize : 0;
 #if TARGET_OS_OSX
-                    a.type = d.hasUnifiedMemory || d.lowPower ? AdapterType::Integrated : AdapterType::Discrete;
+                    a.type =
+                        d.hasUnifiedMemory || d.lowPower ? AdapterType::Integrated : AdapterType::Discrete;
                     if (d.isRemovable)
                         a.type = AdapterType::Discrete;
 #else
                     a.type = AdapterType::Integrated;
 #endif
                     a.apiVersion = 0;
-                    for (const MTLGPUFamily fam : {MTLGPUFamilyApple9, MTLGPUFamilyApple8, MTLGPUFamilyApple7, MTLGPUFamilyApple6, MTLGPUFamilyApple5,
-                                                   MTLGPUFamilyApple4, MTLGPUFamilyApple3})
+                    for (const MTLGPUFamily fam :
+                         {MTLGPUFamilyApple9, MTLGPUFamilyApple8, MTLGPUFamilyApple7, MTLGPUFamilyApple6,
+                          MTLGPUFamilyApple5, MTLGPUFamilyApple4, MTLGPUFamilyApple3})
                         if ([d supportsFamily:fam]) {
                             a.apiVersion = static_cast<uint32_t>(fam);
                             break;
@@ -180,9 +190,11 @@ namespace rhi::metal {
             const std::vector<AdapterInfo>& Adapters() const override { return adapters; }
 
             std::unique_ptr<rhi::Device> CreateDevice(const DeviceOptions& deviceOptions) override {
-                if (deviceOptions.adapterIndex >= adapters.size() || !adapters[deviceOptions.adapterIndex].usable)
+                if (deviceOptions.adapterIndex >= adapters.size() ||
+                    !adapters[deviceOptions.adapterIndex].usable)
                     return nullptr;
-                auto device = std::make_unique<Device>(native[deviceOptions.adapterIndex], deviceOptions, adapters[deviceOptions.adapterIndex]);
+                auto device = std::make_unique<Device>(native[deviceOptions.adapterIndex], deviceOptions,
+                                                       adapters[deviceOptions.adapterIndex]);
                 if (!device->Init()) {
                     std::fprintf(stderr, "[metal] device creation failed\n");
                     return nullptr;

@@ -34,5 +34,6 @@ namespace perlin::ui {
     void CreativeTabPos(int tab, int& x, int& y, bool& top);
     void CreativeSlotPos(const std::string& id, bool survival, int& x, int& y);
     std::string DefaultCreativeScreenTemplate();
-    std::string BuildCreativeScreenRml(const std::string& templateText, const CreativeView& view, int guiW, int guiH);
+    std::string BuildCreativeScreenRml(const std::string& templateText, const CreativeView& view, int guiW,
+                                       int guiH);
 }

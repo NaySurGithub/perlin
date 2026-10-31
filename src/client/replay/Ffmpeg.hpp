@@ -79,8 +79,10 @@ namespace perlin::replay::ffmpeg {
     };
     bool PlanEncode(const Settings& s, const Catalog& cat, EncodePlan& plan, std::string& error);
 
-    bool WritePngBgra(const std::string& path, int w, int h, const uint8_t* bgra, size_t pitch, bool flipY, bool keepAlpha);
-    std::vector<uint8_t> DownscaleBgra(const uint8_t* bgra, int w, int h, size_t pitch, bool flipY, int outW, int outH);
+    bool WritePngBgra(const std::string& path, int w, int h, const uint8_t* bgra, size_t pitch, bool flipY,
+                      bool keepAlpha);
+    std::vector<uint8_t> DownscaleBgra(const uint8_t* bgra, int w, int h, size_t pitch, bool flipY, int outW,
+                                       int outH);
 
     class Encoder {
     public:

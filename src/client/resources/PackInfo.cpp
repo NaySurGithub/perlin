@@ -19,8 +19,8 @@ namespace perlin {
     namespace {
 
         void StripBom(std::string& text) {
-            if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
-                static_cast<unsigned char>(text[2]) == 0xBF)
+            if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF &&
+                static_cast<unsigned char>(text[1]) == 0xBB && static_cast<unsigned char>(text[2]) == 0xBF)
                 text.erase(0, 3);
         }
 
@@ -64,9 +64,10 @@ namespace perlin {
 
         void Flatten(const ui::Json& node, std::string& out, const std::string& inheritedCode) {
             static const std::pair<const char*, char> kColors[] = {
-                {"black", '0'}, {"dark_blue", '1'}, {"dark_green", '2'}, {"dark_aqua", '3'}, {"dark_red", '4'}, {"dark_purple", '5'},
-                {"gold", '6'}, {"gray", '7'}, {"dark_gray", '8'}, {"blue", '9'}, {"green", 'a'}, {"aqua", 'b'}, {"red", 'c'},
-                {"light_purple", 'd'}, {"yellow", 'e'}, {"white", 'f'}};
+                {"black", '0'},     {"dark_blue", '1'},    {"dark_green", '2'}, {"dark_aqua", '3'},
+                {"dark_red", '4'},  {"dark_purple", '5'},  {"gold", '6'},       {"gray", '7'},
+                {"dark_gray", '8'}, {"blue", '9'},         {"green", 'a'},      {"aqua", 'b'},
+                {"red", 'c'},       {"light_purple", 'd'}, {"yellow", 'e'},     {"white", 'f'}};
             if (node.IsString()) {
                 out += node.string;
                 return;
@@ -84,8 +85,10 @@ namespace perlin {
                     if (color->StringOr("") == name)
                         code = std::string("\xC2\xA7") + letter;
             std::string styles;
-            for (const auto& [key, letter] : {std::pair<const char*, char>{"bold", 'l'}, {"italic", 'o'}, {"obfuscated", 'k'}})
-                if (const ui::Json* flag = node.Find(key); flag && flag->type == ui::Json::Type::Bool && flag->boolean)
+            for (const auto& [key, letter] :
+                 {std::pair<const char*, char>{"bold", 'l'}, {"italic", 'o'}, {"obfuscated", 'k'}})
+                if (const ui::Json* flag = node.Find(key);
+                    flag && flag->type == ui::Json::Type::Bool && flag->boolean)
                     styles += std::string("\xC2\xA7") + letter;
             const bool formatted = !code.empty() || !styles.empty();
             if (formatted)
@@ -153,7 +156,8 @@ namespace perlin {
                     if (const ui::Json* v = header->Find("version"))
                         if (v->IsArray()) {
                             for (size_t i = 0; i < v->array.size(); i++)
-                                meta.version += (i ? "." : "") + std::to_string(static_cast<int>(v->array[i].NumberOr(0)));
+                                meta.version += (i ? "." : "") +
+                                                std::to_string(static_cast<int>(v->array[i].NumberOr(0)));
                         }
                 }
         } else if (src.Read("pack.json", text)) {
@@ -177,7 +181,9 @@ namespace perlin {
             meta.name = TrimExt(p.filename().string());
         for (const char* icon : {"pack_icon.png", "pack.png", "icon.png"}) {
             std::string bytes;
-            if (src.Read(icon, bytes) && LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), meta.icon)) {
+            if (src.Read(icon, bytes) &&
+                LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(),
+                                  meta.icon)) {
                 meta.hasIcon = true;
                 break;
             }

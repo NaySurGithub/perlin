@@ -64,7 +64,9 @@ namespace perlin::fs {
     }
 
     using Location = abi::FileLocation;
-    inline Location in(Area area, std::string_view path) { return {area, std::string(path)}; }
+    inline Location in(Area area, std::string_view path) {
+        return {area, std::string(path)};
+    }
 
     inline Result<void> copy(const Location& from, const Location& to) {
         abi::Writer w;
@@ -84,8 +86,7 @@ namespace perlin {
     public:
         explicit Config(std::string file = "config.cfg") : path(std::move(file)) { load(); }
 
-        template <class T>
-        T get(std::string_view key, T fallback = T{}) const {
+        template <class T> T get(std::string_view key, T fallback = T{}) const {
             const auto it = values.find(std::string(key));
             if (it == values.end())
                 return fallback;
@@ -103,8 +104,7 @@ namespace perlin {
             }
         }
 
-        template <class T>
-        Config& set(std::string_view key, const T& value) {
+        template <class T> Config& set(std::string_view key, const T& value) {
             if constexpr (std::is_same_v<T, bool>)
                 values[std::string(key)] = value ? "true" : "false";
             else if constexpr (std::is_convertible_v<T, std::string_view>)
@@ -190,7 +190,10 @@ namespace perlin::net {
     inline Result<uint32_t> send(const Request& request, Callback callback) {
         const uint32_t id = detail_net::counter()++;
         abi::Writer w;
-        w.put(id).str(request.method).str(request.url).put<int32_t>(static_cast<int32_t>(request.timeout.count()));
+        w.put(id)
+            .str(request.method)
+            .str(request.url)
+            .put<int32_t>(static_cast<int32_t>(request.timeout.count()));
         w.put<uint32_t>(static_cast<uint32_t>(request.headers.size()));
         for (const Header& h : request.headers)
             w.str(h.name).str(h.value);
@@ -208,7 +211,8 @@ namespace perlin::net {
         return send(r, std::move(callback));
     }
 
-    inline Result<uint32_t> post(std::string url, std::string body, std::string content_type, Callback callback) {
+    inline Result<uint32_t> post(std::string url, std::string body, std::string content_type,
+                                 Callback callback) {
         Request r;
         r.method = "POST";
         r.url = std::move(url);

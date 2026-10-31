@@ -75,7 +75,9 @@ namespace perlin::server {
         // operators may be listed by name or by xuid; with xbox_auth only an xuid is a safe key
         bool IsOperator(const std::string& name, const std::string& xuid) const;
         // allowlist.json (bds name; whitelist.json is read instead when it exists)
-        bool IsWhitelisted(const std::string& name, const std::string& xuid) const { return allowList.Contains(name, xuid); }
+        bool IsWhitelisted(const std::string& name, const std::string& xuid) const {
+            return allowList.Contains(name, xuid);
+        }
         // "visitor", "member" or "operator": the permissions.json entry, else default-player-permission-level
         std::string PermissionOf(const std::string& name, const std::string& xuid) const;
         AccessList& Permissions() { return permissionList; }
@@ -116,7 +118,9 @@ namespace perlin::server {
         int RuleValue(const std::string& lowerName) const;
         bool SetRule(const std::string& lowerName, int value);
 
-        bool IsBanned(const std::string& name, const std::string& xuid) const { return banList.Contains(name, xuid); }
+        bool IsBanned(const std::string& name, const std::string& xuid) const {
+            return banList.Contains(name, xuid);
+        }
         AccessList& Bans() { return banList; }
 
         // players editing the world: the server validates, runs plugin events, applies and tells everyone who has the chunk
@@ -125,7 +129,8 @@ namespace perlin::server {
         void SendBlockTo(Session& to, int x, int y, int z);
         // items in the world: a player throws a stack, a broken block leaves one; Tick moves them and lets players pick them up
         void DropFromPlayer(Session& by, const ItemStack& stack);
-        void SpawnItem(const ItemStack& stack, double x, double y, double z, double vx, double vy, double vz, int pickupDelay);
+        void SpawnItem(const ItemStack& stack, double x, double y, double z, double vx, double vy, double vz,
+                       int pickupDelay);
         const std::vector<ItemEntity>& Items() const { return itemEntities; }
         const std::vector<uint8_t>& ItemRegistryBody() const { return itemRegistryBody; }
         const std::vector<uint8_t>& CreativeContentBody() const { return creativeBody; }
@@ -134,13 +139,15 @@ namespace perlin::server {
         void Broadcast(const std::string& text) override;
         bool Message(uint64_t player, const std::string& text) override;
         bool Kick(uint64_t player, const std::string& reason) override;
-        void RegisterCommand(const std::string& plugin, const std::string& name, const std::string& description) override;
+        void RegisterCommand(const std::string& plugin, const std::string& name,
+                             const std::string& description) override;
         std::vector<PlayerInfo> Players() override;
         bool Teleport(uint64_t player, double x, double y, double z) override;
-        int SetBlock(int x, int y, int z, const std::string& block) override;
-        int GetBlock(int x, int y, int z, std::string& block) override;
+        abi::Status SetBlock(int x, int y, int z, const std::string& block) override;
+        abi::Status GetBlock(int x, int y, int z, std::string& block) override;
         Status GetStatus() override;
-        int GiveItem(uint64_t player, const std::string& item, int count) override;
+        std::expected<int, abi::Status> GiveItem(uint64_t player, const std::string& item,
+                                                 int count) override;
 
         std::string Describe() const;
 
@@ -198,5 +205,6 @@ namespace perlin::server {
     };
 
     // implemented in net/NetherNetListener.cpp when built with nethernet support
-    std::unique_ptr<Listener> CreateNetherNetListener(const ServerConfig& config, std::function<std::string()> infoJson);
+    std::unique_ptr<Listener> CreateNetherNetListener(const ServerConfig& config,
+                                                      std::function<std::string()> infoJson);
 }

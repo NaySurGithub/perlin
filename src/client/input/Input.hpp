@@ -14,8 +14,7 @@ namespace perlin {
 
     inline void AtomicAdd(std::atomic<float>& target, float value) {
         float expected = target.load(std::memory_order_relaxed);
-        while (!target.compare_exchange_weak(expected, expected + value, std::memory_order_relaxed)) {
-        }
+        while (!target.compare_exchange_weak(expected, expected + value, std::memory_order_relaxed)) {}
     }
 
     class Input {
@@ -36,7 +35,10 @@ namespace perlin {
         void OnPadDown(int code);
         void OnPadUp(int code);
         bool IsPadDown(int code) const { return code >= 0 && code < 64 && pad[code]; }
-        void SetPadLook(float x, float y) { padLookX = x; padLookY = y; }
+        void SetPadLook(float x, float y) {
+            padLookX = x;
+            padLookY = y;
+        }
         float PadLookX() const { return padLookX; }
         float PadLookY() const { return padLookY; }
         void SetPadCapture(bool on) { padCapture = on; }

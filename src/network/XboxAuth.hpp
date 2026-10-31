@@ -39,7 +39,8 @@ namespace perlin::xbox {
 
         bool FetchGamertag(std::string& gamertag, std::string& error);
 
-        bool AuthorizationHeader(const std::string& relyingParty, std::string& header, std::string& xuid, std::string& error);
+        bool AuthorizationHeader(const std::string& relyingParty, std::string& header, std::string& xuid,
+                                 std::string& error);
 
         bool ServiceSession(const std::string& gameVersion, ServiceInfo& out, std::string& error);
 
@@ -58,8 +59,8 @@ namespace perlin::xbox {
                                 const std::string& authorization, const std::string& body, int64_t unixNanos,
                                 size_t maxBodyBytes = 0);
         std::string RequestDigest(const std::string& method, const std::string& pathAndQuery,
-                                  const std::string& authorization, const std::string& body, int64_t unixNanos,
-                                  size_t maxBodyBytes = 0);
+                                  const std::string& authorization, const std::string& body,
+                                  int64_t unixNanos, size_t maxBodyBytes = 0);
         void SetTestEndpoint(const std::string& host, uint16_t port);
         int64_t ParseIsoTime(const std::string& iso);
         int64_t ParseHttpDate(const std::string& date);

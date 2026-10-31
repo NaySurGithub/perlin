@@ -52,10 +52,14 @@ namespace perlin::server::json {
                 for (int k = 0; k < 4; k++) {
                     const char c = s[i++];
                     out <<= 4;
-                    if (c >= '0' && c <= '9') out |= c - '0';
-                    else if (c >= 'a' && c <= 'f') out |= c - 'a' + 10;
-                    else if (c >= 'A' && c <= 'F') out |= c - 'A' + 10;
-                    else return false;
+                    if (c >= '0' && c <= '9')
+                        out |= c - '0';
+                    else if (c >= 'a' && c <= 'f')
+                        out |= c - 'a' + 10;
+                    else if (c >= 'A' && c <= 'F')
+                        out |= c - 'A' + 10;
+                    else
+                        return false;
                 }
                 return true;
             }
@@ -75,11 +79,21 @@ namespace perlin::server::json {
                         break;
                     c = s[i++];
                     switch (c) {
-                    case 'n': out.push_back('\n'); break;
-                    case 't': out.push_back('\t'); break;
-                    case 'r': out.push_back('\r'); break;
-                    case 'b': out.push_back('\b'); break;
-                    case 'f': out.push_back('\f'); break;
+                    case 'n':
+                        out.push_back('\n');
+                        break;
+                    case 't':
+                        out.push_back('\t');
+                        break;
+                    case 'r':
+                        out.push_back('\r');
+                        break;
+                    case 'b':
+                        out.push_back('\b');
+                        break;
+                    case 'f':
+                        out.push_back('\f');
+                        break;
                     case 'u': {
                         uint32_t cp;
                         if (!Hex4(cp))
@@ -92,12 +106,15 @@ namespace perlin::server::json {
                                 if (!Hex4(lo))
                                     return Fail("bad \\u escape");
                             }
-                            cp = lo >= 0xDC00 && lo < 0xE000 ? 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00) : 0xFFFD;
+                            cp = lo >= 0xDC00 && lo < 0xE000 ? 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00)
+                                                             : 0xFFFD;
                         }
                         Utf8(out, cp);
                         break;
                     }
-                    default: out.push_back(c); break;
+                    default:
+                        out.push_back(c);
+                        break;
                     }
                 }
                 return Fail("unterminated string");
@@ -225,11 +242,21 @@ namespace perlin::server::json {
         out.reserve(text.size() + 2);
         for (const unsigned char c : text) {
             switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
             default:
                 if (c < 0x20) {
                     char buf[8];
@@ -249,12 +276,18 @@ namespace perlin::server::json {
         int bits = 0;
         for (const char c : text) {
             int v;
-            if (c >= 'A' && c <= 'Z') v = c - 'A';
-            else if (c >= 'a' && c <= 'z') v = c - 'a' + 26;
-            else if (c >= '0' && c <= '9') v = c - '0' + 52;
-            else if (c == '-' || c == '+') v = 62;
-            else if (c == '_' || c == '/') v = 63;
-            else continue;
+            if (c >= 'A' && c <= 'Z')
+                v = c - 'A';
+            else if (c >= 'a' && c <= 'z')
+                v = c - 'a' + 26;
+            else if (c >= '0' && c <= '9')
+                v = c - '0' + 52;
+            else if (c == '-' || c == '+')
+                v = 62;
+            else if (c == '_' || c == '/')
+                v = 63;
+            else
+                continue;
             acc = (acc << 6) | static_cast<uint32_t>(v);
             bits += 6;
             if (bits >= 8) {
@@ -270,7 +303,8 @@ namespace perlin::server::json {
         if (a == std::string_view::npos)
             return false;
         const size_t b = jwt.find('.', a + 1);
-        const std::string_view mid = jwt.substr(a + 1, b == std::string_view::npos ? std::string_view::npos : b - a - 1);
+        const std::string_view mid =
+            jwt.substr(a + 1, b == std::string_view::npos ? std::string_view::npos : b - a - 1);
         return Parse(Base64UrlDecode(mid), out);
     }
 }

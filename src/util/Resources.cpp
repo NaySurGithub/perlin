@@ -18,10 +18,13 @@ namespace perlin::resources {
         }
     }
 
-    void SetProvider(Provider provider) { gProvider = provider; }
+    void SetProvider(Provider provider) {
+        gProvider = provider;
+    }
 
     bool Read(const std::string& name, std::string& out) {
-        if (const char* dir = std::getenv("PERLIN_RESOURCES"); dir && *dir && ReadDisk(std::string(dir) + "/" + name, out))
+        if (const char* dir = std::getenv("PERLIN_RESOURCES");
+            dir && *dir && ReadDisk(std::string(dir) + "/" + name, out))
             return true;
         if (ReadDisk(paths::DataDir() + "/assets/" + name, out))
             return true;

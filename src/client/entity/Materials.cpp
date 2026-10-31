@@ -2,8 +2,7 @@
 #include "util/Strings.hpp"
 
 namespace perlin::entity {
-    namespace {
-    }
+    namespace {}
 
     MaterialInfo MaterialLibrary::Builtin(const std::string& rawName) {
         static const material::Db defaults = [] {
@@ -30,7 +29,8 @@ namespace perlin::entity {
             m.blend = MaterialInfo::Blend::AlphaTest;
         else
             m.blend = !def.sourcePass.empty() || str::Lower(def.name).starts_with("opaque")
-                ? MaterialInfo::Blend::Opaque : MaterialInfo::Blend::AlphaTest;
+                          ? MaterialInfo::Blend::Opaque
+                          : MaterialInfo::Blend::AlphaTest;
         m.customBlend = blending && def.blendSet;
         m.blendSrc = def.blendSrc;
         m.blendDst = def.blendDst;

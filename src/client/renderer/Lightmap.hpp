@@ -24,9 +24,7 @@ namespace perlin {
     class BlockLightFlicker {
     public:
         void Tick();
-        float Value() const {
-            return value;
-        }
+        float Value() const { return value; }
 
     private:
         float value = 0.0f;

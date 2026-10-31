@@ -35,19 +35,20 @@ int main(int argc, char** argv) {
         const auto f = [&](int i) { return std::bit_cast<float>(words[i]); };
         const auto vector = [&](int i) { return Float3{f(i), f(i + 1), f(i + 2)}; };
         const auto old = words[2];
-        const auto result = FinalizeMove({f(4), f(5), f(6), f(7), f(8), f(9)}, f(3),
-                                         vector(10), vector(13), vector(16),
-                                         {bool(old & 1), bool(old & 2), bool(old & 4),
-                                          bool(old & 8), bool(old & 16)},
-                                         words[0] == 2, words[1] != 0);
+        const auto result =
+            FinalizeMove({f(4), f(5), f(6), f(7), f(8), f(9)}, f(3), vector(10), vector(13), vector(16),
+                         // stale horizontal tag: both lanes set, a corner hit
+                         {bool(old & 1), bool(old & 2), bool(old & 4), bool(old & 8), bool(old & 16),
+                          bool(old & 1), bool(old & 1)},
+                         words[0] == 2, words[1] != 0);
         const std::array<float, 6> actual{result.position.x, result.position.y, result.position.z,
                                           result.velocity.x, result.velocity.y, result.velocity.z};
         for (int field = 0; field < 6; ++field) {
             const auto got = std::bit_cast<uint32_t>(actual[field]);
             if (got != words[19 + field]) {
                 if (failures < 20)
-                    std::fprintf(stderr, "Case %d, field %d: %08x != BDS %08x\n",
-                                 cases, field, got, words[19 + field]);
+                    std::fprintf(stderr, "Case %d, field %d: %08x != BDS %08x\n", cases, field, got,
+                                 words[19 + field]);
                 ++failures;
             }
         }

@@ -34,13 +34,19 @@ namespace {
         return {p[0], p[1], p[2]};
     }
 
-    bool Red(Pixel p) { return p.r > 150 && p.g < 90 && p.b < 90; }
-    bool Background(Pixel p) { return p.b > 150 && p.r < 90 && p.g < 90; }
+    bool Red(Pixel p) {
+        return p.r > 150 && p.g < 90 && p.b < 90;
+    }
+    bool Background(Pixel p) {
+        return p.b > 150 && p.r < 90 && p.g < 90;
+    }
 
-    FrameParams MakeFrame(const glm::vec3& eye, const glm::vec3& target, const glm::vec3& up, uint32_t w, uint32_t h) {
+    FrameParams MakeFrame(const glm::vec3& eye, const glm::vec3& target, const glm::vec3& up, uint32_t w,
+                          uint32_t h) {
         FrameParams f{};
         const glm::mat4 view = glm::lookAt(eye, target, up);
-        const glm::mat4 proj = glm::perspectiveRH_ZO(glm::radians(70.0f), static_cast<float>(w) / static_cast<float>(h), 0.1f, 200.0f);
+        const glm::mat4 proj = glm::perspectiveRH_ZO(
+            glm::radians(70.0f), static_cast<float>(w) / static_cast<float>(h), 0.1f, 200.0f);
         const glm::mat4 vp = proj * view;
         std::memcpy(f.viewProjection, glm::value_ptr(vp), sizeof(f.viewProjection));
         std::memcpy(f.skyViewProjection, glm::value_ptr(vp), sizeof(f.skyViewProjection));
@@ -64,9 +70,11 @@ namespace {
         return f;
     }
 
-    bool Frame(RenderContext_rhi& ctx, const FrameParams& f, std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h) {
+    bool Frame(RenderContext_rhi& ctx, const FrameParams& f, std::vector<uint8_t>& rgba, uint32_t& w,
+               uint32_t& h) {
         ctx.BeginFrame(f);
-        ctx.DrawChunkMeshes(Frustum::FromViewProjection(glm::make_mat4(f.viewProjection)), f.cameraPosition[0], f.cameraPosition[2]);
+        ctx.DrawChunkMeshes(Frustum::FromViewProjection(glm::make_mat4(f.viewProjection)),
+                            f.cameraPosition[0], f.cameraPosition[2]);
         ctx.EndFrame();
         return ctx.ReadBackFrame(rgba, w, h);
     }
@@ -88,15 +96,18 @@ namespace {
         std::filesystem::remove_all(root);
         const std::string vertexTerrain =
             "#version 120\nvarying vec2 texcoord;\nvarying vec4 glcolor;\nattribute vec4 mc_Entity;\n"
-            "void main() { gl_Position = ftransform(); texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy; glcolor = gl_Color; }\n";
+            "void main() { gl_Position = ftransform(); texcoord = (gl_TextureMatrix[0] * "
+            "gl_MultiTexCoord0).xy; glcolor = gl_Color; }\n";
         const std::string fragmentTerrain =
-            "#version 120\nuniform sampler2D texture;\nvarying vec2 texcoord;\nvarying vec4 glcolor;\n/* DRAWBUFFERS:0 */\n"
+            "#version 120\nuniform sampler2D texture;\nvarying vec2 texcoord;\nvarying vec4 glcolor;\n/* "
+            "DRAWBUFFERS:0 */\n"
             "void main() { gl_FragData[0] = texture2D(texture, texcoord) * glcolor; }\n";
-        const std::string vertexScreen =
-            "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = ftransform(); texcoord = gl_MultiTexCoord0.xy; }\n";
+        const std::string vertexScreen = "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = "
+                                         "ftransform(); texcoord = gl_MultiTexCoord0.xy; }\n";
         const std::string fragmentComposite =
             "#version 120\nuniform sampler2D colortex0;\nvarying vec2 texcoord;\n/* DRAWBUFFERS:0 */\n"
-            "void main() { vec4 c = texture2D(colortex0, texcoord); gl_FragData[0] = vec4(c.g, c.r, c.b, 1.0); }\n";
+            "void main() { vec4 c = texture2D(colortex0, texcoord); gl_FragData[0] = vec4(c.g, c.r, c.b, "
+            "1.0); }\n";
         const std::string fragmentFinal =
             "#version 120\nuniform sampler2D colortex0;\nvarying vec2 texcoord;\n"
             "void main() { gl_FragColor = texture2D(colortex0, texcoord); }\n";
@@ -113,14 +124,17 @@ namespace {
     std::filesystem::path WriteShadowPack() {
         const std::filesystem::path root = WriteSyntheticPack();
         WriteText(root / "shaders/shadow.vsh",
-                  "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = ftransform(); texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy; }\n");
+                  "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = ftransform(); texcoord "
+                  "= (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy; }\n");
         WriteText(root / "shaders/shadow.fsh",
                   "#version 120\nuniform sampler2D texture;\nvarying vec2 texcoord;\n"
                   "void main() { gl_FragData[0] = texture2D(texture, texcoord); }\n");
         WriteText(root / "shaders/gbuffers_terrain.vsh",
-                  "#version 120\nvarying vec3 viewPos;\nvoid main() { vec4 v = gl_ModelViewMatrix * gl_Vertex; viewPos = v.xyz; gl_Position = gl_ProjectionMatrix * v; }\n");
+                  "#version 120\nvarying vec3 viewPos;\nvoid main() { vec4 v = gl_ModelViewMatrix * "
+                  "gl_Vertex; viewPos = v.xyz; gl_Position = gl_ProjectionMatrix * v; }\n");
         WriteText(root / "shaders/gbuffers_terrain.fsh",
-                  "#version 120\nuniform sampler2DShadow shadowtex0;\nuniform mat4 gbufferModelViewInverse;\nuniform mat4 shadowModelView;\n"
+                  "#version 120\nuniform sampler2DShadow shadowtex0;\nuniform mat4 "
+                  "gbufferModelViewInverse;\nuniform mat4 shadowModelView;\n"
                   "uniform mat4 shadowProjection;\nvarying vec3 viewPos;\n/* DRAWBUFFERS:0 */\n"
                   "void main() {\n"
                   "    vec4 feet = gbufferModelViewInverse * vec4(viewPos, 1.0);\n"
@@ -165,7 +179,8 @@ int main(int argc, char** argv) {
         bool upward = true;
         for (const Vertex& vertex : tess.Vertices())
             upward &= ((vertex.normal >> 8) & 255) == 255;
-        Check(upward, diagonal ? "alternate triangle diagonal preserves upward normals" : "top face normal points upward");
+        Check(upward, diagonal ? "alternate triangle diagonal preserves upward normals"
+                               : "top face normal points upward");
     }
 
     std::vector<uint8_t> tile(16 * 16 * 4);
@@ -191,12 +206,14 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> rgba;
     uint32_t w = 0, h = 0;
 
-    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h), "frame read back from above");
+    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h),
+          "frame read back from above");
     if (!rgba.empty()) {
         Check(Red(At(rgba, w, w / 2, h / 2)), "front face visible from above");
         Check(Background(At(rgba, w, 1, 1)), "corner shows the clear colour");
     }
-    Check(Frame(ctx, MakeFrame({0, -3, 0}, {0, 0, 0}, {0, 0, 1}, 128, 96), rgba, w, h), "frame read back from below");
+    Check(Frame(ctx, MakeFrame({0, -3, 0}, {0, 0, 0}, {0, 0, 1}, 128, 96), rgba, w, h),
+          "frame read back from below");
     if (!rgba.empty())
         Check(!Red(At(rgba, w, w / 2, h / 2)), "back face culled from below");
 
@@ -208,7 +225,8 @@ int main(int argc, char** argv) {
         const float nearV[4][3] = {{-2, 1, -2}, {2, 1, -2}, {2, 1, 2}, {-2, 1, 2}};
         const float farV[4][3] = {{-2, 0, -2}, {2, 0, -2}, {2, 0, 2}, {-2, 0, 2}};
         const float bright[4][3] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
-        const float dim[4][3] = {{0.4f, 0.4f, 0.4f}, {0.4f, 0.4f, 0.4f}, {0.4f, 0.4f, 0.4f}, {0.4f, 0.4f, 0.4f}};
+        const float dim[4][3] = {
+            {0.4f, 0.4f, 0.4f}, {0.4f, 0.4f, 0.4f}, {0.4f, 0.4f, 0.4f}, {0.4f, 0.4f, 0.4f}};
         if (order == 0) {
             stack.AddQuad(farV, dim, uv, false, 15.0f, 15.0f);
             stack.AddQuad(nearV, bright, uv, false, 15.0f, 15.0f);
@@ -218,10 +236,12 @@ int main(int argc, char** argv) {
         }
         stack.End();
         ctx.UpdateChunkMesh(0, 0, stack, 10 + order);
-        Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h), "frame with stacked quads");
+        Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h),
+              "frame with stacked quads");
         if (!rgba.empty()) {
             const Pixel p = At(rgba, w, w / 2, h / 2);
-            Check(p.r > 200, order == 0 ? "near quad wins (far drawn first)" : "near quad wins (near drawn first)");
+            Check(p.r > 200,
+                  order == 0 ? "near quad wins (far drawn first)" : "near quad wins (near drawn first)");
         }
     }
 
@@ -233,7 +253,8 @@ int main(int argc, char** argv) {
     right.AddQuad(vr, c, uv, false, 15.0f, 15.0f);
     right.End();
     ctx.UpdateChunkMesh(0, 0, right, 2);
-    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h), "frame with the right-hand quad");
+    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h),
+          "frame with the right-hand quad");
     if (!rgba.empty()) {
         Check(Red(At(rgba, w, w - 20, h / 2)), "+x lands on the right");
         Check(Background(At(rgba, w, 20, h / 2)), "-x stays background");
@@ -243,7 +264,8 @@ int main(int argc, char** argv) {
     // rebuild onto another api when asked, so the frames after it prove the switch
     const char* switchTo = std::getenv("PERLIN_TEST_SWITCH_TO");
     Check(ctx.RebuildDevice(switchTo ? switchTo : rhi::ApiId(settings.api)), "device rebuilt");
-    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h), "frame after rebuild");
+    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h),
+          "frame after rebuild");
     if (!rgba.empty()) {
         Check(Red(At(rgba, w, w - 20, h / 2)), "mesh and atlas restored");
         Check(Background(At(rgba, w, 20, h / 2)), "layout unchanged after rebuild");
@@ -256,9 +278,10 @@ int main(int argc, char** argv) {
         int upscaler;
         float bloom, blur, sharp;
     };
-    const PostCase cases[] = {PostCase{"scaled bilinear", 0.5f, 1, 0, 0, 0}, PostCase{"scaled spatial sharpened", 0.5f, 2, 0, 0, 0.5f},
-                              PostCase{"bloom", 1.0f, 0, 0.6f, 0, 0}, PostCase{"motion blur", 1.0f, 0, 0, 0.5f, 0},
-                              PostCase{"temporal", 0.5f, 3, 0.4f, 0.3f, 0.3f}};
+    const PostCase cases[] = {
+        PostCase{"scaled bilinear", 0.5f, 1, 0, 0, 0},
+        PostCase{"scaled spatial sharpened", 0.5f, 2, 0, 0, 0.5f}, PostCase{"bloom", 1.0f, 0, 0.6f, 0, 0},
+        PostCase{"motion blur", 1.0f, 0, 0, 0.5f, 0}, PostCase{"temporal", 0.5f, 3, 0.4f, 0.3f, 0.3f}};
     for (const PostCase& pc : cases) {
         // a blank frame first: a stale image from the previous case must not pass for this one
         ctx.RemoveChunkMesh(0, 0);
@@ -295,7 +318,8 @@ int main(int argc, char** argv) {
 
     // removing the mesh clears the image
     ctx.RemoveChunkMesh(0, 0);
-    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h), "frame after removal");
+    Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h),
+          "frame after removal");
     if (!rgba.empty())
         Check(Background(At(rgba, w, w / 2, h / 2)), "removed mesh is gone");
 
@@ -313,7 +337,8 @@ int main(int argc, char** argv) {
                     Tessellator far;
                     far.Begin();
                     const float fx = static_cast<float>(tx * 64), fz = static_cast<float>(tz * 64);
-                    const float fv[4][3] = {{fx, 60, fz}, {fx + 64, 60, fz}, {fx + 64, 60, fz + 64}, {fx, 60, fz + 64}};
+                    const float fv[4][3] = {
+                        {fx, 60, fz}, {fx + 64, 60, fz}, {fx + 64, 60, fz + 64}, {fx, 60, fz + 64}};
                     far.AddQuad(fv, c, uv, false, 15.0f, 15.0f);
                     far.End();
                     // behind the camera and to the sides: none of these may cover the centre of the picture
@@ -330,7 +355,6 @@ int main(int argc, char** argv) {
         if (!rgba.empty())
             Check(!Red(At(rgba, w, w / 2, h / 2)), "removed lod tile is gone");
     }
-
 
     // sun shadows: a floating quad must darken the ground it covers, only with shadows on
     perlin::TestSetBundledPack(true);
@@ -441,7 +465,8 @@ int main(int argc, char** argv) {
             ctx.UpdateChunkMesh(0, 0, packTess, 1);
             bool ready = false;
             for (int i = 0; i < 400 && !ready; i++) {
-                ready = Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h) && ctx.JavaPackReady();
+                ready = Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h) &&
+                        ctx.JavaPackReady();
                 if (!ready)
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
@@ -453,8 +478,10 @@ int main(int argc, char** argv) {
                 Check(drawn, "frame through the java pack");
                 if (!rgba.empty()) {
                     const Pixel mid = At(rgba, w, w / 2, h / 2), corner = At(rgba, w, 1, 1);
-                    std::printf("     pack pixels: centre %d,%d,%d corner %d,%d,%d\n", mid.r, mid.g, mid.b, corner.r, corner.g, corner.b);
-                    Check(mid.g > 150 && mid.r < 90 && mid.b < 90, "composite ran (red tile comes out green)");
+                    std::printf("     pack pixels: centre %d,%d,%d corner %d,%d,%d\n", mid.r, mid.g, mid.b,
+                                corner.r, corner.g, corner.b);
+                    Check(mid.g > 150 && mid.r < 90 && mid.b < 90,
+                          "composite ran (red tile comes out green)");
                     Check(Background(corner), "clear colour survives the pack");
                     if (const char* dump = std::getenv("PERLIN_TEST_DUMP"))
                         if (FILE* fp = std::fopen((std::string(dump) + "_pack.ppm").c_str(), "wb")) {
@@ -476,7 +503,9 @@ int main(int argc, char** argv) {
         const auto loadStart = std::chrono::steady_clock::now();
         const bool loadedPack = ctx.SetJavaShaderPack(packPath, {}, why);
         std::printf("     real pack load took %lld ms\n",
-                    static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - loadStart).count()));
+                    static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::steady_clock::now() - loadStart)
+                                               .count()));
         if (!loadedPack) {
             std::printf("FAIL real pack load: %s\n", why.c_str());
             failures++;
@@ -502,7 +531,9 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
             std::printf("     real pack ready after %lld ms\n",
-                        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()));
+                        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                   std::chrono::steady_clock::now() - started)
+                                                   .count()));
             Check(ready, "real pack compiled");
             if (ready) {
                 for (int i = 0; i < 3; i++) {
@@ -542,7 +573,13 @@ int main(int argc, char** argv) {
             ctx.UpdateChunkMesh(0, 0, scene, 1);
             bool ready = false;
             for (int i = 0; i < 400 && !ready; i++) {
-                ready = Frame(ctx, MakeFrame(std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 6, 7) : glm::vec3(0, 1.2f, 9), std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 0, 0) : glm::vec3(0, 0.4f, 0), {0, 1, 0}, 128, 96), rgba, w, h) && ctx.JavaPackReady();
+                ready = Frame(ctx,
+                              MakeFrame(
+                                  std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 6, 7) : glm::vec3(0, 1.2f, 9),
+                                  std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 0, 0) : glm::vec3(0, 0.4f, 0),
+                                  {0, 1, 0}, 128, 96),
+                              rgba, w, h) &&
+                        ctx.JavaPackReady();
                 if (!ready)
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
@@ -550,7 +587,10 @@ int main(int argc, char** argv) {
             if (ready) {
                 bool drawn = false;
                 for (int i = 0; i < 3; i++) {
-                    FrameParams f = MakeFrame(std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 6, 7) : glm::vec3(0, 1.2f, 9), std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 0, 0) : glm::vec3(0, 0.4f, 0), {0, 1, 0}, 128, 96);
+                    FrameParams f =
+                        MakeFrame(std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 6, 7) : glm::vec3(0, 1.2f, 9),
+                                  std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 0, 0) : glm::vec3(0, 0.4f, 0),
+                                  {0, 1, 0}, 128, 96);
                     f.sky.enabled = true;
                     f.sky.sunAngle = 0.0f;
                     drawn = Frame(ctx, f, rgba, w, h);

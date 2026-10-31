@@ -78,7 +78,8 @@ namespace perlin {
         size_t n = sizeof(Chunk);
         for (const auto& s : sections)
             if (s)
-                n += sizeof(Section) + (s->blocks ? 8192 : 0) + (s->liquid ? 8192 : 0) + (s->biomes ? 4096 : 0);
+                n += sizeof(Section) + (s->blocks ? 8192 : 0) + (s->liquid ? 8192 : 0) +
+                     (s->biomes ? 4096 : 0);
         return n;
     }
 
@@ -173,7 +174,8 @@ namespace perlin {
         }
     }
 
-    void Chunk::CopyRun(int y, int z, int x0, int n, uint16_t* blocks, uint8_t* biomes, uint16_t* liquid) const {
+    void Chunk::CopyRun(int y, int z, int x0, int n, uint16_t* blocks, uint8_t* biomes,
+                        uint16_t* liquid) const {
         if (y < MIN_Y || y >= MIN_Y + HEIGHT)
             return;
         const auto& s = sections[(y - MIN_Y) >> 4];
@@ -564,7 +566,7 @@ namespace perlin {
 
     bool Level::HasChunk(int cx, int cz) const {
         std::lock_guard lock(mutex);
-        return chunks.count({cx, cz}) != 0;
+        return chunks.contains({cx, cz});
     }
 
     void Level::SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells, const uint16_t* liquidCells) {

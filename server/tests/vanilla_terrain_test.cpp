@@ -23,8 +23,10 @@ int main() {
     std::vector<ChunkColumn> cols(pos.size());
     const auto start = std::chrono::steady_clock::now();
     backend->Generate(pos, cols);
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    std::printf("%zu chunks in %.0f ms (%.0f ms each)\n", pos.size(), ms, ms / static_cast<double>(pos.size()));
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    std::printf("%zu chunks in %.0f ms (%.0f ms each)\n", pos.size(), ms,
+                ms / static_cast<double>(pos.size()));
     int bad = 0;
     for (size_t n = 0; n < pos.size(); n++) {
         // every sampled block agrees with the density sign (above the placeholder skin)
@@ -37,7 +39,10 @@ int main() {
         }
         int height = -999;
         for (int y = 319; y >= -64; y--)
-            if (cols[n].Get(8, y, 8) != 0 && cols[n].Get(8, y, 8) != cols[n].Get(0, 319, 0)) { height = y; break; }
+            if (cols[n].Get(8, y, 8) != 0 && cols[n].Get(8, y, 8) != cols[n].Get(0, 319, 0)) {
+                height = y;
+                break;
+            }
         std::printf("chunk (%d,%d): top block at (8,8) y=%d\n", pos[n].x, pos[n].z, height);
     }
     if (bad) {

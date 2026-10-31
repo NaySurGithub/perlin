@@ -15,7 +15,10 @@ int main() {
     // "gpu" accepts a software device; "auto" would not
     config.terrainBackend = "gpu";
     config.seed = 0x1234567890abcdefull;
-    config.flatLayers = {{"minecraft:bedrock", 1}, {"minecraft:stone", 5}, {"minecraft:dirt", 3}, {"minecraft:grass_block", 1}};
+    config.flatLayers = {{"minecraft:bedrock", 1},
+                         {"minecraft:stone", 5},
+                         {"minecraft:dirt", 3},
+                         {"minecraft:grass_block", 1}};
     std::string note;
     std::unique_ptr<TerrainBackend> gpu = CreateGpuTerrainBackend(config, note);
     if (!gpu) {
@@ -50,7 +53,8 @@ int main() {
                         wrong++;
     CHECK(wrong == 0);
     std::printf("%zu chunks: gpu %.1f ms, cpu %.1f ms\n", positions.size(),
-                std::chrono::duration<double, std::milli>(t1 - t0).count(), std::chrono::duration<double, std::milli>(t2 - t1).count());
+                std::chrono::duration<double, std::milli>(t1 - t0).count(),
+                std::chrono::duration<double, std::milli>(t2 - t1).count());
 
     std::vector<ChunkPos> one = {{7, 7}};
     std::vector<ChunkColumn> single(1);

@@ -27,7 +27,8 @@ namespace perlin {
                 sky *= glm::vec3(1.0f - in.rain * 0.5f, 1.0f - in.rain * 0.5f, 1.0f - in.rain * 0.4f);
             if (in.thunder > 0.0f)
                 sky *= 1.0f - in.thunder * 0.5f;
-            const float skyFogEnd = std::min(env.skyFogEnd / 16.0f, static_cast<float>(in.renderDistanceChunks));
+            const float skyFogEnd =
+                std::min(env.skyFogEnd / 16.0f, static_cast<float>(in.renderDistanceChunks));
             const float mix = 1.0f - std::pow(ClampedLerp(skyFogEnd / 32.0f, 0.25f, 1.0f), 0.25f);
             return glm::mix(fog, sky, mix);
         }
@@ -35,10 +36,12 @@ namespace perlin {
 
     FogState ComputeFog(const Environment& env, const FogInput& in) {
         FogState fog;
-        glm::vec3 color = in.inLava ? glm::vec3(0.6f, 0.09803922f, 0.0f) : in.underwater ? in.waterFogColor : BaseColor(env, in);
+        glm::vec3 color = in.inLava       ? glm::vec3(0.6f, 0.09803922f, 0.0f)
+                          : in.underwater ? in.waterFogColor
+                                          : BaseColor(env, in);
 
-        const float darkness =
-            std::clamp((in.voidDarknessOnsetRange + in.minY - in.cameraY) / in.voidDarknessOnsetRange, 0.0f, 1.0f);
+        const float darkness = std::clamp(
+            (in.voidDarknessOnsetRange + in.minY - in.cameraY) / in.voidDarknessOnsetRange, 0.0f, 1.0f);
         if (darkness > 0.0f) {
             const float brightness = (1.0f - darkness) * (1.0f - darkness);
             color *= brightness;

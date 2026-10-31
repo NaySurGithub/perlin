@@ -145,7 +145,9 @@ namespace perlin::mods {
         }
     };
 
-    WasmInstance::WasmInstance() : impl(std::make_unique<Impl>()) { impl->self = this; }
+    WasmInstance::WasmInstance() : impl(std::make_unique<Impl>()) {
+        impl->self = this;
+    }
 
     WasmInstance::~WasmInstance() = default;
 
@@ -187,7 +189,8 @@ namespace perlin::mods {
         return impl->runtime && !m3_FindFunction(&fn, impl->runtime, name) && fn;
     }
 
-    bool WasmInstance::Call(const char* name, std::initializer_list<uint64_t> args, uint64_t* result, std::string& error) {
+    bool WasmInstance::Call(const char* name, std::initializer_list<uint64_t> args, uint64_t* result,
+                            std::string& error) {
         Impl& m = *impl;
         IM3Function fn = nullptr;
         if (M3Result r = m3_FindFunction(&fn, m.runtime, name); r || !fn) {
@@ -245,5 +248,7 @@ namespace perlin::mods {
 
     void WasmInstance::Interrupt() {}
 
-    std::string WasmEngineName() { return "wasm3"; }
+    std::string WasmEngineName() {
+        return "wasm3";
+    }
 }

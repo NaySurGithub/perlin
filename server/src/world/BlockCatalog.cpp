@@ -23,8 +23,9 @@ namespace perlin::server {
 
     std::string BlockCatalog::FindFile(const std::string& dir, const std::string& name) {
         std::error_code ec;
-        for (const std::string& base : {dir, dir.empty() ? std::string() : dir + "/resources", std::string("resources"),
-                                        std::string(PERLIN_SERVER_RESOURCE_DIR), std::string("../resources")}) {
+        for (const std::string& base :
+             {dir, dir.empty() ? std::string() : dir + "/resources", std::string("resources"),
+              std::string(PERLIN_SERVER_RESOURCE_DIR), std::string("../resources")}) {
             if (base.empty())
                 continue;
             const fs::path p = fs::path(base) / name;
@@ -65,11 +66,46 @@ namespace perlin::server {
         // blocks the game keeps for itself: old lit/unlit variants, world-edge markers, signs that only exist as placed blocks, education leftovers.
         // none of them are in the creative menu of a normal bedrock world
         bool IsTechnicalBlock(const std::string& n) {
-            static const char* const exact[] = {"glowingobsidian", "netherreactor", "info_update", "info_update2", "reserved6", "invisible_bedrock", "moving_block", "allow", "deny",
-                                                "border_block", "camera", "flowing_water", "flowing_lava", "unlit_redstone_torch", "lit_pumpkin", "wall_sign", "standing_sign",
-                                                "standing_banner", "wall_banner", "piston_arm_collision", "sticky_piston_arm_collision", "unpowered_repeater", "powered_repeater",
-                                                "unpowered_comparator", "powered_comparator", "lit_redstone_lamp", "lit_furnace", "lit_blast_furnace", "lit_smoker", "lit_redstone_ore",
-                                                "lit_deepslate_redstone_ore", "water", "lava", "fire", "soul_fire", "portal", "end_portal", "end_gateway", "bubble_column", "light_block"};
+            static const char* const exact[] = {"glowingobsidian",
+                                                "netherreactor",
+                                                "info_update",
+                                                "info_update2",
+                                                "reserved6",
+                                                "invisible_bedrock",
+                                                "moving_block",
+                                                "allow",
+                                                "deny",
+                                                "border_block",
+                                                "camera",
+                                                "flowing_water",
+                                                "flowing_lava",
+                                                "unlit_redstone_torch",
+                                                "lit_pumpkin",
+                                                "wall_sign",
+                                                "standing_sign",
+                                                "standing_banner",
+                                                "wall_banner",
+                                                "piston_arm_collision",
+                                                "sticky_piston_arm_collision",
+                                                "unpowered_repeater",
+                                                "powered_repeater",
+                                                "unpowered_comparator",
+                                                "powered_comparator",
+                                                "lit_redstone_lamp",
+                                                "lit_furnace",
+                                                "lit_blast_furnace",
+                                                "lit_smoker",
+                                                "lit_redstone_ore",
+                                                "lit_deepslate_redstone_ore",
+                                                "water",
+                                                "lava",
+                                                "fire",
+                                                "soul_fire",
+                                                "portal",
+                                                "end_portal",
+                                                "end_gateway",
+                                                "bubble_column",
+                                                "light_block"};
             for (const char* e : exact)
                 if (n == e)
                     return true;
@@ -81,7 +117,8 @@ namespace perlin::server {
         }
     }
 
-    void BlockCatalog::BuildItems(const std::vector<std::string>& names, const std::unordered_map<std::string, int32_t>& defaultHash) {
+    void BlockCatalog::BuildItems(const std::vector<std::string>& names,
+                                  const std::unordered_map<std::string, int32_t>& defaultHash) {
         items.clear();
         byId.clear();
         byHash.clear();
@@ -104,7 +141,8 @@ namespace perlin::server {
         }
     }
 
-    bool BlockCatalog::Load(const std::string& blockStatesPath, const std::string& itemNamesPath, std::string& error, const std::string& extraItemsPath) {
+    bool BlockCatalog::Load(const std::string& blockStatesPath, const std::string& itemNamesPath,
+                            std::string& error, const std::string& extraItemsPath) {
         std::ifstream states_in(blockStatesPath, std::ios::binary);
         if (!states_in) {
             error = "cannot read " + blockStatesPath;
@@ -155,7 +193,8 @@ namespace perlin::server {
                 continue;
             const std::string name = line.substr(0, tab);
             const size_t next = line.find('\t', tab + 1);
-            const std::string hardness = line.substr(tab + 1, next == std::string::npos ? std::string::npos : next - tab - 1);
+            const std::string hardness =
+                line.substr(tab + 1, next == std::string::npos ? std::string::npos : next - tab - 1);
             if (hardness == "-1" && name != "bedrock" && name != "barrier")
                 continue;
             if (IsTechnicalBlock(name))
@@ -175,7 +214,7 @@ namespace perlin::server {
             while (std::getline(extra, item)) {
                 while (!item.empty() && (item.back() == '\r' || item.back() == ' '))
                     item.pop_back();
-                if (item.empty() || item[0] == '#' || byName.count("minecraft:" + item))
+                if (item.empty() || item[0] == '#' || byName.contains("minecraft:" + item))
                     continue;
                 CatalogItem entry;
                 entry.name = "minecraft:" + item;
@@ -191,12 +230,27 @@ namespace perlin::server {
     }
 
     void BlockCatalog::LoadBuiltin() {
-        static const char* const kNames[] = {
-            "stone", "granite", "diorite", "andesite", "cobblestone", "mossy_cobblestone", "dirt", "grass_block", "sand", "gravel",
-            "oak_planks", "spruce_planks", "birch_planks", "jungle_planks", "acacia_planks", "dark_oak_planks", "glass", "bricks",
-            "stone_bricks", "sandstone", "obsidian", "bedrock", "white_wool", "orange_wool", "red_wool", "blue_wool", "black_wool",
-            "gold_block", "iron_block", "diamond_block", "emerald_block", "coal_block", "bookshelf", "glowstone", "netherrack",
-            "snow", "clay", "pumpkin", "melon_block", "sea_lantern", "quartz_block", "prismarine"};
+        static const char* const kNames[] = {"stone",         "granite",
+                                             "diorite",       "andesite",
+                                             "cobblestone",   "mossy_cobblestone",
+                                             "dirt",          "grass_block",
+                                             "sand",          "gravel",
+                                             "oak_planks",    "spruce_planks",
+                                             "birch_planks",  "jungle_planks",
+                                             "acacia_planks", "dark_oak_planks",
+                                             "glass",         "bricks",
+                                             "stone_bricks",  "sandstone",
+                                             "obsidian",      "bedrock",
+                                             "white_wool",    "orange_wool",
+                                             "red_wool",      "blue_wool",
+                                             "black_wool",    "gold_block",
+                                             "iron_block",    "diamond_block",
+                                             "emerald_block", "coal_block",
+                                             "bookshelf",     "glowstone",
+                                             "netherrack",    "snow",
+                                             "clay",          "pumpkin",
+                                             "melon_block",   "sea_lantern",
+                                             "quartz_block",  "prismarine"};
         states.clear();
         std::unordered_map<std::string, int32_t> defaultHash;
         std::vector<std::string> names;

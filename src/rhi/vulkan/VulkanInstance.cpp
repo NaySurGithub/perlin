@@ -8,8 +8,10 @@
 
 namespace rhi::vk {
     namespace {
-        VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT,
-                                                     const VkDebugUtilsMessengerCallbackDataEXT* data, void* user) {
+        VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                     VkDebugUtilsMessageTypeFlagsEXT,
+                                                     const VkDebugUtilsMessengerCallbackDataEXT* data,
+                                                     void* user) {
             auto* state = static_cast<InstanceState*>(user);
             if (severity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
                 return VK_FALSE;
@@ -63,7 +65,8 @@ namespace rhi::vk {
 
             bool Init() {
                 if (options.hooks.vkGetInstanceProcAddr) {
-                    volkInitializeCustom(reinterpret_cast<PFN_vkGetInstanceProcAddr>(options.hooks.vkGetInstanceProcAddr));
+                    volkInitializeCustom(
+                        reinterpret_cast<PFN_vkGetInstanceProcAddr>(options.hooks.vkGetInstanceProcAddr));
                 } else if (volkInitialize() != VK_SUCCESS) {
                     return false;
                 }
@@ -130,7 +133,8 @@ namespace rhi::vk {
                     state->debugUtils = enable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
                 for (const char* e : options.hooks.instanceExtensions)
-                    if (std::find(extensions.begin(), extensions.end(), e) == extensions.end() && HasExt(available, e))
+                    if (std::find(extensions.begin(), extensions.end(), e) == extensions.end() &&
+                        HasExt(available, e))
                         extensions.push_back(e);
 
                 VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -154,9 +158,12 @@ namespace rhi::vk {
                 volkLoadInstanceOnly(state->instance);
 
                 if (state->debugUtils) {
-                    VkDebugUtilsMessengerCreateInfoEXT mi{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
-                    mi.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-                    mi.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                    VkDebugUtilsMessengerCreateInfoEXT mi{
+                        VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+                    mi.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+                    mi.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                                      VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
                     mi.pfnUserCallback = DebugCallback;
                     mi.pUserData = state.get();
@@ -171,10 +178,11 @@ namespace rhi::vk {
             const std::vector<AdapterInfo>& Adapters() const override { return adapters; }
 
             std::unique_ptr<rhi::Device> CreateDevice(const DeviceOptions& deviceOptions) override {
-                if (deviceOptions.adapterIndex >= adapters.size() || !adapters[deviceOptions.adapterIndex].usable)
+                if (deviceOptions.adapterIndex >= adapters.size() ||
+                    !adapters[deviceOptions.adapterIndex].usable)
                     return nullptr;
-                auto device = std::make_unique<Device>(state, infos[deviceOptions.adapterIndex], adapters[deviceOptions.adapterIndex],
-                                                       deviceOptions);
+                auto device = std::make_unique<Device>(state, infos[deviceOptions.adapterIndex],
+                                                       adapters[deviceOptions.adapterIndex], deviceOptions);
                 std::string error;
                 if (!device->Init(error)) {
                     std::fprintf(stderr, "[vulkan] device creation failed: %s\n", error.c_str());
@@ -205,11 +213,21 @@ namespace rhi::vk {
                     a.apiVersion = info.props.apiVersion;
                     a.driverVersion = info.props.driverVersion;
                     switch (info.props.deviceType) {
-                    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: a.type = AdapterType::Discrete; break;
-                    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: a.type = AdapterType::Integrated; break;
-                    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: a.type = AdapterType::Virtual; break;
-                    case VK_PHYSICAL_DEVICE_TYPE_CPU: a.type = AdapterType::Cpu; break;
-                    default: a.type = AdapterType::Unknown; break;
+                    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                        a.type = AdapterType::Discrete;
+                        break;
+                    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                        a.type = AdapterType::Integrated;
+                        break;
+                    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+                        a.type = AdapterType::Virtual;
+                        break;
+                    case VK_PHYSICAL_DEVICE_TYPE_CPU:
+                        a.type = AdapterType::Cpu;
+                        break;
+                    default:
+                        a.type = AdapterType::Unknown;
+                        break;
                     }
 
                     VkPhysicalDeviceMemoryProperties mem;
@@ -225,7 +243,8 @@ namespace rhi::vk {
                         a.dedicatedVram = 0;
                     }
 
-                    VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+                    VkPhysicalDeviceDriverProperties driver{
+                        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
                     VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
                     if (info.props.apiVersion >= VK_API_VERSION_1_2) {
                         props2.pNext = &driver;
@@ -239,15 +258,20 @@ namespace rhi::vk {
                         a.unusableReason = "needs Vulkan 1.2";
                     } else {
                         const bool api13 = info.props.apiVersion >= VK_API_VERSION_1_3;
-                        VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-                        VkPhysicalDeviceVulkan13Features v13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-                        VkPhysicalDeviceDynamicRenderingFeaturesKHR dr{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
-                        VkPhysicalDeviceSynchronization2FeaturesKHR s2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR};
+                        VkPhysicalDeviceVulkan12Features v12{
+                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+                        VkPhysicalDeviceVulkan13Features v13{
+                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+                        VkPhysicalDeviceDynamicRenderingFeaturesKHR dr{
+                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
+                        VkPhysicalDeviceSynchronization2FeaturesKHR s2{
+                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR};
                         VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
                         f2.pNext = &v12;
                         if (api13) {
                             v12.pNext = &v13;
-                        } else if (info.Has(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME) && info.Has(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
+                        } else if (info.Has(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME) &&
+                                   info.Has(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
                             v12.pNext = &dr;
                             dr.pNext = &s2;
                         }

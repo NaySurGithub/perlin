@@ -21,7 +21,9 @@ namespace perlin::game {
         w.write(state);
         return detail::call_void(Op::CameraControl, w);
     }
-    inline Result<CameraInfo> camera_info() { return detail::call_as<CameraInfo>(Op::CameraState); }
+    inline Result<CameraInfo> camera_info() {
+        return detail::call_as<CameraInfo>(Op::CameraState);
+    }
 
     inline Result<ScreenPoint> to_screen(double x, double y, double z) {
         abi::Writer w;
@@ -71,7 +73,8 @@ namespace perlin::game {
         return detail::call_void(Op::WorldBoxes, w);
     }
 
-    inline Result<uint32_t> find_block(std::string_view name, std::vector<std::pair<std::string, std::string>> states = {}) {
+    inline Result<uint32_t> find_block(std::string_view name,
+                                       std::vector<std::pair<std::string, std::string>> states = {}) {
         abi::Writer w;
         w.write(abi::BlockQuery{std::string(name), std::move(states)});
         auto r = detail::call_as<abi::BlockQueryResult>(Op::ClientBlockGet, w);
@@ -87,12 +90,15 @@ namespace perlin::game {
         return detail::call_void(Op::ClientBlockSet, w);
     }
 
-    inline Result<void> drop_packets(const std::vector<uint32_t>& ids, int ticks = 20, bool outgoing = false) {
+    inline Result<void> drop_packets(const std::vector<uint32_t>& ids, int ticks = 20,
+                                     bool outgoing = false) {
         abi::Writer w;
         w.write(abi::PacketDropRequest{ticks, ids, outgoing});
         return detail::call_void(Op::PacketDrop, w);
     }
-    inline Result<std::vector<abi::PacketCount>> packet_counters() { return detail::call_list<abi::PacketCount>(Op::PacketCounters); }
+    inline Result<std::vector<abi::PacketCount>> packet_counters() {
+        return detail::call_list<abi::PacketCount>(Op::PacketCounters);
+    }
 
     inline Result<void> inject_packet(uint32_t id, std::span<const uint8_t> body) {
         abi::Writer w;

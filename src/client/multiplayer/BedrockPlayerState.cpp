@@ -4,12 +4,15 @@
 #include "util/Env.hpp"
 #include <cstdlib>
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/player/PlayerPhysics.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <string_view>
 #include "util/Log.hpp"
 
 namespace perlin {
@@ -183,6 +186,117 @@ namespace perlin {
         return level;
     }
 
+    int BedrockSession::SoulSpeedEnchant() const {
+        std::lock_guard lock(statusMutex);
+        int level = 0;
+        // boots only: the game reads armor slot 3 for SoulSpeedEnchantFlagComponent (0x1437e2f60)
+        for (const auto& [id, enchantLevel] : inventory.armor[3].enchants)
+            if (id == 36)
+                level = std::max(level, enchantLevel);
+        return level;
+    }
+
+    int BedrockSession::SwiftSneakEnchant() const {
+        std::lock_guard lock(statusMutex);
+        int level = 0;
+        // leggings only: armor slot 2, enchant 37 for SwiftSneakEnchantComponent (0x1437e2f60)
+        for (const auto& [id, enchantLevel] : inventory.armor[2].enchants)
+            if (id == 37)
+                level = std::max(level, enchantLevel);
+        return level;
+    }
+
+    namespace {
+        std::vector<physics::AttributeModifierValue>
+        ModifierValues(const std::vector<PlayerAttributesEntryModifiersEntry>& modifiers) {
+            std::vector<physics::AttributeModifierValue> values;
+            values.reserve(modifiers.size());
+            for (const auto& m : modifiers)
+                values.push_back({m.amount, m.operation, m.operand});
+            return values;
+        }
+
+        // hasModifier 0x142bf14a0: uuid, name, operation and operand; the uuid is parsed, so case does not matter
+        bool IsSprintModifier(const PlayerAttributesEntryModifiersEntry& m) {
+            static constexpr std::string_view kSprintUuid = "d208fc00-42aa-4aad-9276-d5446530de43";
+            if (m.id.size() != kSprintUuid.size() || m.name != "Sprinting speed boost" || m.operation != 2 ||
+                m.operand != 2)
+                return false;
+            for (size_t i = 0; i < kSprintUuid.size(); ++i)
+                if (std::tolower(static_cast<unsigned char>(m.id[i])) != kSprintUuid[i])
+                    return false;
+            return true;
+        }
+    }
+
+    // client AttributeData apply 0x142bf4780: modifiers replaced, value set to the sent one, then base and limits
+    void BedrockSession::ApplyMovementAttribute(const PlayerAttributesEntry& entry) {
+        movementModifiers = entry.modifiers;
+        const float baseMin = std::fmin(entry.defaultMax, entry.defaultMin);
+        movementBase = {baseMin, entry.defaultMax,
+                        entry.defaultMax < entry.default_ ? entry.defaultMax
+                                                          : std::fmax(entry.default_, baseMin)};
+        movementLimits = {std::fmin(entry.max, entry.min), entry.max};
+        movementValue = physics::ClampAttribute(entry.current, movementLimits[0], movementLimits[1],
+                                                ModifierValues(movementModifiers));
+    }
+
+    // ActionSprintTriggerSystem 0x14b346c80 → 0x14b319130: the sprint modifier (0.3, multiply-total) is appended on
+    // start, removed on stop; each change recalculates from the base, otherwise the value stays as sent
+    float BedrockSession::PredictedMovementSpeed(bool sprinting, std::optional<float> freezeStrength) {
+        std::lock_guard lock(attrMutex);
+        // FreezingSystem 0x145E14260: "Freeze effect" = strength * -0.05 (addition on the value), removed at
+        // |strength| <= 2^-23 and re-appended on every change
+        std::optional<float> freeze;
+        if (freezeStrength && std::fabs(*freezeStrength) > 0.00000011920929f)
+            freeze = *freezeStrength * -0.05f;
+        if (!movementAttribute) {
+            const float factor = 0.3f + 1.0f;
+            const float value = freeze ? *freeze + 0.1f : 0.1f;
+            return sprinting ? factor * value : value;
+        }
+        // the server's freeze modifier lags a tick behind its move: ours replaces it when they differ
+        const auto withFreeze = [&](float value) {
+            if (!freezeStrength)
+                return value;
+            const auto isFreeze = [](const PlayerAttributesEntryModifiersEntry& m) {
+                return m.name == "Freeze effect";
+            };
+            std::optional<float> sent;
+            for (const auto& m : movementModifiers)
+                if (isFreeze(m))
+                    sent = m.amount;
+            if (sent == freeze)
+                return value;
+            std::vector<PlayerAttributesEntryModifiersEntry> modifiers = movementModifiers;
+            std::erase_if(modifiers, isFreeze);
+            auto values = ModifierValues(modifiers);
+            if (freeze)
+                values.push_back({*freeze, 0, 2});
+            std::array<float, 2> limits = movementLimits;
+            return physics::RecalculateAttribute(movementBase, values, value, limits);
+        };
+        const bool present =
+            std::any_of(movementModifiers.begin(), movementModifiers.end(), IsSprintModifier);
+        if (sprinting == present)
+            return withFreeze(movementValue);
+        if (sprinting) {
+            PlayerAttributesEntryModifiersEntry boost;
+            boost.id = "d208fc00-42aa-4aad-9276-d5446530de43";
+            boost.name = "Sprinting speed boost";
+            boost.amount = 0.3f;
+            boost.operation = 2;
+            boost.operand = 2;
+            boost.serializable = false;
+            movementModifiers.push_back(boost);
+        } else {
+            std::erase_if(movementModifiers, IsSprintModifier);
+        }
+        movementValue = physics::RecalculateAttribute(movementBase, ModifierValues(movementModifiers),
+                                                      movementValue, movementLimits);
+        return withFreeze(movementValue);
+    }
+
     BedrockSession::TitleText BedrockSession::GetTitleText() const {
         std::lock_guard lock(statusMutex);
         return titleText;
@@ -279,7 +393,8 @@ namespace perlin {
             if (it == itemNames.end()) {
                 static std::set<int> reported;
                 if (reported.insert(raw.networkId).second)
-                    Log("items", "unknown network id {} (registry has {} items)", raw.networkId, itemNames.size());
+                    Log("items", "unknown network id {} (registry has {} items)", raw.networkId,
+                        itemNames.size());
             }
             info.networkId = raw.networkId;
             info.count = raw.count;
@@ -311,34 +426,44 @@ namespace perlin {
                     if (parsed.damage >= 0)
                         info.damage = parsed.damage;
                 }
-                info.enchanted = !info.enchants.empty() || Contains(*nbt, "ench") || Contains(*nbt, "Enchantments") || Contains(*nbt, "StoredEnchantments") ||
+                info.enchanted = !info.enchants.empty() || Contains(*nbt, "ench") ||
+                                 Contains(*nbt, "Enchantments") || Contains(*nbt, "StoredEnchantments") ||
                                  Contains(*nbt, "minecraft:enchantments");
             }
-            static const char* const kAlwaysGlint[] = {"minecraft:enchanted_golden_apple", "minecraft:experience_bottle",
-                                                       "minecraft:nether_star", "minecraft:end_crystal", "minecraft:enchanted_book"};
+            static const char* const kAlwaysGlint[] = {"minecraft:enchanted_golden_apple",
+                                                       "minecraft:experience_bottle", "minecraft:nether_star",
+                                                       "minecraft:end_crystal", "minecraft:enchanted_book"};
             for (const char* name : kAlwaysGlint)
                 if (info.name == name)
                     info.enchanted = true;
             return info;
         };
 
-        const auto store = [this, convert](const WindowIDVarint window, const std::optional<FullContainerName>& container,
-                                           int firstSlot, const std::vector<ItemV4>& items, bool whole) {
+        const auto store = [this, convert](const WindowIDVarint window,
+                                           const std::optional<FullContainerName>& container, int firstSlot,
+                                           const std::vector<ItemV4>& items, bool whole) {
             std::lock_guard lock(statusMutex);
-            const ContainerSlotType type = container ? container->containerId : ContainerSlotType::HotbarAndInventory;
+            const ContainerSlotType type =
+                container ? container->containerId : ContainerSlotType::HotbarAndInventory;
             const bool offhand = window == WindowIDVarint::Offhand || type == ContainerSlotType::Offhand;
             const bool armor = window == WindowIDVarint::Armor || type == ContainerSlotType::Armor;
-            const bool playerInventory = window == WindowIDVarint::Inventory || window == WindowIDVarint::Hotbar ||
-                                         window == WindowIDVarint::FixedInventory || type == ContainerSlotType::Hotbar ||
-                                         type == ContainerSlotType::Inventory || type == ContainerSlotType::HotbarAndInventory;
+            const bool playerInventory =
+                window == WindowIDVarint::Inventory || window == WindowIDVarint::Hotbar ||
+                window == WindowIDVarint::FixedInventory || type == ContainerSlotType::Hotbar ||
+                type == ContainerSlotType::Inventory || type == ContainerSlotType::HotbarAndInventory;
             static const bool debug = PERLIN_ENV("PERLIN_INV_DEBUG") != nullptr;
             if (debug)
-                Log("inv", "window {} container {} first {} n {}{}", static_cast<uint32_t>(window), static_cast<int>(type), firstSlot, items.size(), (whole ? " (content)" : " (slot)"));
+                Log("inv", "window {} container {} first {} n {}{}", static_cast<uint32_t>(window),
+                    static_cast<int>(type), firstSlot, items.size(), (whole ? " (content)" : " (slot)"));
             const bool mainOnly = type == ContainerSlotType::Inventory && whole && items.size() == 27;
-            const bool uiWindow = window == WindowIDVarint::Ui || type == ContainerSlotType::Cursor || type == ContainerSlotType::CraftingInput ||
-                                  type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput;
-            const bool horseWin = inventory.horseOpen && horseWindow > 0 && static_cast<int>(window) == horseWindow;
-            const bool chestWin = inventory.chestOpen && chestWindow >= 0 && static_cast<int>(window) == chestWindow;
+            const bool uiWindow = window == WindowIDVarint::Ui || type == ContainerSlotType::Cursor ||
+                                  type == ContainerSlotType::CraftingInput ||
+                                  type == ContainerSlotType::CraftingOutput ||
+                                  type == ContainerSlotType::CreativeOutput;
+            const bool horseWin =
+                inventory.horseOpen && horseWindow > 0 && static_cast<int>(window) == horseWindow;
+            const bool chestWin =
+                inventory.chestOpen && chestWindow >= 0 && static_cast<int>(window) == chestWindow;
             if (chestWin && whole)
                 inventory.chestSlots = std::clamp(static_cast<int>(items.size()), 0, kInvChestCount);
             for (size_t i = 0; i < items.size(); i++) {
@@ -352,7 +477,9 @@ namespace perlin {
                 }
                 if (horseWin) {
                     const int rawSlot = firstSlot + static_cast<int>(i);
-                    const int h = type == ContainerSlotType::HorseEquip ? rawSlot : type == ContainerSlotType::Container ? rawSlot + 2 : rawSlot;
+                    const int h = type == ContainerSlotType::HorseEquip  ? rawSlot
+                                  : type == ContainerSlotType::Container ? rawSlot + 2
+                                                                         : rawSlot;
                     if (h >= 0 && h < kInvHorseCount) {
                         inventory.horse[h] = convert(items[i]);
                         horseRaw[h] = items[i];
@@ -361,17 +488,22 @@ namespace perlin {
                     }
                     continue;
                 }
-                const int slot = firstSlot + static_cast<int>(i) + (type == ContainerSlotType::Inventory && !whole && firstSlot < 27 ? 9 : 0);
+                const int slot = firstSlot + static_cast<int>(i) +
+                                 (type == ContainerSlotType::Inventory && !whole && firstSlot < 27 ? 9 : 0);
                 const ItemStackInfo info = convert(items[i]);
                 if (uiWindow) {
                     int addr = -1;
-                    if (type == ContainerSlotType::Cursor || (window == WindowIDVarint::Ui && !container && slot == 0))
+                    if (type == ContainerSlotType::Cursor ||
+                        (window == WindowIDVarint::Ui && !container && slot == 0))
                         addr = kInvCursor;
-                    else if (slot >= 28 && slot <= 31 && (type == ContainerSlotType::CraftingInput || window == WindowIDVarint::Ui))
+                    else if (slot >= 28 && slot <= 31 &&
+                             (type == ContainerSlotType::CraftingInput || window == WindowIDVarint::Ui))
                         addr = kInvCraft0 + slot - 28;
-                    else if (slot >= 32 && slot <= 40 && (type == ContainerSlotType::CraftingInput || window == WindowIDVarint::Ui))
+                    else if (slot >= 32 && slot <= 40 &&
+                             (type == ContainerSlotType::CraftingInput || window == WindowIDVarint::Ui))
                         addr = kInvWork0 + slot - 32;
-                    else if (type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput)
+                    else if (type == ContainerSlotType::CraftingOutput ||
+                             type == ContainerSlotType::CreativeOutput)
                         addr = kInvOutput;
                     if (addr >= 0) {
                         InvInfoLocked(addr) = info;
@@ -380,13 +512,23 @@ namespace perlin {
                             InvRecomputeOutputLocked();
                     }
                 } else if (offhand) {
-                    if (slot == 0) { inventory.offhand = info; extraRaw[kInvOffhand - 36] = items[i]; }
+                    if (slot == 0) {
+                        inventory.offhand = info;
+                        extraRaw[kInvOffhand - 36] = items[i];
+                    }
                 } else if (armor) {
-                    if (slot >= 0 && slot < 4) { inventory.armor[slot] = info; extraRaw[kInvArmor0 - 36 + slot] = items[i]; }
+                    if (slot >= 0 && slot < 4) {
+                        inventory.armor[slot] = info;
+                        extraRaw[kInvArmor0 - 36 + slot] = items[i];
+                    }
                 } else if (playerInventory && window != WindowIDVarint::Ui) {
                     const auto stamp = std::chrono::steady_clock::now();
                     if (mainOnly) {
-                        if (slot >= 0 && slot < 27) { inventory.main[slot] = info; inventoryRaw[slot + 9] = items[i]; invServerAt[slot + 9] = stamp; }
+                        if (slot >= 0 && slot < 27) {
+                            inventory.main[slot] = info;
+                            inventoryRaw[slot + 9] = items[i];
+                            invServerAt[slot + 9] = stamp;
+                        }
                     } else if (slot >= 0 && slot < 9) {
                         inventory.hotbar[slot] = info;
                         inventoryRaw[slot] = items[i];
@@ -400,9 +542,8 @@ namespace perlin {
             }
         };
 
-        On<InventoryContentPacket>([store](const InventoryContentPacket& p) {
-            store(p.windowId, p.container, 0, p.input, true);
-        });
+        On<InventoryContentPacket>(
+            [store](const InventoryContentPacket& p) { store(p.windowId, p.container, 0, p.input, true); });
         On<InventorySlotPacket>([store](const InventorySlotPacket& p) {
             store(p.windowId, p.container, static_cast<int>(p.slot), std::vector<ItemV4>{p.item}, false);
         });
@@ -411,11 +552,13 @@ namespace perlin {
             static int logged = 0;
             if (logged < 12) {
                 logged++;
-                std::cout << "[inventory] server transaction type " << static_cast<int>(p.transaction.transactionType) << " actions "
+                std::cout << "[inventory] server transaction type "
+                          << static_cast<int>(p.transaction.transactionType) << " actions "
                           << p.transaction.actions.size();
                 for (const TransactionActionsEntry& a : p.transaction.actions)
-                    std::cout << " (src " << static_cast<uint32_t>(a.sourceType) << " win " << (a.windowId ? static_cast<int>(*a.windowId) : -1)
-                              << " slot " << a.slot << " new " << a.newItem.networkId << "x" << a.newItem.count << ")";
+                    std::cout << " (src " << static_cast<uint32_t>(a.sourceType) << " win "
+                              << (a.windowId ? static_cast<int>(*a.windowId) : -1) << " slot " << a.slot
+                              << " new " << a.newItem.networkId << "x" << a.newItem.count << ")";
                 std::cout << std::endl;
             }
             if (p.transaction.transactionType != TransactionTransactionType::Normal)
@@ -426,12 +569,23 @@ namespace perlin {
                 const int window = a.windowId ? static_cast<int>(*a.windowId) : 0;
                 WindowIDVarint w;
                 switch (window) {
-                case 0: w = WindowIDVarint::Inventory; break;
-                case 119: w = WindowIDVarint::Offhand; break;
-                case 120: w = WindowIDVarint::Armor; break;
-                case 122: w = WindowIDVarint::Hotbar; break;
-                case 123: w = WindowIDVarint::FixedInventory; break;
-                default: continue;
+                case 0:
+                    w = WindowIDVarint::Inventory;
+                    break;
+                case 119:
+                    w = WindowIDVarint::Offhand;
+                    break;
+                case 120:
+                    w = WindowIDVarint::Armor;
+                    break;
+                case 122:
+                    w = WindowIDVarint::Hotbar;
+                    break;
+                case 123:
+                    w = WindowIDVarint::FixedInventory;
+                    break;
+                default:
+                    continue;
                 }
                 store(w, std::nullopt, static_cast<int>(a.slot), std::vector<ItemV4>{a.newItem}, false);
             }
@@ -440,89 +594,114 @@ namespace perlin {
         On<ItemStackResponsePacket>([this](const ItemStackResponsePacket& p) {
             std::vector<std::array<int, 3>> retries;
             {
-            std::lock_guard lock(statusMutex);
-            static const bool debug = PERLIN_ENV("PERLIN_INV_DEBUG") != nullptr;
-            for (const ItemStackResponsesEntry& r : p.responses) {
-                if (const auto pending = pendingDrops.find(r.requestId); pending != pendingDrops.end()) {
-                    if (r.status == ItemStackResponsesEntryStatus::Ok) {
-                        dropForm = pending->second.attempt;
-                    } else if (pending->second.attempt < 2) {
-                        retries.push_back({pending->second.slot, pending->second.count, pending->second.attempt + 1});
-                    }
-                    pendingDrops.erase(pending);
-                }
-                if (r.status != ItemStackResponsesEntryStatus::Ok)
-                    Log("inventory", "request {} rejected, status {}:{}", r.requestId, static_cast<int>(r.status), (invSummaries.count(r.requestId) ? invSummaries[r.requestId] : std::string()));
-                else if (debug)
-                    Log("inventory", "request {} ok", r.requestId);
-                std::optional<InvSnapshot> before;
-                if (const auto snap = invSnapshots.find(r.requestId); snap != invSnapshots.end()) {
-                    if (r.status == ItemStackResponsesEntryStatus::Ok)
-                        before = snap->second;
-                    else {
-                        invSnapshots.erase(invSnapshots.begin(), snap);
-                        const int selected = inventory.selected;
-                        inventory = snap->second.view;
-                        inventory.selected = selected;
-                        std::copy(std::begin(snap->second.raw), std::end(snap->second.raw), std::begin(inventoryRaw));
-                        std::copy(std::begin(snap->second.extra), std::end(snap->second.extra), std::begin(extraRaw));
-                        std::copy(std::begin(snap->second.chest), std::end(snap->second.chest), std::begin(chestRaw));
-                        InvRecomputeOutputLocked();
-                    }
-                    invSnapshots.erase(snap);
-                }
-                invInFlight.erase(r.requestId);
-                const bool newerPending = !invSnapshots.empty() && invSnapshots.begin()->first < r.requestId;
-                if (r.status != ItemStackResponsesEntryStatus::Ok || !r.containers || newerPending)
-                    continue;
-                for (const auto& c : *r.containers) {
-                    const ContainerSlotType type = c.slotType.containerId;
-                    for (const auto& s : c.slots) {
-                        int slot = -1;
-                        switch (type) {
-                        case ContainerSlotType::HotbarAndInventory:
-                        case ContainerSlotType::Hotbar: slot = s.slot; break;
-                        case ContainerSlotType::Inventory: slot = s.slot < 27 ? s.slot + 9 : s.slot; break;
-                        case ContainerSlotType::Armor: slot = kInvArmor0 + s.slot; break;
-                        case ContainerSlotType::Offhand: slot = kInvOffhand; break;
-                        case ContainerSlotType::CraftingInput: slot = s.slot >= 28 && s.slot <= 31 ? kInvCraft0 + s.slot - 28 : (s.slot >= 32 && s.slot <= 40 ? kInvWork0 + s.slot - 32 : -1); break;
-                        case ContainerSlotType::CraftingOutput:
-                        case ContainerSlotType::CreativeOutput: slot = kInvOutput; break;
-                        case ContainerSlotType::Cursor: slot = kInvCursor; break;
-                        case ContainerSlotType::Container:
-                        case ContainerSlotType::Shulker:
-                        case ContainerSlotType::Barrel:
-                            if (inventory.chestOpen && s.slot < kInvChestCount)
-                                slot = kInvChest0 + s.slot;
-                            break;
-                        default: break;
+                std::lock_guard lock(statusMutex);
+                static const bool debug = PERLIN_ENV("PERLIN_INV_DEBUG") != nullptr;
+                for (const ItemStackResponsesEntry& r : p.responses) {
+                    if (const auto pending = pendingDrops.find(r.requestId); pending != pendingDrops.end()) {
+                        if (r.status == ItemStackResponsesEntryStatus::Ok) {
+                            dropForm = pending->second.attempt;
+                        } else if (pending->second.attempt < 2) {
+                            retries.push_back(
+                                {pending->second.slot, pending->second.count, pending->second.attempt + 1});
                         }
-                        if (slot < 0 || (slot >= kInvSlots && slot < kInvChest0) || slot >= kInvTotal)
-                            continue;
-                        ItemStackInfo& info = InvInfoLocked(slot);
-                        ItemV4& raw = InvRawLocked(slot);
-                        if (s.count != 0 && raw.networkId == 0 && before && slot < 36) {
-                            const ItemV4& old = before->raw[slot];
-                            if (old.networkId != 0 && (!s.itemStackId || !old.stackId || *s.itemStackId == *old.stackId)) {
-                                info = slot < 9 ? before->view.hotbar[slot] : before->view.main[slot - 9];
-                                raw = old;
+                        pendingDrops.erase(pending);
+                    }
+                    if (r.status != ItemStackResponsesEntryStatus::Ok)
+                        Log("inventory", "request {} rejected, status {}:{}", r.requestId,
+                            static_cast<int>(r.status),
+                            (invSummaries.contains(r.requestId) ? invSummaries[r.requestId] : std::string()));
+                    else if (debug)
+                        Log("inventory", "request {} ok", r.requestId);
+                    std::optional<InvSnapshot> before;
+                    if (const auto snap = invSnapshots.find(r.requestId); snap != invSnapshots.end()) {
+                        if (r.status == ItemStackResponsesEntryStatus::Ok)
+                            before = snap->second;
+                        else {
+                            invSnapshots.erase(invSnapshots.begin(), snap);
+                            const int selected = inventory.selected;
+                            inventory = snap->second.view;
+                            inventory.selected = selected;
+                            std::copy(std::begin(snap->second.raw), std::end(snap->second.raw),
+                                      std::begin(inventoryRaw));
+                            std::copy(std::begin(snap->second.extra), std::end(snap->second.extra),
+                                      std::begin(extraRaw));
+                            std::copy(std::begin(snap->second.chest), std::end(snap->second.chest),
+                                      std::begin(chestRaw));
+                            InvRecomputeOutputLocked();
+                        }
+                        invSnapshots.erase(snap);
+                    }
+                    invInFlight.erase(r.requestId);
+                    const bool newerPending =
+                        !invSnapshots.empty() && invSnapshots.begin()->first < r.requestId;
+                    if (r.status != ItemStackResponsesEntryStatus::Ok || !r.containers || newerPending)
+                        continue;
+                    for (const auto& c : *r.containers) {
+                        const ContainerSlotType type = c.slotType.containerId;
+                        for (const auto& s : c.slots) {
+                            int slot = -1;
+                            switch (type) {
+                            case ContainerSlotType::HotbarAndInventory:
+                            case ContainerSlotType::Hotbar:
+                                slot = s.slot;
+                                break;
+                            case ContainerSlotType::Inventory:
+                                slot = s.slot < 27 ? s.slot + 9 : s.slot;
+                                break;
+                            case ContainerSlotType::Armor:
+                                slot = kInvArmor0 + s.slot;
+                                break;
+                            case ContainerSlotType::Offhand:
+                                slot = kInvOffhand;
+                                break;
+                            case ContainerSlotType::CraftingInput:
+                                slot = s.slot >= 28 && s.slot <= 31
+                                           ? kInvCraft0 + s.slot - 28
+                                           : (s.slot >= 32 && s.slot <= 40 ? kInvWork0 + s.slot - 32 : -1);
+                                break;
+                            case ContainerSlotType::CraftingOutput:
+                            case ContainerSlotType::CreativeOutput:
+                                slot = kInvOutput;
+                                break;
+                            case ContainerSlotType::Cursor:
+                                slot = kInvCursor;
+                                break;
+                            case ContainerSlotType::Container:
+                            case ContainerSlotType::Shulker:
+                            case ContainerSlotType::Barrel:
+                                if (inventory.chestOpen && s.slot < kInvChestCount)
+                                    slot = kInvChest0 + s.slot;
+                                break;
+                            default:
+                                break;
+                            }
+                            if (slot < 0 || (slot >= kInvSlots && slot < kInvChest0) || slot >= kInvTotal)
+                                continue;
+                            ItemStackInfo& info = InvInfoLocked(slot);
+                            ItemV4& raw = InvRawLocked(slot);
+                            if (s.count != 0 && raw.networkId == 0 && before && slot < 36) {
+                                const ItemV4& old = before->raw[slot];
+                                if (old.networkId != 0 &&
+                                    (!s.itemStackId || !old.stackId || *s.itemStackId == *old.stackId)) {
+                                    info = slot < 9 ? before->view.hotbar[slot] : before->view.main[slot - 9];
+                                    raw = old;
+                                }
+                            }
+                            if (s.count == 0) {
+                                info = ItemStackInfo{};
+                                raw = ItemV4{};
+                            } else {
+                                info.count = s.count;
+                                raw.count = s.count;
+                                if (s.itemStackId) {
+                                    raw.stackId = s.itemStackId;
+                                    raw.hasStackId = true;
+                                }
                             }
                         }
-                        if (s.count == 0) {
-                            info = ItemStackInfo{};
-                            raw = ItemV4{};
-                        } else {
-                            info.count = s.count;
-                            raw.count = s.count;
-                            if (s.itemStackId) {
-                                raw.stackId = s.itemStackId;
-                                raw.hasStackId = true;
-                            }
-                        }
                     }
+                    InvRecomputeOutputLocked();
                 }
-                InvRecomputeOutputLocked();
-            }
             }
             for (const auto& r : retries)
                 SendDropRequest(r[0], r[1], r[2]);
@@ -579,7 +758,8 @@ namespace perlin {
         On<CraftingDataPacket>([this](const CraftingDataPacket& p) {
             const auto ingredient = [](const RecipeIngredient& in) {
                 RecipeIngredientInfo r;
-                if (in.type == RecipeIngredientType::Valid && (in.descriptorType == "name" || in.descriptorType == "item_tag")) {
+                if (in.type == RecipeIngredientType::Valid &&
+                    (in.descriptorType == "name" || in.descriptorType == "item_tag")) {
                     r.empty = false;
                     r.name = in.name;
                     r.tag = in.tag;
@@ -642,7 +822,8 @@ namespace perlin {
         });
 
         On<ContainerOpenPacket>([this](const ContainerOpenPacket& p) {
-            Log("bedrock", "container open window {} type {}", static_cast<int>(p.windowId), static_cast<int>(p.windowType));
+            Log("bedrock", "container open window {} type {}", static_cast<int>(p.windowId),
+                static_cast<int>(p.windowType));
             std::lock_guard lock(statusMutex);
             inventoryWindow = static_cast<int>(p.windowId);
             inventoryOpen = true;
@@ -665,18 +846,23 @@ namespace perlin {
             // plain chests on boats and minecarts arrive as their own window types
             const auto wt = p.windowType;
             const bool plainContainer = wt == WindowType::Container || wt == WindowType::MinecartChest ||
-                wt == WindowType::ChestBoat || wt == WindowType::Hopper || wt == WindowType::Dropper ||
-                wt == WindowType::Dispenser;
+                                        wt == WindowType::ChestBoat || wt == WindowType::Hopper ||
+                                        wt == WindowType::Dropper || wt == WindowType::Dispenser;
             if (wt != WindowType::Container && wt != WindowType::Horse && wt != WindowType::Workbench)
-                Log("bedrock", "container open window {} type {} (unhandled)", static_cast<int>(p.windowId), static_cast<int>(wt));
+                Log("bedrock", "container open window {} type {} (unhandled)", static_cast<int>(p.windowId),
+                    static_cast<int>(wt));
             if (plainContainer) {
                 bool loaded = false;
-                const std::string name = BlockPalette::Instance().Name(netLevel.GetBlock(p.coordinates.x, p.coordinates.y, p.coordinates.z, loaded));
+                const std::string name = BlockPalette::Instance().Name(
+                    netLevel.GetBlock(p.coordinates.x, p.coordinates.y, p.coordinates.z, loaded));
                 const auto has = [&](const char* s) { return name.contains(s); };
-                chestSlotType = has("shulker_box") ? ContainerSlotType::Shulker : has("barrel") ? ContainerSlotType::Barrel : ContainerSlotType::Container;
-                inventory.chestTitle = has("ender_chest") ? "container.enderchest" : has("shulker_box") ? "container.shulkerBox"
-                                     : has("barrel")      ? "container.barrel"
-                                                          : "container.chest";
+                chestSlotType = has("shulker_box") ? ContainerSlotType::Shulker
+                                : has("barrel")    ? ContainerSlotType::Barrel
+                                                   : ContainerSlotType::Container;
+                inventory.chestTitle = has("ender_chest")   ? "container.enderchest"
+                                       : has("shulker_box") ? "container.shulkerBox"
+                                       : has("barrel")      ? "container.barrel"
+                                                            : "container.chest";
                 inventory.chestOpen = true;
                 inventory.chestSlots = 27;
                 chestWindow = static_cast<int>(p.windowId);
@@ -694,7 +880,8 @@ namespace perlin {
             }
         });
         On<ContainerClosePacket>([this](const ContainerClosePacket& p) {
-            Log("bedrock", "container close window {}{}", static_cast<int>(p.windowId), (p.server ? " (server)" : ""));
+            Log("bedrock", "container close window {}{}", static_cast<int>(p.windowId),
+                (p.server ? " (server)" : ""));
             std::lock_guard lock(statusMutex);
             inventoryOpen = false;
             workbenchOpen = false;
@@ -768,6 +955,7 @@ namespace perlin {
         On<MovementEffectPacket>([this](const MovementEffectPacket& p) {
             if (runtimeId == 0 || p.runtimeId != runtimeId)
                 return;
+            // type and duration are zigzag varints (reader 0x14072F7D0, retyped in overrides.json): unsigned doubles them
             const auto type = static_cast<uint32_t>(p.effectType);
             if (type > 1)
                 return;
@@ -779,11 +967,14 @@ namespace perlin {
             if (runtimeId != 0 && p.runtimeEntityId != runtimeId)
                 return;
             if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
-                Log("effect", "id={} event={} duration={} serverTick={} afterAuthTick={}", p.effectId, static_cast<int>(p.eventId), p.duration, p.tick, LastAuthTick());
+                Log("effect", "id={} event={} duration={} serverTick={} afterAuthTick={}", p.effectId,
+                    static_cast<int>(p.eventId), p.duration, p.tick, LastAuthTick());
             const bool on = p.eventId != MobEffectPacketEventId::Remove;
             std::lock_guard lock(statusMutex);
             pendingEffectUpdates.push_back({p.tick, p.effectId, p.amplifier, on, p.duration});
-            activeEffects.erase(std::remove_if(activeEffects.begin(), activeEffects.end(), [&](const ActiveEffect& e) { return e.id == p.effectId; }), activeEffects.end());
+            activeEffects.erase(std::remove_if(activeEffects.begin(), activeEffects.end(),
+                                               [&](const ActiveEffect& e) { return e.id == p.effectId; }),
+                                activeEffects.end());
             if (on) {
                 ActiveEffect e;
                 e.id = p.effectId;
@@ -795,11 +986,20 @@ namespace perlin {
                 activeEffects.push_back(e);
             }
             switch (p.effectId) {
-            case 10: vitals.regeneration = on; break;
-            case 17: vitals.hungerEffect = on; break;
-            case 19: vitals.poison = on; break;
-            case 20: vitals.wither = on; break;
-            default: break;
+            case 10:
+                vitals.regeneration = on;
+                break;
+            case 17:
+                vitals.hungerEffect = on;
+                break;
+            case 19:
+                vitals.poison = on;
+                break;
+            case 20:
+                vitals.wither = on;
+                break;
+            default:
+                break;
             }
         });
 
@@ -812,10 +1012,10 @@ namespace perlin {
                 if (e.key == MetadataDictionaryEntryKey::Flags && IntegerOf(e, value)) {
                     vitals.onFire = (value & 1) != 0;
                     immobile = (value & (1 << 16)) != 0;
-                }
-                else if (e.key == MetadataDictionaryEntryKey::Air && IntegerOf(e, value))
+                } else if (e.key == MetadataDictionaryEntryKey::Air && IntegerOf(e, value))
                     vitals.air = value;
-                else if (e.key == MetadataDictionaryEntryKey::MaxAirdataMaxAir && IntegerOf(e, value) && value > 0)
+                else if (e.key == MetadataDictionaryEntryKey::MaxAirdataMaxAir && IntegerOf(e, value) &&
+                         value > 0)
                     vitals.maxAir = value;
             }
         });
@@ -823,8 +1023,9 @@ namespace perlin {
         On<LocatorBarPacket>([this](const LocatorBarPacket& p) {
             std::lock_guard lock(locatorMutex);
             for (const LocatorBarWaypoint& entry : p.waypoints) {
-                const auto it = std::find_if(locatorWaypoints.begin(), locatorWaypoints.end(),
-                                             [&](const LocatorWaypoint& w) { return w.id == entry.groupHandle.bytes; });
+                const auto it =
+                    std::find_if(locatorWaypoints.begin(), locatorWaypoints.end(),
+                                 [&](const LocatorWaypoint& w) { return w.id == entry.groupHandle.bytes; });
                 if (entry.action == LocatorBarWaypointAction::Remove) {
                     if (it != locatorWaypoints.end())
                         locatorWaypoints.erase(it);
@@ -899,7 +1100,8 @@ namespace perlin {
         });
 
         OnPartial<TextPacket>([this](const TextPacket& t) {
-            if (t.type == TextPacketType::Popup || t.type == TextPacketType::Tip || t.type == TextPacketType::JukeboxPopup) {
+            if (t.type == TextPacketType::Popup || t.type == TextPacketType::Tip ||
+                t.type == TextPacketType::JukeboxPopup) {
                 std::lock_guard lock(statusMutex);
                 titleText.actionBar = t.message;
                 titleText.actionAt = std::chrono::steady_clock::now();
@@ -913,7 +1115,9 @@ namespace perlin {
     void BedrockSession::ClearCrack(int x, int y, int z) {
         std::lock_guard lock(crackMutex);
         std::erase_if(crackStates, [&](const CrackState& c) { return c.x == x && c.y == y && c.z == z; });
-        lastClearedCrack[0] = x; lastClearedCrack[1] = y; lastClearedCrack[2] = z;
+        lastClearedCrack[0] = x;
+        lastClearedCrack[1] = y;
+        lastClearedCrack[2] = z;
         lastClearedAt = std::chrono::steady_clock::now();
     }
 

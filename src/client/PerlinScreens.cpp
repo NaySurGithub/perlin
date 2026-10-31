@@ -17,6 +17,60 @@ namespace perlin {
         }
     }
 
+    void Perlin::RegisterScreens() {
+        // full screens first: the first one up takes the frame
+        screens.Add({"title", [this](ScreenFrame& f) { return UpdateTitleScreen(f.hud, f.fbW, f.fbH); },
+                     [this] { return titleScreen.shown; }});
+        screens.Add({"disconnect",
+                     [this](ScreenFrame& f) { return UpdateDisconnectScreen(f.hud, f.fbW, f.fbH); },
+                     [this] { return disconnect.shown; }});
+        screens.Add({"loading", [this](ScreenFrame& f) { return UpdateLoadingScreen(f.hud, f.fbW, f.fbH); },
+                     [this] { return loading.shown; }});
+        screens.Add({"replay",
+                     [this](ScreenFrame& f) {
+                         if (!replayCtl.Playing() || !f.live || !f.live->IsReplay())
+                             return false;
+                         if (exportJob.active)
+                             ExportOverlay(f.hud, f.fbW, f.fbH);
+                         else
+                             UpdateReplayScreen(f.hud, f.live, f.fbW, f.fbH);
+                         return true;
+                     },
+                     [this] { return replayCtl.Playing(); }, false});
+        screens.Add({"credits",
+                     [this](ScreenFrame& f) {
+                         UpdateCreditsScreen(f.hud, f.live, f.fbW, f.fbH);
+                         return credits.shown;
+                     },
+                     [this] { return credits.shown; }});
+        // in-game screens: each decides for itself whether it opens
+        const auto inGame = [](auto update) {
+            return [update](ScreenFrame& f) {
+                update(f);
+                return false;
+            };
+        };
+        screens.Add({"death", inGame([this](ScreenFrame& f) {
+                         UpdateDeathScreen(f.hud, f.live, hudState, f.fbW, f.fbH);
+                     }),
+                     [this] { return death.shown; }});
+        screens.Add({"form",
+                     inGame([this](ScreenFrame& f) { UpdateFormScreen(f.hud, f.live, f.fbW, f.fbH); }),
+                     [this] { return form.shown; }});
+        screens.Add({"inventory", inGame([this](ScreenFrame& f) {
+                         UpdateInventoryScreen(f.hud, f.live, hudState, f.fbW, f.fbH);
+                     }),
+                     [this] { return inventory.shown; }});
+        screens.Add({"pause",
+                     inGame([this](ScreenFrame& f) { UpdatePauseScreen(f.hud, f.live, f.fbW, f.fbH); }),
+                     [this] { return pause.shown; }});
+        screens.Add({"bed", inGame([this](ScreenFrame& f) { UpdateBedScreen(f.hud, f.live, f.fbW, f.fbH); }),
+                     [this] { return bed.shown; }, false});
+        screens.Add({"chat",
+                     inGame([this](ScreenFrame& f) { UpdateChatClicks(f.hud, f.live, f.fbW, f.fbH); }),
+                     [this] { return chat.IsOpen(); }, false});
+    }
+
     void Perlin::CloseOverlay(ui::Hud& hud, OverlayState& screen) {
         hud.Overlay().ClearOverlay();
         screen.shown = false;
@@ -358,7 +412,8 @@ namespace perlin {
             death.shown = true;
             death.openedAt = now;
             platform->SetCursorCaptured(false);
-            Log("ui", "death screen shown: health={} pending={} cause='{}' hud={}", state.health, (live && live->DeathPending()), (live ? live->DeathCause() : std::string()), state.visible);
+            Log("ui", "death screen shown: health={} pending={} cause='{}' hud={}", state.health,
+                (live && live->DeathPending()), (live ? live->DeathCause() : std::string()), state.visible);
         }
         if (!death.textMode) {
             death.textMode = true;

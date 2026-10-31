@@ -16,16 +16,19 @@ namespace perlin {
             if (!j)
                 return false;
             if (j->IsArray() && j->array.size() >= 3) {
-                out = {static_cast<float>(j->array[0].NumberOr(0)), static_cast<float>(j->array[1].NumberOr(0)), static_cast<float>(j->array[2].NumberOr(0))};
+                out = {static_cast<float>(j->array[0].NumberOr(0)),
+                       static_cast<float>(j->array[1].NumberOr(0)),
+                       static_cast<float>(j->array[2].NumberOr(0))};
                 return true;
             }
             if (j->IsString() && j->string.size() >= 7 && j->string[0] == '#') {
                 try {
-                    const auto byte = [&](size_t i) { return static_cast<float>(std::stoi(j->string.substr(i, 2), nullptr, 16)) / 255.0f; };
+                    const auto byte = [&](size_t i) {
+                        return static_cast<float>(std::stoi(j->string.substr(i, 2), nullptr, 16)) / 255.0f;
+                    };
                     out = {byte(1), byte(3), byte(5)};
                     return true;
-                } catch (...) {
-                }
+                } catch (...) {}
             }
             return false;
         }
@@ -63,7 +66,8 @@ namespace perlin {
         defs.clear();
         for (const std::string& d : dirs) {
             std::error_code ec;
-            for (const auto& e : fs::recursive_directory_iterator(fs::path(d) / "fogs", fs::directory_options::skip_permission_denied, ec)) {
+            for (const auto& e : fs::recursive_directory_iterator(
+                     fs::path(d) / "fogs", fs::directory_options::skip_permission_denied, ec)) {
                 if (!e.is_regular_file() || e.path().extension() != ".json")
                     continue;
                 std::ifstream in(e.path(), std::ios::binary);
@@ -88,7 +92,7 @@ namespace perlin {
                     f.lavaResistance = ParseMedium(dist->Find("lava_resistance"));
                     f.weather = ParseMedium(dist->Find("weather"));
                 }
-                defs[id->string] = std::move(f);
+                defs[id->string] = f;
             }
         }
     }

@@ -18,8 +18,12 @@ namespace perlin::audio {
             return s;
         }
 
-        bool StartsWith(const std::string& s, const char* prefix) { return s.starts_with(prefix); }
-        bool Contains(const std::string& s, const char* part) { return s.contains(part); }
+        bool StartsWith(const std::string& s, const char* prefix) {
+            return s.starts_with(prefix);
+        }
+        bool Contains(const std::string& s, const char* part) {
+            return s.contains(part);
+        }
 
         std::vector<std::string> Split(const std::string& s) {
             std::vector<std::string> parts;
@@ -34,8 +38,12 @@ namespace perlin::audio {
             return parts;
         }
 
-        std::string T(const std::string& key) { return i18n::Tr(key); }
-        std::string T(const std::string& key, const std::vector<std::string>& args) { return i18n::Tr(key, args); }
+        std::string T(const std::string& key) {
+            return i18n::Tr(key);
+        }
+        std::string T(const std::string& key, const std::vector<std::string>& args) {
+            return i18n::Tr(key, args);
+        }
 
         std::string MobName(const std::string& mob) {
             std::string out;
@@ -71,43 +79,76 @@ namespace perlin::audio {
             return first({"subtitles.block.generic.use", "subtitles.block.generic.place"});
 
         static const std::map<std::string, std::string> kMap = {
-            {"random.explode", "entity.generic.explode"}, {"random.pop", "entity.item.pickup"},
-            {"random.pop2", "entity.item.pickup"}, {"random.orb", "entity.experience_orb.pickup"},
-            {"random.levelup", "entity.player.levelup"}, {"random.burp", "entity.player.burp"},
-            {"random.eat", "entity.generic.eat"}, {"random.drink", "entity.generic.drink"},
-            {"random.splash", "entity.generic.splash"}, {"random.swim", "entity.generic.swim"},
-            {"random.fizz", "entity.generic.extinguish_fire"}, {"random.bow", "entity.arrow.shoot"},
-            {"random.bowhit", "entity.arrow.hit"}, {"random.break", "entity.item.break"},
-            {"random.chestopen", "block.chest.open"}, {"random.chestclosed", "block.chest.close"},
-            {"random.enderchestopen", "block.ender_chest.open"}, {"random.enderchestclosed", "block.ender_chest.close"},
-            {"random.shulkerbox.open", "block.shulker_box.open"}, {"random.shulkerbox.close", "block.shulker_box.close"},
-            {"random.door_open", "block.wooden_door.open"}, {"random.door_close", "block.wooden_door.close"},
-            {"random.glass", "block.glass.break"}, {"random.anvil_use", "block.anvil.use"},
-            {"random.anvil_land", "block.anvil.land"}, {"random.anvil_break", "block.anvil.destroy"},
-            {"random.toast", "ui.toast.challenge_complete"}, {"random.totem", "item.totem.use"},
-            {"random.lever_click", "block.lever.click"}, {"random.click", "block.wooden_button.click_on"},
-            {"game.player.hurt", "entity.player.hurt"}, {"game.player.die", "entity.player.death"},
+            {"random.explode", "entity.generic.explode"},
+            {"random.pop", "entity.item.pickup"},
+            {"random.pop2", "entity.item.pickup"},
+            {"random.orb", "entity.experience_orb.pickup"},
+            {"random.levelup", "entity.player.levelup"},
+            {"random.burp", "entity.player.burp"},
+            {"random.eat", "entity.generic.eat"},
+            {"random.drink", "entity.generic.drink"},
+            {"random.splash", "entity.generic.splash"},
+            {"random.swim", "entity.generic.swim"},
+            {"random.fizz", "entity.generic.extinguish_fire"},
+            {"random.bow", "entity.arrow.shoot"},
+            {"random.bowhit", "entity.arrow.hit"},
+            {"random.break", "entity.item.break"},
+            {"random.chestopen", "block.chest.open"},
+            {"random.chestclosed", "block.chest.close"},
+            {"random.enderchestopen", "block.ender_chest.open"},
+            {"random.enderchestclosed", "block.ender_chest.close"},
+            {"random.shulkerbox.open", "block.shulker_box.open"},
+            {"random.shulkerbox.close", "block.shulker_box.close"},
+            {"random.door_open", "block.wooden_door.open"},
+            {"random.door_close", "block.wooden_door.close"},
+            {"random.glass", "block.glass.break"},
+            {"random.anvil_use", "block.anvil.use"},
+            {"random.anvil_land", "block.anvil.land"},
+            {"random.anvil_break", "block.anvil.destroy"},
+            {"random.toast", "ui.toast.challenge_complete"},
+            {"random.totem", "item.totem.use"},
+            {"random.lever_click", "block.lever.click"},
+            {"random.click", "block.wooden_button.click_on"},
+            {"game.player.hurt", "entity.player.hurt"},
+            {"game.player.die", "entity.player.death"},
             {"game.player.attack.strong", "entity.player.attack.strong"},
             {"game.player.attack.nodamage", "entity.player.attack.weak"},
-            {"damage.hit", "entity.player.hurt"}, {"damage.fallbig", "entity.generic.big_fall"},
-            {"damage.fallsmall", "entity.generic.small_fall"}, {"fire.fire", "block.fire.ambient"},
-            {"fire.ignite", "item.flintandsteel.use"}, {"liquid.water", "block.water.ambient"},
-            {"liquid.lava", "block.lava.ambient"}, {"liquid.lavapop", "block.lava.pop"},
+            {"damage.hit", "entity.player.hurt"},
+            {"damage.fallbig", "entity.generic.big_fall"},
+            {"damage.fallsmall", "entity.generic.small_fall"},
+            {"fire.fire", "block.fire.ambient"},
+            {"fire.ignite", "item.flintandsteel.use"},
+            {"liquid.water", "block.water.ambient"},
+            {"liquid.lava", "block.lava.ambient"},
+            {"liquid.lavapop", "block.lava.pop"},
             {"ambient.weather.thunder", "entity.lightning_bolt.thunder"},
             {"ambient.weather.lightning.impact", "entity.lightning_bolt.impact"},
-            {"ambient.weather.rain", "weather.rain"}, {"ambient.cave", "ambient.cave"},
-            {"portal.portal", "block.portal.ambient"}, {"portal.travel", "block.portal.travel"},
-            {"portal.trigger", "block.portal.trigger"}, {"mob.enderdragon.growl", "entity.ender_dragon.growl"},
-            {"mob.enderdragon.flap", "entity.ender_dragon.flap"}, {"mob.enderdragon.death", "entity.ender_dragon.death"},
-            {"mob.enderdragon.hit", "entity.ender_dragon.hurt"}, {"mob.endermen.portal", "entity.enderman.teleport"},
-            {"mob.endermen.scream", "entity.enderman.scream"}, {"mob.endermen.stare", "entity.enderman.stare"},
-            {"mob.creeper.say", "entity.creeper.hurt"}, {"mob.tnt.fuse", "entity.tnt.primed"},
-            {"item.trident.hit", "item.trident.hit"}, {"item.trident.throw", "item.trident.throw"},
-            {"item.trident.return", "item.trident.return"}, {"item.shield.block", "item.shield.block"},
-            {"bucket.fill_water", "item.bucket.fill"}, {"bucket.fill_lava", "item.bucket.fill"},
-            {"bucket.empty_water", "item.bucket.empty"}, {"bucket.empty_lava", "item.bucket.empty"},
-            {"elytra.loop", "item.elytra.flying"}, {"firework.launch", "entity.firework_rocket.launch"},
-            {"firework.blast", "entity.firework_rocket.blast"}, {"firework.large_blast", "entity.firework_rocket.blast"},
+            {"ambient.weather.rain", "weather.rain"},
+            {"ambient.cave", "ambient.cave"},
+            {"portal.portal", "block.portal.ambient"},
+            {"portal.travel", "block.portal.travel"},
+            {"portal.trigger", "block.portal.trigger"},
+            {"mob.enderdragon.growl", "entity.ender_dragon.growl"},
+            {"mob.enderdragon.flap", "entity.ender_dragon.flap"},
+            {"mob.enderdragon.death", "entity.ender_dragon.death"},
+            {"mob.enderdragon.hit", "entity.ender_dragon.hurt"},
+            {"mob.endermen.portal", "entity.enderman.teleport"},
+            {"mob.endermen.scream", "entity.enderman.scream"},
+            {"mob.endermen.stare", "entity.enderman.stare"},
+            {"mob.creeper.say", "entity.creeper.hurt"},
+            {"mob.tnt.fuse", "entity.tnt.primed"},
+            {"item.trident.hit", "item.trident.hit"},
+            {"item.trident.throw", "item.trident.throw"},
+            {"item.trident.return", "item.trident.return"},
+            {"item.shield.block", "item.shield.block"},
+            {"bucket.fill_water", "item.bucket.fill"},
+            {"bucket.fill_lava", "item.bucket.fill"},
+            {"bucket.empty_water", "item.bucket.empty"},
+            {"bucket.empty_lava", "item.bucket.empty"},
+            {"elytra.loop", "item.elytra.flying"},
+            {"firework.launch", "entity.firework_rocket.launch"},
+            {"firework.blast", "entity.firework_rocket.blast"},
+            {"firework.large_blast", "entity.firework_rocket.blast"},
             {"firework.twinkle", "entity.firework_rocket.twinkle"},
         };
         if (const auto it = kMap.find(name); it != kMap.end())
@@ -117,17 +158,25 @@ namespace perlin::audio {
             return first({"subtitles.item.armor." + parts[1], "subtitles.item.armor.equip"});
         if (p0 == "note")
             return first({"subtitles.block.note_block.note"});
-        if (name == "mob.wither.spawn" || name == "mob.wither.shoot" || name == "mob.wither.death" || name == "mob.wither.hurt" ||
-            name == "mob.wither.ambient")
-            if (const std::string t = first({"subtitles.entity.wither." + std::string(parts[2] == "ambient" ? "ambient" : parts[2])}); !t.empty())
+        if (name == "mob.wither.spawn" || name == "mob.wither.shoot" || name == "mob.wither.death" ||
+            name == "mob.wither.hurt" || name == "mob.wither.ambient")
+            if (const std::string t = first(
+                    {"subtitles.entity.wither." + std::string(parts[2] == "ambient" ? "ambient" : parts[2])});
+                !t.empty())
                 return t;
 
         if (p0 == "mob" && parts.size() >= 3) {
             std::string mob = parts[1];
             static const std::map<std::string, std::string> kMob = {
-                {"endermen", "enderman"}, {"zombiepigman", "zombified_piglin"}, {"zombie_pigman", "zombified_piglin"},
-                {"snowgolem", "snow_golem"}, {"irongolem", "iron_golem"}, {"villager", "villager"},
-                {"magmacube", "magma_cube"}, {"evocation_illager", "evoker"}, {"horse", "horse"},
+                {"endermen", "enderman"},
+                {"zombiepigman", "zombified_piglin"},
+                {"zombie_pigman", "zombified_piglin"},
+                {"snowgolem", "snow_golem"},
+                {"irongolem", "iron_golem"},
+                {"villager", "villager"},
+                {"magmacube", "magma_cube"},
+                {"evocation_illager", "evoker"},
+                {"horse", "horse"},
             };
             if (const auto it = kMob.find(mob); it != kMob.end())
                 mob = it->second;
@@ -158,17 +207,24 @@ namespace perlin::audio {
                 return first({"subtitles.entity.generic.hurt"});
             if (event == "death")
                 return first({"subtitles.entity.generic.death"});
-            static const std::map<std::string, std::string> kEnglish = {
-                {"ambient", "makes a noise"}, {"angry", "growls"}, {"shoot", "shoots"}, {"attack", "attacks"},
-                {"eat", "eats"}, {"spawn", "appears"}, {"pop", "pops"}, {"plop", "pops"}, {"fuse", "fuses"},
-                {"primed", "fuses"}};
+            static const std::map<std::string, std::string> kEnglish = {{"ambient", "makes a noise"},
+                                                                        {"angry", "growls"},
+                                                                        {"shoot", "shoots"},
+                                                                        {"attack", "attacks"},
+                                                                        {"eat", "eats"},
+                                                                        {"spawn", "appears"},
+                                                                        {"pop", "pops"},
+                                                                        {"plop", "pops"},
+                                                                        {"fuse", "fuses"},
+                                                                        {"primed", "fuses"}};
             const auto it = kEnglish.find(event);
             return who + " " + (it != kEnglish.end() ? it->second : std::string("makes a noise"));
         }
         return {};
     }
 
-    void Subtitles::Add(const std::string& sound, const glm::dvec3& position, float volume, bool global, double now) {
+    void Subtitles::Add(const std::string& sound, const glm::dvec3& position, float volume, bool global,
+                        double now) {
         const std::string text = SubtitleText(sound);
         if (text.empty() || volume <= 0.0f)
             return;
@@ -185,8 +241,10 @@ namespace perlin::audio {
         entries.push_back({text, position, now, volume, global});
     }
 
-    std::vector<Subtitles::Line> Subtitles::Visible(const glm::dvec3& listener, float yawDegrees, double now) {
-        entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const Entry& e) { return now - e.time > kLifetime; }),
+    std::vector<Subtitles::Line> Subtitles::Visible(const glm::dvec3& listener, float yawDegrees,
+                                                    double now) {
+        entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                     [&](const Entry& e) { return now - e.time > kLifetime; }),
                       entries.end());
         const double yaw = static_cast<double>(yawDegrees) * 3.14159265358979323846 / 180.0;
         const glm::dvec2 forward(-std::sin(yaw), std::cos(yaw));
@@ -196,7 +254,8 @@ namespace perlin::audio {
             Line line;
             line.text = e.text;
             line.age = static_cast<float>(now - e.time);
-            line.brightness = static_cast<float>((255.0 - (255.0 - 75.0) * std::clamp((now - e.time) / kLifetime, 0.0, 1.0)) / 255.0);
+            line.brightness = static_cast<float>(
+                (255.0 - (255.0 - 75.0) * std::clamp((now - e.time) / kLifetime, 0.0, 1.0)) / 255.0);
             if (!e.global) {
                 const glm::dvec3 d = e.position - listener;
                 const double dist = glm::length(d);

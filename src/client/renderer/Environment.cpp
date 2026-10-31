@@ -67,23 +67,16 @@ namespace perlin {
             return Cubic(kSunCurve.ay, kSunCurve.by, kSunCurve.cy, SolveBezier(kSunCurve, x));
         }
 
-        const Keyframe kSunAngle[] = {
-            {6000, {360.0f}},
-            {6000, {0.0f}}};
+        const Keyframe kSunAngle[] = {{6000, {360.0f}}, {6000, {0.0f}}};
 
-        const Keyframe kMoonAngle[] = {
-            {6000, {540.0f}},
-            {6000, {180.0f}}};
+        const Keyframe kMoonAngle[] = {{6000, {540.0f}}, {6000, {180.0f}}};
 
-        const Keyframe kStarAngle[] = {
-            {6000, {360.0f}},
-            {6000, {0.0f}}};
+        const Keyframe kStarAngle[] = {{6000, {360.0f}}, {6000, {0.0f}}};
 
-        const Keyframe kSkyColor[] = {
-            {133, {1.0f, 1.0f, 1.0f}},
-            {11867, {1.0f, 1.0f, 1.0f}},
-            {13670, {0.0f, 0.0f, 0.0f}},
-            {22330, {0.0f, 0.0f, 0.0f}}};
+        const Keyframe kSkyColor[] = {{133, {1.0f, 1.0f, 1.0f}},
+                                      {11867, {1.0f, 1.0f, 1.0f}},
+                                      {13670, {0.0f, 0.0f, 0.0f}},
+                                      {22330, {0.0f, 0.0f, 0.0f}}};
 
         const Keyframe kFogColor[] = {
             {133, {1.0f, 1.0f, 1.0f}},
@@ -97,31 +90,18 @@ namespace perlin {
             {13670, {0.09803921568627451f, 0.09803921568627451f, 0.14901960784313725f, 1.0f}},
             {22330, {0.09803921568627451f, 0.09803921568627451f, 0.14901960784313725f, 1.0f}}};
 
-        const Keyframe kSkyLightColor[] = {
-            {730, {1.0f, 1.0f, 1.0f}},
-            {11270, {1.0f, 1.0f, 1.0f}},
-            {13140, {0.47843137254901963f, 0.47843137254901963f, 1.0f}},
-            {22860, {0.47843137254901963f, 0.47843137254901963f, 1.0f}}};
+        const Keyframe kSkyLightColor[] = {{730, {1.0f, 1.0f, 1.0f}},
+                                           {11270, {1.0f, 1.0f, 1.0f}},
+                                           {13140, {0.47843137254901963f, 0.47843137254901963f, 1.0f}},
+                                           {22860, {0.47843137254901963f, 0.47843137254901963f, 1.0f}}};
 
         const Keyframe kSkyLightFactor[] = {
-            {730, {1.0f}},
-            {11270, {1.0f}},
-            {13140, {0.24f}},
-            {22860, {0.24f}}};
+            {730, {1.0f}}, {11270, {1.0f}}, {13140, {0.24f}}, {22860, {0.24f}}};
 
-        const Keyframe kStarBrightness[] = {
-            {92, {0.037f}},
-            {627, {0.0f}},
-            {11373, {0.0f}},
-            {11732, {0.016f}},
-            {11959, {0.044f}},
-            {12399, {0.143f}},
-            {12729, {0.258f}},
-            {13228, {0.5f}},
-            {22772, {0.5f}},
-            {23032, {0.364f}},
-            {23356, {0.225f}},
-            {23758, {0.101f}}};
+        const Keyframe kStarBrightness[] = {{92, {0.037f}},    {627, {0.0f}},     {11373, {0.0f}},
+                                            {11732, {0.016f}}, {11959, {0.044f}}, {12399, {0.143f}},
+                                            {12729, {0.258f}}, {13228, {0.5f}},   {22772, {0.5f}},
+                                            {23032, {0.364f}}, {23356, {0.225f}}, {23758, {0.101f}}};
 
         const Keyframe kSunriseColor[] = {
             {71, {0.9372549019607843f, 0.6392156862745098f, 0.2f, 0.37254901960784315f}},
@@ -184,18 +164,21 @@ namespace perlin {
                     segment = &segments[i];
                     break;
                 }
-            const auto read = [](const Keyframe* key) { return glm::vec4(key->v[0], key->v[1], key->v[2], key->v[3]); };
+            const auto read = [](const Keyframe* key) {
+                return glm::vec4(key->v[0], key->v[1], key->v[2], key->v[3]);
+            };
             if (t <= segment->fromTicks)
                 return read(segment->from);
             if (t >= segment->toTicks)
                 return read(segment->to);
-            const float alpha = static_cast<float>(t - segment->fromTicks) / static_cast<float>(segment->toTicks - segment->fromTicks);
+            const float alpha = static_cast<float>(t - segment->fromTicks) /
+                                static_cast<float>(segment->toTicks - segment->fromTicks);
             return glm::mix(read(segment->from), read(segment->to), ease(alpha));
         }
 
         glm::vec3 Rgb(int hex) {
-            return {static_cast<float>((hex >> 16) & 0xFF) / 255.0f, static_cast<float>((hex >> 8) & 0xFF) / 255.0f,
-                    static_cast<float>(hex & 0xFF) / 255.0f};
+            return {static_cast<float>((hex >> 16) & 0xFF) / 255.0f,
+                    static_cast<float>((hex >> 8) & 0xFF) / 255.0f, static_cast<float>(hex & 0xFF) / 255.0f};
         }
 
         struct Base {
@@ -213,11 +196,22 @@ namespace perlin {
             switch (dimension) {
             case Dimension::Nether:
                 // dense tinted haze, biome code overrides when present
-                return {glm::vec3(0.0f), Rgb(0x331414), glm::vec4(0.0f), Rgb(0x302821), Rgb(0x7a7aff), 0.0f, 4.0f, 48.0f};
+                return {glm::vec3(0.0f),
+                        Rgb(0x331414),
+                        glm::vec4(0.0f),
+                        Rgb(0x302821),
+                        Rgb(0x7a7aff),
+                        0.0f,
+                        4.0f,
+                        48.0f};
             case Dimension::End:
-                return {glm::vec3(0.0f), Rgb(0x181318), glm::vec4(0.0f), Rgb(0x3f473f), Rgb(0xac60cd), 0.0f, 0.0f, 1024.0f};
+                return {
+                    glm::vec3(0.0f), Rgb(0x181318), glm::vec4(0.0f), Rgb(0x3f473f), Rgb(0xac60cd), 0.0f, 0.0f,
+                    1024.0f};
             default:
-                return {Rgb(0x78a7ff), Rgb(0xc0d8ff), glm::vec4(1.0f, 1.0f, 1.0f, 0.8f), Rgb(0x0a0a0a), glm::vec3(1.0f), 1.0f, 0.0f, 1024.0f};
+                return {Rgb(0x78a7ff), Rgb(0xc0d8ff),   glm::vec4(1.0f, 1.0f, 1.0f, 0.8f),
+                        Rgb(0x0a0a0a), glm::vec3(1.0f), 1.0f,
+                        0.0f,          1024.0f};
             }
         }
 
@@ -269,19 +263,26 @@ namespace perlin {
                 env.skyColor = glm::mix(env.skyColor, BlendToGray(env.skyColor, 0.6f, 0.75f), rain);
                 env.fogColor = glm::mix(env.fogColor, env.fogColor * glm::vec3(0.5f, 0.5f, 0.6f), rain);
                 env.cloudColor = glm::mix(env.cloudColor, BlendToGray(env.cloudColor, 0.24f, 0.5f), rain);
-                env.skyLightColor = glm::mix(env.skyLightColor, glm::mix(env.skyLightColor, nightLight, 0.3125f), rain);
-                env.skyLightFactor = glm::mix(env.skyLightFactor, glm::mix(env.skyLightFactor, 0.24f, 0.3125f), rain);
+                env.skyLightColor =
+                    glm::mix(env.skyLightColor, glm::mix(env.skyLightColor, nightLight, 0.3125f), rain);
+                env.skyLightFactor =
+                    glm::mix(env.skyLightFactor, glm::mix(env.skyLightFactor, 0.24f, 0.3125f), rain);
                 env.starBrightness = glm::mix(env.starBrightness, 0.0f, rain);
-                env.sunriseColor = glm::mix(env.sunriseColor, env.sunriseColor * glm::vec4(0.5f, 0.5f, 0.6f, 1.0f), rain);
+                env.sunriseColor =
+                    glm::mix(env.sunriseColor, env.sunriseColor * glm::vec4(0.5f, 0.5f, 0.6f, 1.0f), rain);
             }
             if (thunder > 0.0f) {
                 env.skyColor = glm::mix(env.skyColor, BlendToGray(env.skyColor, 0.24f, 0.94f), thunder);
                 env.fogColor = glm::mix(env.fogColor, env.fogColor * glm::vec3(0.25f, 0.25f, 0.3f), thunder);
-                env.cloudColor = glm::mix(env.cloudColor, BlendToGray(env.cloudColor, 0.095f, 0.94f), thunder);
-                env.skyLightColor = glm::mix(env.skyLightColor, glm::mix(env.skyLightColor, nightLight, 0.52734375f), thunder);
-                env.skyLightFactor = glm::mix(env.skyLightFactor, glm::mix(env.skyLightFactor, 0.24f, 0.52734375f), thunder);
+                env.cloudColor =
+                    glm::mix(env.cloudColor, BlendToGray(env.cloudColor, 0.095f, 0.94f), thunder);
+                env.skyLightColor = glm::mix(env.skyLightColor,
+                                             glm::mix(env.skyLightColor, nightLight, 0.52734375f), thunder);
+                env.skyLightFactor =
+                    glm::mix(env.skyLightFactor, glm::mix(env.skyLightFactor, 0.24f, 0.52734375f), thunder);
                 env.starBrightness = glm::mix(env.starBrightness, 0.0f, thunder);
-                env.sunriseColor = glm::mix(env.sunriseColor, env.sunriseColor * glm::vec4(0.25f, 0.25f, 0.3f, 1.0f), thunder);
+                env.sunriseColor = glm::mix(env.sunriseColor,
+                                            env.sunriseColor * glm::vec4(0.25f, 0.25f, 0.3f, 1.0f), thunder);
             }
             return env;
         }

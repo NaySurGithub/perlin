@@ -123,7 +123,9 @@ namespace perlin::ui {
         services.lineHeight = [](float s, bool ten) {
             return ten ? TenFont::Instance().LineHeight(s) : static_cast<float>(McFont::kLineHeight) * s;
         };
-        services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
+        services.textureSize = [](const std::string& tex, int& w, int& h) {
+            return UiAssets::Instance().ImageSize(tex, w, h);
+        };
         services.localize = [](const std::string& key) { return UiAssets::Instance().Localize(key); };
 
         services.anim = &animHost;
@@ -239,7 +241,8 @@ namespace perlin::ui {
         tree = std::move(built);
         {
             BuildReport crossReport;
-            crosshairTree = BuildTree(library, "hud_crosshair.hud_crosshair_screen", EngineRootVariables(), crossReport);
+            crosshairTree =
+                BuildTree(library, "hud_crosshair.hud_crosshair_screen", EngineRootVariables(), crossReport);
             cursorEmitter.Register("cursor_renderer", [this](const LNode& n, RmlWriter&) {
                 float dx = 0, dy = 0;
                 if (!FilterHudElement("cursor_renderer", dx, dy))
@@ -279,7 +282,8 @@ namespace perlin::ui {
             state = incoming;
 
         scale = JavaGuiScale(fbW, fbH, guiScaleOption);
-        const float newW = std::ceil(static_cast<float>(fbW) / scale), newH = std::ceil(static_cast<float>(fbH) / scale);
+        const float newW = std::ceil(static_cast<float>(fbW) / scale),
+                    newH = std::ceil(static_cast<float>(fbH) / scale);
         const bool resized = newW != guiW || newH != guiH || fbW != lastFbW || fbH != lastFbH;
         guiW = newW;
         guiH = newH;
@@ -358,8 +362,8 @@ namespace perlin::ui {
         const bool animTick = animHost.animating && now - lastAnimEval >= 1.0 / 60.0;
         const std::string& rcss = rcssCache;
         const uint64_t signature = stateChanged || resized || rebuilt ? HudSignature(state) : lastSignature;
-        if (!rebuilt && !resized && !animTick && signature == lastSignature && rcss == lastRcss && fontVersion == McFont::Instance().Version() &&
-            filterVersion == HudFilterVersion()) {
+        if (!rebuilt && !resized && !animTick && signature == lastSignature && rcss == lastRcss &&
+            fontVersion == McFont::Instance().Version() && filterVersion == HudFilterVersion()) {
             backend.Update();
             return scale;
         }

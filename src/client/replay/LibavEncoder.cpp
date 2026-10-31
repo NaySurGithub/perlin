@@ -19,8 +19,12 @@ extern "C" {
 
 namespace perlin::replay::ffmpeg {
 #ifndef PERLIN_HAVE_LIBAV
-    bool LibavCompiledIn() { return false; }
-    Catalog QueryLibav() { return Catalog{}; }
+    bool LibavCompiledIn() {
+        return false;
+    }
+    Catalog QueryLibav() {
+        return Catalog{};
+    }
     struct LibavEncoder::Impl {};
     LibavEncoder::LibavEncoder() = default;
     LibavEncoder::~LibavEncoder() = default;
@@ -28,8 +32,12 @@ namespace perlin::replay::ffmpeg {
         error = "this build of Perlin does not include the video encoder libraries";
         return false;
     }
-    bool LibavEncoder::WriteFrame(const uint8_t*, size_t) { return false; }
-    bool LibavEncoder::Finish(std::string&) { return false; }
+    bool LibavEncoder::WriteFrame(const uint8_t*, size_t) {
+        return false;
+    }
+    bool LibavEncoder::Finish(std::string&) {
+        return false;
+    }
     void LibavEncoder::Abort() {}
 #else
     namespace {
@@ -40,7 +48,9 @@ namespace perlin::replay::ffmpeg {
         }
     }
 
-    bool LibavCompiledIn() { return true; }
+    bool LibavCompiledIn() {
+        return true;
+    }
 
     Catalog QueryLibav() {
         Catalog cat;
@@ -73,13 +83,18 @@ namespace perlin::replay::ffmpeg {
         bool headerWritten = false, ioOpen = false;
 
         void Free() {
-            if (sws) sws_freeContext(sws);
+            if (sws)
+                sws_freeContext(sws);
             sws = nullptr;
-            if (frame) av_frame_free(&frame);
-            if (packet) av_packet_free(&packet);
-            if (ctx) avcodec_free_context(&ctx);
+            if (frame)
+                av_frame_free(&frame);
+            if (packet)
+                av_packet_free(&packet);
+            if (ctx)
+                avcodec_free_context(&ctx);
             if (fmt) {
-                if (ioOpen && fmt->pb) avio_closep(&fmt->pb);
+                if (ioOpen && fmt->pb)
+                    avio_closep(&fmt->pb);
                 avformat_free_context(fmt);
                 fmt = nullptr;
             }
@@ -109,7 +124,9 @@ namespace perlin::replay::ffmpeg {
     };
 
     LibavEncoder::LibavEncoder() : impl(std::make_unique<Impl>()) {}
-    LibavEncoder::~LibavEncoder() { Abort(); }
+    LibavEncoder::~LibavEncoder() {
+        Abort();
+    }
 
     void LibavEncoder::Abort() {
         if (impl)
@@ -132,7 +149,8 @@ namespace perlin::replay::ffmpeg {
             error = "this build has no encoder \"" + plan.encoder + "\"";
             return false;
         }
-        int r = avformat_alloc_output_context2(&m.fmt, nullptr, plan.muxer.empty() ? nullptr : plan.muxer.c_str(), s.outputPath.c_str());
+        int r = avformat_alloc_output_context2(
+            &m.fmt, nullptr, plan.muxer.empty() ? nullptr : plan.muxer.c_str(), s.outputPath.c_str());
         if (r < 0 || !m.fmt) {
             error = "cannot choose an output format: " + Err(r);
             m.Free();
@@ -174,7 +192,8 @@ namespace perlin::replay::ffmpeg {
         for (const auto& kv : plan.options)
             av_dict_set(&opts, kv.first.c_str(), kv.second.c_str(), 0);
         const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(pix);
-        const bool yuv = desc && !(desc->flags & AV_PIX_FMT_FLAG_RGB) && desc->nb_components >= 3 && !(desc->flags & AV_PIX_FMT_FLAG_PAL);
+        const bool yuv = desc && !(desc->flags & AV_PIX_FMT_FLAG_RGB) && desc->nb_components >= 3 &&
+                         !(desc->flags & AV_PIX_FMT_FLAG_PAL);
         const bool fullRange = plan.pixFmt.starts_with("yuvj");
         if (plan.tagColors) {
             av_dict_set(&opts, "colorspace", "bt709", 0);
@@ -208,7 +227,8 @@ namespace perlin::replay::ffmpeg {
             return false;
         }
         m.headerWritten = true;
-        m.sws = sws_getContext(m.inW, m.inH, AV_PIX_FMT_BGRA, s.width, s.height, pix, SWS_AREA, nullptr, nullptr, nullptr);
+        m.sws = sws_getContext(m.inW, m.inH, AV_PIX_FMT_BGRA, s.width, s.height, pix, SWS_AREA, nullptr,
+                               nullptr, nullptr);
         if (!m.sws) {
             error = "cannot convert frames to " + plan.pixFmt;
             m.Free();

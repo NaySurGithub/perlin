@@ -11,28 +11,59 @@ namespace perlin {
         constexpr int kDiscTile = 64;
 
         enum S {
-            Frame, Knob,
-            Jump, JumpP, WaterUp, WaterUpP, FlyUp, FlyUpP,
-            Sneak, SneakP, WaterDown, WaterDownP, FlyDown, FlyDownP, Dismount, DismountP,
-            Attack, AttackP, Interact, InteractP, Sprint, SprintP,
-            PauseIcon, ChatIcon, Dots, PerspectiveIcon, DebugIcon, PlayersIcon, HudIcon,
+            Frame,
+            Knob,
+            Jump,
+            JumpP,
+            WaterUp,
+            WaterUpP,
+            FlyUp,
+            FlyUpP,
+            Sneak,
+            SneakP,
+            WaterDown,
+            WaterDownP,
+            FlyDown,
+            FlyDownP,
+            Dismount,
+            DismountP,
+            Attack,
+            AttackP,
+            Interact,
+            InteractP,
+            Sprint,
+            SprintP,
+            PauseIcon,
+            ChatIcon,
+            Dots,
+            PerspectiveIcon,
+            DebugIcon,
+            PlayersIcon,
+            HudIcon,
             SpriteCount
         };
         constexpr const char* kSpriteNames[SpriteCount] = {
             "textures/ui/joystick_frame", "textures/ui/joystick_knob",
-            "textures/ui/jump", "textures/ui/jump_pressed", "textures/ui/waterascend", "textures/ui/waterascend_pressed",
-            "textures/ui/flyingascend", "textures/ui/flyingascend_pressed",
-            "textures/ui/sneak", "textures/ui/sneak_pressed", "textures/ui/waterdescend", "textures/ui/waterdescend_pressed",
-            "textures/ui/flyingdescend", "textures/ui/flyingdescend_pressed", "textures/ui/dismount", "textures/ui/dismount_pressed",
-            "textures/ui/attack", "textures/ui/attack_pressed", "textures/ui/interact", "textures/ui/interact_pressed",
-            "textures/ui/sprint", "textures/ui/sprint_pressed",
-            "textures/ui/pause_icon", "textures/ui/comment", "textures/ui/more_dots",
-            "textures/ui/perspective", "textures/ui/debug_glyph", "textures/ui/icon_multiplayer", "textures/ui/camera-small",
+            "textures/ui/jump",           "textures/ui/jump_pressed",
+            "textures/ui/waterascend",    "textures/ui/waterascend_pressed",
+            "textures/ui/flyingascend",   "textures/ui/flyingascend_pressed",
+            "textures/ui/sneak",          "textures/ui/sneak_pressed",
+            "textures/ui/waterdescend",   "textures/ui/waterdescend_pressed",
+            "textures/ui/flyingdescend",  "textures/ui/flyingdescend_pressed",
+            "textures/ui/dismount",       "textures/ui/dismount_pressed",
+            "textures/ui/attack",         "textures/ui/attack_pressed",
+            "textures/ui/interact",       "textures/ui/interact_pressed",
+            "textures/ui/sprint",         "textures/ui/sprint_pressed",
+            "textures/ui/pause_icon",     "textures/ui/comment",
+            "textures/ui/more_dots",      "textures/ui/perspective",
+            "textures/ui/debug_glyph",    "textures/ui/icon_multiplayer",
+            "textures/ui/camera-small",
         };
 
-
         uint32_t Pack(float r, float g, float b, float a) {
-            const auto byte = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+            const auto byte = [](float v) {
+                return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
+            };
             return (byte(a) << 24) | (byte(b * a) << 16) | (byte(g * a) << 8) | byte(r * a);
         }
 
@@ -40,7 +71,8 @@ namespace perlin {
             std::vector<UiVertex> vertices;
             std::vector<uint32_t> indices;
 
-            void Quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, uint32_t color) {
+            void Quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
+                      uint32_t color) {
                 const uint32_t base = static_cast<uint32_t>(vertices.size());
                 vertices.push_back({x0, y0, 0.0f, color, u0, v0});
                 vertices.push_back({x1, y0, 0.0f, color, u1, v0});
@@ -66,7 +98,8 @@ namespace perlin {
             for (int y = 0; y < kDiscTile; y++) {
                 for (int x = 0; x < kDiscTile * 2; x++) {
                     const bool ring = x >= kDiscTile;
-                    const float px = (static_cast<float>(ring ? x - kDiscTile : x) + 0.5f) / kDiscTile * 2.0f - 1.0f;
+                    const float px =
+                        (static_cast<float>(ring ? x - kDiscTile : x) + 0.5f) / kDiscTile * 2.0f - 1.0f;
                     const float py = (static_cast<float>(y) + 0.5f) / kDiscTile * 2.0f - 1.0f;
                     const float d = std::sqrt(px * px + py * py);
                     float a = 0.0f;
@@ -96,7 +129,8 @@ namespace perlin {
                 atlas[i + 1] = static_cast<uint8_t>((atlas[i + 1] * a + 127) / 255);
                 atlas[i + 2] = static_cast<uint8_t>((atlas[i + 2] * a + 127) / 255);
             }
-            fontTexture = renderer.UiCreateTexture(font.AtlasWidth(), font.AtlasHeight(), atlas.data(), false);
+            fontTexture =
+                renderer.UiCreateTexture(font.AtlasWidth(), font.AtlasHeight(), atlas.data(), false);
             fontVersion = font.Version();
         }
 
@@ -132,7 +166,8 @@ namespace perlin {
         Mesh discs, text;
         std::vector<Mesh> icons(SpriteCount);
         auto icon = [&](int sprite, float cx, float cy, float halfW, float halfH, float alpha) {
-            icons[sprite].Quad(cx - halfW, cy - halfH, cx + halfW, cy + halfH, 0.0f, 0.0f, 1.0f, 1.0f, Pack(1, 1, 1, alpha));
+            icons[sprite].Quad(cx - halfW, cy - halfH, cx + halfW, cy + halfH, 0.0f, 0.0f, 1.0f, 1.0f,
+                               Pack(1, 1, 1, alpha));
         };
         auto label = [&](const char* str, float cx, float cy, float scale, float alpha) {
             const std::string s = str;
@@ -149,7 +184,8 @@ namespace perlin {
             for (uint32_t c : cps) {
                 const ui::McFont::Glyph& g = font.Get(c);
                 if (g.width > 0)
-                    text.Quad(pen + g.left * scale, top + g.top * scale, pen + (g.left + g.width) * scale, top + (g.top + g.height) * scale, g.u0, g.v0, g.u1, g.v1, Pack(1, 1, 1, alpha));
+                    text.Quad(pen + g.left * scale, top + g.top * scale, pen + (g.left + g.width) * scale,
+                              top + (g.top + g.height) * scale, g.u0, g.v0, g.u1, g.v1, Pack(1, 1, 1, alpha));
                 pen += static_cast<float>(g.advance) * scale;
             }
         };
@@ -178,31 +214,56 @@ namespace perlin {
 
         for (int i = 0; i < ButtonCount; i++) {
             const Layout& l = layout[i];
-            if (!l.visible) continue;
+            if (!l.visible)
+                continue;
             const bool active = down[i];
             const float alpha = (active ? 1.0f : 0.9f) * base;
             int sprite = -1;
             int glyph = -1;
             switch (i) {
             case Jump:
-                sprite = state.inWater ? (active ? WaterUpP : WaterUp) : state.flying ? (active ? FlyUpP : FlyUp) : (active ? JumpP : S::Jump);
+                sprite = state.inWater  ? (active ? WaterUpP : WaterUp)
+                         : state.flying ? (active ? FlyUpP : FlyUp)
+                                        : (active ? JumpP : S::Jump);
                 break;
             case Sneak:
-                sprite = state.riding ? (active ? DismountP : Dismount)
-                       : state.flying ? (active ? FlyDownP : FlyDown)
-                       : state.inWater ? (active ? WaterDownP : WaterDown) : (active ? SneakP : S::Sneak);
+                sprite = state.riding    ? (active ? DismountP : Dismount)
+                         : state.flying  ? (active ? FlyDownP : FlyDown)
+                         : state.inWater ? (active ? WaterDownP : WaterDown)
+                                         : (active ? SneakP : S::Sneak);
                 break;
-            case Attack: sprite = active ? AttackP : S::Attack; break;
-            case Use: sprite = active ? InteractP : Interact; break;
-            case Sprint: sprite = active ? SprintP : S::Sprint; break;
-            case Perspective: sprite = PerspectiveIcon; break;
-            case Pause: glyph = PauseIcon; break;
-            case Chat: glyph = ChatIcon; break;
-            case Debug: glyph = DebugIcon; break;
-            case Players: glyph = PlayersIcon; break;
-            case HideHud: glyph = HudIcon; break;
-            case Inventory: glyph = Dots; break;
-            default: break;
+            case Attack:
+                sprite = active ? AttackP : S::Attack;
+                break;
+            case Use:
+                sprite = active ? InteractP : Interact;
+                break;
+            case Sprint:
+                sprite = active ? SprintP : S::Sprint;
+                break;
+            case Perspective:
+                sprite = PerspectiveIcon;
+                break;
+            case Pause:
+                glyph = PauseIcon;
+                break;
+            case Chat:
+                glyph = ChatIcon;
+                break;
+            case Debug:
+                glyph = DebugIcon;
+                break;
+            case Players:
+                glyph = PlayersIcon;
+                break;
+            case HideHud:
+                glyph = HudIcon;
+                break;
+            case Inventory:
+                glyph = Dots;
+                break;
+            default:
+                break;
             }
             const bool selected = editing && editSelected == i;
             if (sprite >= 0 && have(sprite)) {
@@ -218,9 +279,11 @@ namespace perlin {
                 icon(glyph, l.cx, l.cy, sp.w * k * 0.5f, sp.h * k * 0.5f, 1.0f);
             } else {
                 const float shade = active ? 1.0f : 0.1f;
-                Disc(discs, l.cx, l.cy, l.r, Pack(shade, shade, shade, (active ? 0.55f : (l.system ? 0.55f : 0.32f)) * base), false);
+                Disc(discs, l.cx, l.cy, l.r,
+                     Pack(shade, shade, shade, (active ? 0.55f : (l.system ? 0.55f : 0.32f)) * base), false);
                 Disc(discs, l.cx, l.cy, l.r, Pack(1, 1, 1, active ? 0.9f : 0.55f), true);
-                label(l.label, l.cx, l.cy, std::max(1.0f, std::floor(l.r / (l.system ? 11.0f : 9.0f))), 0.95f);
+                label(l.label, l.cx, l.cy, std::max(1.0f, std::floor(l.r / (l.system ? 11.0f : 9.0f))),
+                      0.95f);
             }
             if (selected)
                 Disc(discs, l.cx, l.cy, l.r * 1.12f, Pack(1, 1, 0.3f, 0.95f), true);
@@ -232,20 +295,23 @@ namespace perlin {
             for (const ToolBox& b : boxes) {
                 const float cx = b.x + b.w * 0.5f, cy = b.y + b.h * 0.5f;
                 if (have(Knob))
-                    icons[Knob].Quad(b.x, b.y, b.x + b.w, b.y + b.h, 0.0f, 0.0f, 1.0f, 1.0f, Pack(1, 1, 1, 0.95f));
+                    icons[Knob].Quad(b.x, b.y, b.x + b.w, b.y + b.h, 0.0f, 0.0f, 1.0f, 1.0f,
+                                     Pack(1, 1, 1, 0.95f));
                 else
                     Disc(discs, cx, cy, b.h * 0.5f, Pack(0.1f, 0.1f, 0.1f, 0.7f), false);
                 label(b.label, cx, cy, std::max(1.0f, std::floor(b.h / 22.0f)), 1.0f);
             }
-            label("Drag buttons to move them. Select one and use - / + to resize.", static_cast<float>(width) * 0.5f,
-                  static_cast<float>(height) * 0.5f - u * 0.12f, std::max(1.0f, std::floor(u / 220.0f)), 1.0f);
+            label("Drag buttons to move them. Select one and use - / + to resize.",
+                  static_cast<float>(width) * 0.5f, static_cast<float>(height) * 0.5f - u * 0.12f,
+                  std::max(1.0f, std::floor(u / 220.0f)), 1.0f);
         }
 
         auto submit = [&](Mesh& mesh, uint32_t texture) {
             if (mesh.vertices.empty() || !texture)
                 return;
-            const uint32_t id = renderer.UiCreateFrameMesh(mesh.vertices.data(), static_cast<uint32_t>(mesh.vertices.size()),
-                                                           mesh.indices.data(), static_cast<uint32_t>(mesh.indices.size()));
+            const uint32_t id =
+                renderer.UiCreateFrameMesh(mesh.vertices.data(), static_cast<uint32_t>(mesh.vertices.size()),
+                                           mesh.indices.data(), static_cast<uint32_t>(mesh.indices.size()));
             if (!id)
                 return;
             UiDraw draw;

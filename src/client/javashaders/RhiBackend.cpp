@@ -23,7 +23,8 @@
 namespace perlin::jshader {
     void MatchStageInterface(std::string& vs, std::string& ps);
     namespace {
-        bool CrossHlsl(const std::vector<uint32_t>& spirv, Stage stage, std::string& out, std::string& error) {
+        bool CrossHlsl(const std::vector<uint32_t>& spirv, Stage stage, std::string& out,
+                       std::string& error) {
             try {
                 spirv_cross::CompilerHLSL c(spirv);
                 const spirv_cross::ShaderResources res = c.get_shader_resources();
@@ -94,7 +95,8 @@ namespace perlin::jshader {
             std::vector<uint32_t> spirv;
             std::string log;
             if (!CompileToSpirv(stages[i]->glsl, stages[i]->stage, spirv, log)) {
-                result.error = std::string(fragment ? "fragment" : "vertex") + " shader failed to compile: " + log;
+                result.error =
+                    std::string(fragment ? "fragment" : "vertex") + " shader failed to compile: " + log;
                 return result;
             }
             if (kind == RhiShaderKind::SpirV) {
@@ -103,7 +105,8 @@ namespace perlin::jshader {
             }
             std::string hlsl, err;
             if (!CrossHlsl(spirv, stages[i]->stage, hlsl, err)) {
-                result.error = std::string(fragment ? "fragment" : "vertex") + " shader conversion failed: " + err;
+                result.error =
+                    std::string(fragment ? "fragment" : "vertex") + " shader conversion failed: " + err;
                 return result;
             }
             // packs ask for every loop to be unrolled (optionNV unroll all); fxc fails on the big ones, so it decides itself
@@ -113,9 +116,11 @@ namespace perlin::jshader {
                 unrolled++;
             }
             if (unrolled && std::getenv("JSHADER_TRACE"))
-                std::fprintf(stderr, "[jshader] dropped %d unroll attributes from the %s shader\n", unrolled, fragment ? "pixel" : "vertex");
+                std::fprintf(stderr, "[jshader] dropped %d unroll attributes from the %s shader\n", unrolled,
+                             fragment ? "pixel" : "vertex");
             // shadow maps have no mips, and a comparison sample with implicit derivatives inside a loop makes fxc unroll it
-            for (size_t at = hlsl.find(".SampleCmp("); at != std::string::npos; at = hlsl.find(".SampleCmp(", at))
+            for (size_t at = hlsl.find(".SampleCmp("); at != std::string::npos;
+                 at = hlsl.find(".SampleCmp(", at))
                 hlsl.replace(at, 11, ".SampleCmpLevelZero(");
             *sources[i] = hlsl;
         }
@@ -129,7 +134,8 @@ namespace perlin::jshader {
                 }
                 std::string cerr;
                 if (!dxbc(*sources[i], fragment, *outputs[i], cerr)) {
-                    result.error = std::string(fragment ? "pixel" : "vertex") + " shader: HLSL compile failed: " + cerr;
+                    result.error =
+                        std::string(fragment ? "pixel" : "vertex") + " shader: HLSL compile failed: " + cerr;
                     return result;
                 }
             }
@@ -143,43 +149,55 @@ namespace perlin::jshader {
     void MatchStageInterface(std::string& vs, std::string& ps) {
         auto body = [](const std::string& src, const char* structName, size_t& b, size_t& e) {
             b = src.find(std::string("struct ") + structName);
-            if (b == std::string::npos) return false;
+            if (b == std::string::npos)
+                return false;
             b = src.find('{', b);
             e = src.find("};", b);
             return b != std::string::npos && e != std::string::npos;
         };
         size_t pb, pe, vb, ve;
-        if (!body(ps, "SPIRV_Cross_Input", pb, pe) || !body(vs, "SPIRV_Cross_Output", vb, ve)) return;
+        if (!body(ps, "SPIRV_Cross_Input", pb, pe) || !body(vs, "SPIRV_Cross_Output", vb, ve))
+            return;
         std::string vsBody = vs.substr(vb, ve - vb);
         std::string add, init;
         std::istringstream in(ps.substr(pb + 1, pe - pb - 1));
         std::string line;
         while (std::getline(in, line)) {
             size_t colon = line.find(" : TEXCOORD");
-            if (colon == std::string::npos) continue;
+            if (colon == std::string::npos)
+                continue;
             std::string sem = line.substr(colon + 3);
-            while (!sem.empty() && (sem.back() == ';' || sem.back() == '\r' || sem.back() == ' ')) sem.pop_back();
-            if (vsBody.contains(" : " + sem + ";")) continue;
+            while (!sem.empty() && (sem.back() == ';' || sem.back() == '\r' || sem.back() == ' '))
+                sem.pop_back();
+            if (vsBody.contains(" : " + sem + ";"))
+                continue;
             size_t t0 = line.find_first_not_of(" \t");
             std::string decl = line.substr(t0, colon - t0);
             size_t sp = decl.rfind(' ');
-            if (sp == std::string::npos) continue;
+            if (sp == std::string::npos)
+                continue;
             add += "    " + decl + " : " + sem + ";\n";
             init += "    stage_output." + decl.substr(sp + 1) + " = (" + decl.substr(0, sp) + ")0;\n";
         }
-        if (add.empty()) return;
+        if (add.empty())
+            return;
         vs.insert(ve, add);
         size_t ret = vs.rfind("return stage_output;");
-        if (ret == std::string::npos) ret = vs.rfind("return ");
-        if (ret != std::string::npos) vs.insert(ret, init);
-        if (std::getenv("JSHADER_TRACE")) std::fprintf(stderr, "[jshader] vertex shader padded with missing pixel inputs\n");
+        if (ret == std::string::npos)
+            ret = vs.rfind("return ");
+        if (ret != std::string::npos)
+            vs.insert(ret, init);
+        if (std::getenv("JSHADER_TRACE"))
+            std::fprintf(stderr, "[jshader] vertex shader padded with missing pixel inputs\n");
     }
 
     DxbcCompiler SystemDxbcCompiler() {
 #ifdef _WIN32
-        return [](const std::string& hlsl, bool fragment, std::vector<uint8_t>& dxbc, std::string& error) -> bool {
+        return [](const std::string& hlsl, bool fragment, std::vector<uint8_t>& dxbc,
+                  std::string& error) -> bool {
             static HMODULE module = LoadLibraryA("d3dcompiler_47.dll");
-            static pD3DCompile compile = module ? reinterpret_cast<pD3DCompile>(GetProcAddress(module, "D3DCompile")) : nullptr;
+            static pD3DCompile compile =
+                module ? reinterpret_cast<pD3DCompile>(GetProcAddress(module, "D3DCompile")) : nullptr;
             if (!compile) {
                 error = "d3dcompiler_47.dll is not available";
                 return false;
@@ -194,13 +212,16 @@ namespace perlin::jshader {
                 }
                 h ^= fragment ? 0x9e3779b97f4a7c15ull : 0x517cc1b727220a95ull;
                 char name[48];
-                std::snprintf(name, sizeof(name), "%016llx_%zx.dxbc", static_cast<unsigned long long>(h), hlsl.size());
-                const std::filesystem::path dir = std::filesystem::temp_directory_path() / "perlin_dxbc_cache2";
+                std::snprintf(name, sizeof(name), "%016llx_%zx.dxbc", static_cast<unsigned long long>(h),
+                              hlsl.size());
+                const std::filesystem::path dir =
+                    std::filesystem::temp_directory_path() / "perlin_dxbc_cache2";
                 std::filesystem::create_directories(dir);
                 cacheFile = dir / name;
                 std::ifstream in(cacheFile, std::ios::binary);
                 if (in) {
-                    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                               std::istreambuf_iterator<char>());
                     if (bytes.size() > 32) {
                         dxbc = std::move(bytes);
                         return true;
@@ -214,17 +235,19 @@ namespace perlin::jshader {
                     return;
                 try {
                     std::ofstream out(cacheFile, std::ios::binary | std::ios::trunc);
-                    out.write(reinterpret_cast<const char*>(dxbc.data()), static_cast<std::streamsize>(dxbc.size()));
-                } catch (...) {
-                }
+                    out.write(reinterpret_cast<const char*>(dxbc.data()),
+                              static_cast<std::streamsize>(dxbc.size()));
+                } catch (...) {}
             };
             const auto run = [&](const std::string& text, UINT flags, std::string& err) -> bool {
                 ID3DBlob* code = nullptr;
                 ID3DBlob* messages = nullptr;
-                const HRESULT hr = compile(text.data(), text.size(), "javapack", nullptr, nullptr, "main", fragment ? "ps_5_1" : "vs_5_1", flags, 0,
-                                           &code, &messages);
+                const HRESULT hr = compile(text.data(), text.size(), "javapack", nullptr, nullptr, "main",
+                                           fragment ? "ps_5_1" : "vs_5_1", flags, 0, &code, &messages);
                 if (FAILED(hr) || !code) {
-                    err = messages ? std::string(static_cast<const char*>(messages->GetBufferPointer()), messages->GetBufferSize()) : "D3DCompile failed";
+                    err = messages ? std::string(static_cast<const char*>(messages->GetBufferPointer()),
+                                                 messages->GetBufferSize())
+                                   : "D3DCompile failed";
                     // warnings (pow of a possibly negative value and the like) can fill the log before the actual errors do
                     std::string errors;
                     size_t at = 0;
@@ -265,14 +288,16 @@ namespace perlin::jshader {
                     (hlsl.compare(first, 5, "for (") == 0 || hlsl.compare(first, 7, "while (") == 0))
                     looped.append(hlsl, at, first - at).append("[loop] ");
                 else
-                    looped.append(hlsl, at, first == std::string::npos || first >= end ? end - at : first - at);
+                    looped.append(hlsl, at,
+                                  first == std::string::npos || first >= end ? end - at : first - at);
                 if (first != std::string::npos && first < end)
                     looped.append(hlsl, first, end - first);
                 at = end;
             }
             std::string first, second, third;
             // fully optimised first (the pack is the whole frame, so shader quality is frame time); the cache keeps this a one time cost
-            if (run(hlsl, D3DCOMPILE_OPTIMIZATION_LEVEL3, first) || run(looped, D3DCOMPILE_OPTIMIZATION_LEVEL3, second) ||
+            if (run(hlsl, D3DCOMPILE_OPTIMIZATION_LEVEL3, first) ||
+                run(looped, D3DCOMPILE_OPTIMIZATION_LEVEL3, second) ||
                 run(looped, D3DCOMPILE_OPTIMIZATION_LEVEL1, third)) {
                 store();
                 return true;
@@ -283,7 +308,9 @@ namespace perlin::jshader {
                 store();
                 return true;
             }
-            error = first + (second.empty() || second == first ? "" : "\n(without loop hints) " + second) + (third.empty() ? "" : "\n(level 1) " + third) + (fourth.empty() ? "" : "\n(without optimization) " + fourth);
+            error = first + (second.empty() || second == first ? "" : "\n(without loop hints) " + second) +
+                    (third.empty() ? "" : "\n(level 1) " + third) +
+                    (fourth.empty() ? "" : "\n(without optimization) " + fourth);
             return false;
         };
 #else

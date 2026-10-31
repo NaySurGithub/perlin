@@ -17,7 +17,8 @@ namespace perlin {
                 level = cfg.level;
             wasHeld = held;
             if (held && scroll != 0.0f)
-                level = std::clamp(level * std::pow(1.0f - cfg.scrollStep, scroll), cfg.minLevel, cfg.maxLevel);
+                level =
+                    std::clamp(level * std::pow(1.0f - cfg.scrollStep, scroll), cfg.minLevel, cfg.maxLevel);
             shownLevel += (level - shownLevel) * (1.0f - std::exp(-dt * 16.0f));
             if (!active)
                 shownLevel = level;

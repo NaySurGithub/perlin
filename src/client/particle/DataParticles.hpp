@@ -39,7 +39,8 @@ namespace perlin::particle {
     public:
         void Configure(const std::vector<std::string>& packDirs);
         bool Has(const std::string& identifier) const;
-        bool Spawn(const std::string& identifier, const glm::dvec3& at, const std::string& molangVariables = {});
+        bool Spawn(const std::string& identifier, const glm::dvec3& at,
+                   const std::string& molangVariables = {});
         void Update(float dt, const DataWorld& world);
         void Collect(const CameraView& camera, const DataWorld& world, std::vector<CustomQuad>& out) const;
         size_t Count() const;

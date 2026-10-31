@@ -12,7 +12,8 @@ namespace perlin::mods {
             WasmInstance& instance;
             std::string& error;
         };
-        using HostFn = std::function<bool(HostContext& ctx, const uint64_t* args, uint32_t argCount, uint64_t* results, uint32_t resultCount)>;
+        using HostFn = std::function<bool(HostContext& ctx, const uint64_t* args, uint32_t argCount,
+                                          uint64_t* results, uint32_t resultCount)>;
 
         using Resolver = std::function<HostFn(const std::string& module, const std::string& name)>;
 
@@ -26,7 +27,8 @@ namespace perlin::mods {
         bool Is64() const { return is64; }
         bool HasExport(const char* name) const;
 
-        bool Call(const char* name, std::initializer_list<uint64_t> args, uint64_t* result, std::string& error);
+        bool Call(const char* name, std::initializer_list<uint64_t> args, uint64_t* result,
+                  std::string& error);
 
         uint8_t* Memory(uint64_t ptr, uint64_t len);
 

@@ -70,7 +70,9 @@ namespace perlin {
             uint16_t uniform = 0;
             uint8_t uniformBiome = DEFAULT_BIOME;
             uint16_t Block(int cell) const { return blocks ? (*blocks)[static_cast<size_t>(cell)] : uniform; }
-            uint8_t Biome(int cell) const { return biomes ? (*biomes)[static_cast<size_t>(cell)] : uniformBiome; }
+            uint8_t Biome(int cell) const {
+                return biomes ? (*biomes)[static_cast<size_t>(cell)] : uniformBiome;
+            }
             void SetBlock(int cell, uint16_t id) {
                 if (!blocks) {
                     if (id == uniform)
@@ -121,7 +123,8 @@ namespace perlin {
         bool HasChunk(int cx, int cz) const;
         bool HasSectionAt(int x, int y, int z) const;
         bool RemoveChunk(int cx, int cz);
-        void SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells, const uint16_t* liquidCells = nullptr);
+        void SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells,
+                         const uint16_t* liquidCells = nullptr);
         void SetBiomeSubChunk(int cx, int cz, int absSubY, const uint8_t* cells);
         void Clear();
 
@@ -157,7 +160,6 @@ namespace perlin {
         void TouchNeighbors(int cx, int cz);
 
     public:
-
         int FindBlockBelow(int x, int z, int fromY, const std::function<bool(uint16_t)>& accept) const;
 
         std::unordered_map<ChunkPos, Chunk, ChunkPosHash> chunks;

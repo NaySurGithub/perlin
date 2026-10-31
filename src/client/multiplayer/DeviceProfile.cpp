@@ -12,9 +12,10 @@
 
 namespace perlin {
     namespace {
-        const char* const kAndroidModels[] = {"GOOGLE Pixel 9 Pro", "GOOGLE Pixel 9", "GOOGLE Pixel 8 Pro", "GOOGLE Pixel 8",
-                                              "SAMSUNG SM-S928B",   "SAMSUNG SM-S926B", "SAMSUNG SM-S921B", "SAMSUNG SM-S918B",
-                                              "SAMSUNG SM-S916B",   "SAMSUNG SM-S911B"};
+        const char* const kAndroidModels[] = {"GOOGLE Pixel 9 Pro", "GOOGLE Pixel 9",   "GOOGLE Pixel 8 Pro",
+                                              "GOOGLE Pixel 8",     "SAMSUNG SM-S928B", "SAMSUNG SM-S926B",
+                                              "SAMSUNG SM-S921B",   "SAMSUNG SM-S918B", "SAMSUNG SM-S916B",
+                                              "SAMSUNG SM-S911B"};
 
         bool ValidId(const std::string& id) {
             if (id.size() != 32)
@@ -57,8 +58,8 @@ namespace perlin {
             return profile;
         std::random_device rd;
         char buf[33];
-        std::snprintf(buf, sizeof(buf), "%08x%04x4%03x%04x%08x%04x", rd(), rd() & 0xFFFF, rd() & 0xFFF, 0x8000 | (rd() & 0x3FFF),
-                      rd(), rd() & 0xFFFF);
+        std::snprintf(buf, sizeof(buf), "%08x%04x4%03x%04x%08x%04x", rd(), rd() & 0xFFFF, rd() & 0xFFF,
+                      0x8000 | (rd() & 0x3FFF), rd(), rd() & 0xFFFF);
         profile.id = buf;
         profile.model = kAndroidModels[rd() % (sizeof(kAndroidModels) / sizeof(kAndroidModels[0]))];
         paths::EnsureDir(paths::DataDir());
@@ -84,8 +85,10 @@ namespace perlin {
         id[6] = static_cast<unsigned char>((id[6] & 0x0f) | 0x30);
         id[8] = static_cast<unsigned char>((id[8] & 0x3f) | 0x80);
         char out[37];
-        std::snprintf(out, sizeof(out), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", id[0], id[1], id[2],
-                      id[3], id[4], id[5], id[6], id[7], id[8], id[9], id[10], id[11], id[12], id[13], id[14], id[15]);
+        std::snprintf(out, sizeof(out),
+                      "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", id[0], id[1],
+                      id[2], id[3], id[4], id[5], id[6], id[7], id[8], id[9], id[10], id[11], id[12], id[13],
+                      id[14], id[15]);
         return out;
     }
 }

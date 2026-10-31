@@ -7,7 +7,8 @@ namespace perlin::server {
 
     bool BackendsAgree(TerrainBackend& candidate, TerrainBackend& reference, std::string& detail) {
         // a spread of positions: origin, negatives, and far out where float precision would show
-        const std::vector<ChunkPos> probe = {{0, 0}, {-1, -1}, {1, -3}, {37, 12}, {-2048, 2047}, {100000, -100000}};
+        const std::vector<ChunkPos> probe = {{0, 0},   {-1, -1},      {1, -3},
+                                             {37, 12}, {-2048, 2047}, {100000, -100000}};
         std::vector<ChunkColumn> a(probe.size()), b(probe.size());
         candidate.Generate(probe, a);
         reference.Generate(probe, b);
@@ -16,8 +17,8 @@ namespace perlin::server {
                 for (int i = 0; i < 4096; i += 1) {
                     const int x = i >> 8, z = (i >> 4) & 15, y = i & 15;
                     if (a[n].Get(x, kMinY + sec * 16 + y, z) != b[n].Get(x, kMinY + sec * 16 + y, z)) {
-                        detail = "chunk (" + std::to_string(probe[n].x) + "," + std::to_string(probe[n].z) + ") differs in section " +
-                                 std::to_string(sec);
+                        detail = "chunk (" + std::to_string(probe[n].x) + "," + std::to_string(probe[n].z) +
+                                 ") differs in section " + std::to_string(sec);
                         return false;
                     }
                 }

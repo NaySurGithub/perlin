@@ -27,7 +27,7 @@ namespace perlin::attachable {
         struct FaceUv {
             bool present = false;
             glm::vec2 uv{0.0f}, size{0.0f};
-            int rotation = 0;  // uv_rotation in quarter turns, clockwise
+            int rotation = 0; // uv_rotation in quarter turns, clockwise
         } faces[6];
     };
 
@@ -84,13 +84,15 @@ namespace perlin::attachable {
     using TextureLookup = std::function<const Texture*(const std::string& shortName)>;
     using BoneFilter = std::function<bool(const std::string&)>;
     void BuildMesh(const Geometry& geometry, const Pose& pose, const TextureLookup& textures, BuiltMesh& out,
-                   const BoneFilter& visible = nullptr, const glm::mat4* rootParent = nullptr, bool mirrorTextures = false);
+                   const BoneFilter& visible = nullptr, const glm::mat4* rootParent = nullptr,
+                   bool mirrorTextures = false);
 
     Geometry VoxelizeSkinLayers(const Geometry& source, const uint8_t* rgba, int width, int height);
     std::vector<Quad> ExtrudeSprite(const Texture& atlas, int tileX, int tileY, int tileWidth, int tileHeight,
-                                   float width, float height, float depth);
+                                    float width, float height, float depth);
 
     glm::mat4 EulerZYX(const glm::vec3& degrees);
 
-    bool BoneWorld(const Geometry& geometry, const Pose& pose, const std::string& lowerName, glm::mat4& world, glm::vec3& pivot);
+    bool BoneWorld(const Geometry& geometry, const Pose& pose, const std::string& lowerName, glm::mat4& world,
+                   glm::vec3& pivot);
 }

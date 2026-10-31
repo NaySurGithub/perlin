@@ -5,5 +5,5 @@ here=$(cd "$(dirname "$0")" && pwd)
 out=${1:-$here/hello_server.wasm}
 clang --target=wasm32 -O2 -nostdlib -fno-builtin -fvisibility=hidden \
   -Wl,--no-entry -Wl,--export-dynamic -Wl,--allow-undefined \
-  -o "$out" "$here/hello_server.c"
+  -I "$here/../../../mods/sdk" -o "$out" "$here/hello_server.c"
 echo "built $out"

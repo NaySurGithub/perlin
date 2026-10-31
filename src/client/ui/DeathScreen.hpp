@@ -14,5 +14,6 @@ namespace perlin::ui {
     std::string DefaultDeathScreenTemplate();
     std::string EmbeddedDeathScreenTemplate();
     std::string LoadDeathScreenTemplate(const std::string& dataDir, uint64_t& version);
-    std::string BuildDeathScreenRml(const std::string& templateText, const DeathScreenText& text, int guiW, int guiH);
+    std::string BuildDeathScreenRml(const std::string& templateText, const DeathScreenText& text, int guiW,
+                                    int guiH);
 }

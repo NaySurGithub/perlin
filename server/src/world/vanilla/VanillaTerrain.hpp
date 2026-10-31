@@ -18,7 +18,8 @@ namespace perlin::server::vanilla {
         size_t PreferredBatch() const override { return 1; }
         bool ThreadSafe() const override { return true; }
         bool FindSpawn(int& x, int& y, int& z) override;
-        bool LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel, int& x, int& y, int& z) override;
+        bool LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel, int& x,
+                         int& y, int& z) override;
         bool HasBiomes() const override { return true; }
         // the biome the generator puts in the column at (x, z): the ground found from the density, the climate there, the table
         // groundY, when given, receives the first free block above the ground

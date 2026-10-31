@@ -12,7 +12,7 @@
 #include "network/PacketCipher.hpp"
 #include "network/PlayerConstants.hpp"
 
-typedef struct ec_key_st EC_KEY;
+using EC_KEY = struct ec_key_st;
 #include "client/multiplayer/PackDownloader.hpp"
 
 #include "client/multiplayer/BlockEntities.hpp"
@@ -64,10 +64,14 @@ namespace perlin {
         BedrockSession& operator=(const BedrockSession&) = delete;
 
         const std::string& PlayerName() const { return playerName; }
-        void SetPlayerName(const std::string& name) { playerName = name.empty() ? std::string("Perlin") : name; }
+        void SetPlayerName(const std::string& name) {
+            playerName = name.empty() ? std::string("Perlin") : name;
+        }
         void SetTransport(const std::string& mode) { transportMode = mode; }
         // a ready transport (the embedded server's) used by the next Connect instead of dialling out
-        void SetInjectedTransport(std::unique_ptr<Transport> transport) { injectedTransport = std::move(transport); }
+        void SetInjectedTransport(std::unique_ptr<Transport> transport) {
+            injectedTransport = std::move(transport);
+        }
         void SetFriendLease(std::shared_ptr<friendworld::Lease> lease) { friendLease = std::move(lease); }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
         const LoadedSkin& Skin() const { return skin; }
@@ -182,8 +186,31 @@ namespace perlin {
             bool hasDelta = false;
             bool hasBlockAction = false;
             BlockActionData blockAction;
+            // client-predicted vehicle: ActorRotation (x, y) and ActorUniqueID; sets InputData 45
+            std::optional<std::array<float, 2>> vehicleRotation;
+            std::optional<int64_t> predictedVehicle;
         };
         bool SendMoveInput(const MoveInput& input);
+
+        // CorrectPlayerMovePredictionPacket with the vehicle prediction type
+        struct VehicleCorrection {
+            uint64_t tick = 0;
+            float pos[3] = {0, 0, 0};
+            float delta[3] = {0, 0, 0};
+            float rotation[2] = {0, 0};
+            std::optional<float> angularVelocity;
+            bool onGround = false;
+        };
+        bool TakeVehicleCorrection(VehicleCorrection& out);
+        // RiderSeatPosition (actor data 56) of the local player, when the server sent one
+        std::optional<std::array<float, 3>> OwnSeatOffset() const {
+            std::lock_guard lock(attrMutex);
+            return ownSeatOffset;
+        }
+        // SetActorLink type 1: the local player sits in the controlling seat
+        bool RidingAsDriver() const { return ridingDriver.load(); }
+        // server moves of this actor are ignored while the client predicts it
+        void SetPredictedVehicle(uint64_t runtime) { predictedVehicleRuntime = runtime; }
 
         struct ServerMotion {
             bool poseChanged = false;
@@ -216,16 +243,19 @@ namespace perlin {
             const auto it = ownAttributes.find("minecraft:movement");
             return it == ownAttributes.end() ? 0.1f : it->second;
         }
-        float PredictedMovementSpeed(bool sprinting) const {
+        // adds or removes the sprint modifier like the game's sprint action, then returns the instance value;
+        // a freeze strength swaps the sent "Freeze effect" modifier for ours
+        float PredictedMovementSpeed(bool sprinting, std::optional<float> freezeStrength = std::nullopt);
+        // own FREEZING_EFFECT_STRENGTH (actor data 120) with the server tick it was set on
+        struct FreezeUpdate {
+            uint64_t tick = 0;
+            float strength = 0;
+        };
+        std::vector<FreezeUpdate> TakeFreezeUpdates() {
             std::lock_guard lock(attrMutex);
-            const auto it = ownAttributes.find("minecraft:movement");
-            float speed = it == ownAttributes.end() ? 0.1f : it->second;
-            if (movementAttribute)
-                for (const auto& modifier : movementAttribute->modifiers)
-                    if (modifier.id == "d208fc00-42aa-4aad-9276-d5446530de43" &&
-                        modifier.operation == 2 && modifier.operand == 2 && modifier.amount > -1.0f)
-                        speed /= 1.0f + modifier.amount;
-            return speed * (sprinting ? 1.3f : 1.0f);
+            std::vector<FreezeUpdate> updates;
+            updates.swap(freezeUpdates);
+            return updates;
         }
         std::optional<proto::PlayerAttributesEntry> MovementAttribute() const {
             std::lock_guard lock(attrMutex);
@@ -248,12 +278,20 @@ namespace perlin {
             const auto it = ownAttributes.find("minecraft:underwater_movement");
             return it == ownAttributes.end() ? 0.02f : it->second;
         }
+        float LavaMovementSpeedAttribute() const {
+            std::lock_guard lock(attrMutex);
+            const auto it = ownAttributes.find("minecraft:lava_movement");
+            return it == ownAttributes.end() ? 0.02f : it->second;
+        }
         std::optional<float> AirDragAttribute() const {
             std::lock_guard lock(attrMutex);
             const auto it = ownAttributes.find("minecraft:air_drag_modifier");
             return it == ownAttributes.end() ? std::nullopt : std::optional<float>(it->second);
         }
-        void ArmPredictionSync() { if (predictionSyncCountdown < 0) predictionSyncCountdown = 200; }
+        void ArmPredictionSync() {
+            if (predictionSyncCountdown < 0)
+                predictionSyncCountdown = 200;
+        }
         bool SendPredictionSync();
         bool Initialized() const { return initializedSent; }
         void NoteBrokenSupport(int x, int y, int z, std::vector<std::pair<int, uint16_t>> above) {
@@ -293,7 +331,7 @@ namespace perlin {
         std::vector<ParticleEvent> TakeParticles();
         struct PendingPlace {
             int x = 0, y = 0, z = 0;
-            std::chrono::steady_clock::time_point at{};
+            std::chrono::steady_clock::time_point at;
             bool active = false;
             int32_t held = 0;
         };
@@ -304,8 +342,14 @@ namespace perlin {
         // predicted xp orb pickup (TakeItemEntityPacket): dedupe server SoundOrb echo
         uint64_t lastLocalOrbMs = 0;
         float lastOrbX = 0.0f, lastOrbY = 0.0f, lastOrbZ = 0.0f;
-        uint32_t CommandsVersion() const { std::lock_guard<std::mutex> lk(commandMutex); return commandVersion; }
-        std::vector<ui::CommandInfo> Commands() const { std::lock_guard<std::mutex> lk(commandMutex); return commands; }
+        uint32_t CommandsVersion() const {
+            std::lock_guard<std::mutex> lk(commandMutex);
+            return commandVersion;
+        }
+        std::vector<ui::CommandInfo> Commands() const {
+            std::lock_guard<std::mutex> lk(commandMutex);
+            return commands;
+        }
         struct TabPlayer {
             std::string uuid, name;
             std::shared_ptr<const entity::SkinData> skin;
@@ -324,7 +368,7 @@ namespace perlin {
         std::vector<BlockCrack> Cracks();
         void ClearCrack(int x, int y, int z);
         bool SendPlayerAction(uint32_t action, int bx, int by, int bz, int face = 1);
-void RequestRespawn();
+        void RequestRespawn();
         bool DeathPending() const {
             std::lock_guard<std::mutex> lk(deathMutex);
             return deathPending;
@@ -354,10 +398,10 @@ void RequestRespawn();
             bool noPvm = false, noMvp = false, immutableWorld = false, showNameTags = true, autoJump = true;
         };
         // OnScreenTextureAnimation: effect id (-1 = none) and arrival time
-        static constexpr int kTotemScreenAnimation = 1000;  // not an effect id: totem item
+        static constexpr int kTotemScreenAnimation = 1000; // not an effect id: totem item
         struct ScreenAnimation {
             int effect = -1;
-            std::chrono::steady_clock::time_point started{};
+            std::chrono::steady_clock::time_point started;
         };
         ScreenAnimation TakeScreenAnimation() {
             std::lock_guard<std::mutex> lk(worldMutex);
@@ -420,6 +464,7 @@ void RequestRespawn();
         std::vector<std::pair<uint32_t, uint32_t>> PacketCounts() {
             std::lock_guard<std::mutex> lk(idCountMutex);
             std::vector<std::pair<uint32_t, uint32_t>> out;
+            out.reserve(idCounts.size());
             for (const auto& [id, n] : idCounts)
                 out.emplace_back(id, static_cast<uint32_t>(n));
             return out;
@@ -508,12 +553,36 @@ void RequestRespawn();
         bool RequestReconnect();
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
+        bool Instabuild() const { return instabuild; }
         bool IsFlying() const { return isFlying; }
+        // bumped by every UpdateAbilities: the game applies the whole set, not only changes
+        uint32_t AbilitiesSeq() const { return abilitiesSeq; }
+        // Player::setPlayerGameType 0x1402b9ab0 -> base ability layer 0x1402e1980 (5: the world's type);
+        // creative keeps flying, survival and adventure drop it; spectator lives in its own layer
+        void ApplyGameTypeAbilities(int worldGameType) {
+            const int type = gameType == 5 ? worldGameType : gameType;
+            if (type == 1) {
+                mayFly = true;
+                instabuild = true;
+                noClip = false;
+            } else if (type == 0 || type == 2) {
+                mayFly = false;
+                instabuild = false;
+                isFlying = false;
+                noClip = false;
+            }
+        }
         // entity flag 32 (gliding), last from server for local player
         // actor flag 75 (sleeping): extended flag word
         // local invisibility (actor flag 5) from our SetActorData
-        bool Invisible() const { std::lock_guard lock(attrMutex); return (ownFlagWords[0] & (1ull << 5)) != 0; }
-        bool Sleeping() const { std::lock_guard lock(attrMutex); return (ownFlagWords[1] & proto::FlagsMetadataFlags2::Sleeping) != 0 || (ownPlayerFlags & 2) != 0; }
+        bool Invisible() const {
+            std::lock_guard lock(attrMutex);
+            return (ownFlagWords[0] & (1ull << 5)) != 0;
+        }
+        bool Sleeping() const {
+            std::lock_guard lock(attrMutex);
+            return (ownFlagWords[1] & proto::FlagsMetadataFlags2::Sleeping) != 0 || (ownPlayerFlags & 2) != 0;
+        }
         bool SendStopSleeping() { return SendPlayerAction(6, 0, 0, 0, 0); }
         bool ServerGliding() const {
             std::lock_guard<std::mutex> lk(attrMutex);
@@ -596,9 +665,12 @@ void RequestRespawn();
             int chestSlots = 0;
             std::string chestTitle;
         };
-        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvWork0 = 47, kInvSlots = 56, kInvHorse0 = 56, kInvHorseCount = 17, kInvChest0 = 73, kInvChestCount = 54,
-                             kInvTotal = 127;
-        static bool IsCraftAddr(int a) { return (a >= kInvCraft0 && a < kInvOutput) || (a >= kInvWork0 && a < kInvSlots); }
+        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45,
+                             kInvCursor = 46, kInvWork0 = 47, kInvSlots = 56, kInvHorse0 = 56,
+                             kInvHorseCount = 17, kInvChest0 = 73, kInvChestCount = 54, kInvTotal = 127;
+        static bool IsCraftAddr(int a) {
+            return (a >= kInvCraft0 && a < kInvOutput) || (a >= kInvWork0 && a < kInvSlots);
+        }
         struct CreativeGroup {
             int category = 0;
             std::string name;
@@ -628,7 +700,7 @@ void RequestRespawn();
         bool InvBusy() const;
         struct TitleText {
             std::string title, subtitle, actionBar;
-            std::chrono::steady_clock::time_point titleAt{}, actionAt{};
+            std::chrono::steady_clock::time_point titleAt, actionAt;
             int fadeIn = 10, stay = 70, fadeOut = 20;
             uint32_t serial = 0;
         };
@@ -651,6 +723,8 @@ void RequestRespawn();
         }
         InventoryView GetInventory() const;
         int WaterWalkSpeedEnchant() const;
+        int SoulSpeedEnchant() const;
+        int SwiftSneakEnchant() const;
         TitleText GetTitleText() const;
         bool SelectHotbarSlot(int slot);
         bool SendSwingArm(const char* source = "build");
@@ -673,27 +747,61 @@ void RequestRespawn();
         bool CloseInventory();
         bool SwapInventorySlots(int a, int b);
         bool DropInventorySlot(int slot, bool whole);
-        struct EffectState { int id = 0; int amplifier = 0; int ticks = 0; bool ambient = false; bool particles = true; };
+        struct EffectState {
+            int id = 0;
+            int amplifier = 0;
+            int ticks = 0;
+            bool ambient = false;
+            bool particles = true;
+        };
         std::vector<EffectState> GetEffects() const;
-        struct EffectUpdate { uint64_t tick = 0; int id = 0, amplifier = 0; bool active = false; int32_t duration = 0; };
+        struct EffectUpdate {
+            uint64_t tick = 0;
+            int id = 0, amplifier = 0;
+            bool active = false;
+            int32_t duration = 0;
+        };
         std::vector<EffectUpdate> TakeEffectUpdates();
-        struct MotionUpdate { uint64_t tick = 0; std::array<double, 3> velocity{}; };
-        struct ServerMovementEffect { uint32_t type = 0, duration = 0; uint64_t tick = 0; };
+        struct MotionUpdate {
+            uint64_t tick = 0;
+            std::array<double, 3> velocity{};
+        };
+        struct ServerMovementEffect {
+            uint32_t type = 0;
+            int32_t duration = 0;
+            uint64_t tick = 0;
+        };
         std::vector<ServerMovementEffect> TakeMovementEffects();
-        bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
+        bool WorkbenchOpen() const {
+            std::lock_guard lock(statusMutex);
+            return workbenchOpen;
+        }
         bool TakeWorkbenchOpened();
         bool TakeHorseOpened();
         bool TakeChestOpened();
-        bool ChestOpen() const { std::lock_guard lock(statusMutex); return inventory.chestOpen; }
-        bool HorseOpen() const { std::lock_guard lock(statusMutex); return inventory.horseOpen; }
-        struct RecipeEntry { int index = 0; bool craftable = false; ItemStackInfo out; };
+        bool ChestOpen() const {
+            std::lock_guard lock(statusMutex);
+            return inventory.chestOpen;
+        }
+        bool HorseOpen() const {
+            std::lock_guard lock(statusMutex);
+            return inventory.horseOpen;
+        }
+        struct RecipeEntry {
+            int index = 0;
+            bool craftable = false;
+            ItemStackInfo out;
+        };
         std::vector<RecipeEntry> GetRecipes(int side) const;
         void InvFillRecipe(int index);
         void InvSpread(const std::vector<int>& slots, int mode);
         void InvCreativeClone(int addr);
         void InvCreativePlace(int addr);
         uint32_t CreativeEntryFor(const ItemStackInfo& info) const;
-        bool InventoryIsOpen() const { std::lock_guard lock(statusMutex); return inventoryOpen; }
+        bool InventoryIsOpen() const {
+            std::lock_guard lock(statusMutex);
+            return inventoryOpen;
+        }
         bool TakeServerClosedInventory();
 
         struct SignEditRequest {
@@ -752,7 +860,8 @@ void RequestRespawn();
             std::vector<std::string> values;
         };
         void ParsePropertySchema(const std::vector<uint8_t>& nbt);
-        void ApplyEntityProperties(uint64_t rid, const std::string& type, const proto::EntityProperties& props);
+        void ApplyEntityProperties(uint64_t rid, const std::string& type,
+                                   const proto::EntityProperties& props);
         mutable std::mutex propertyMutex;
         std::unordered_map<std::string, std::vector<PropertyDef>> propertySchemas;
         CameraEffects cameraEffects;
@@ -789,7 +898,9 @@ void RequestRespawn();
         struct ScoreKey {
             std::string objective;
             int64_t id = 0;
-            bool operator<(const ScoreKey& o) const { return objective != o.objective ? objective < o.objective : id < o.id; }
+            bool operator<(const ScoreKey& o) const {
+                return objective != o.objective ? objective < o.objective : id < o.id;
+            }
         };
         struct ScoreValue {
             std::string name;
@@ -823,7 +934,7 @@ void RequestRespawn();
         int maxViewDistance = 32;
         std::atomic<int> grantedRadius{0};
         std::atomic<int64_t> lastColumnMs{0};
-        std::chrono::steady_clock::time_point lastFill{};
+        std::chrono::steady_clock::time_point lastFill;
         uint64_t statFilled = 0;
         bool ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc);
         void ApplyBiomeColumn(int cx, int cz, const std::vector<uint8_t>& payload);
@@ -893,7 +1004,7 @@ void RequestRespawn();
         struct PredictedPlace {
             int x = 0, y = 0, z = 0;
             uint16_t id = 0, previous = 0;
-            std::chrono::steady_clock::time_point at{};
+            std::chrono::steady_clock::time_point at;
         };
         std::mutex predictMutex;
         std::vector<PredictedPlace> predictedPlaces;
@@ -925,7 +1036,7 @@ void RequestRespawn();
         std::mutex crackMutex;
         std::vector<CrackState> crackStates;
         int lastClearedCrack[3] = {0, 0, 0};
-        std::chrono::steady_clock::time_point lastClearedAt{};
+        std::chrono::steady_clock::time_point lastClearedAt;
         std::set<std::tuple<int, int, int, int>> requestedSlots;
         class NearestQueue {
         public:
@@ -933,7 +1044,10 @@ void RequestRespawn();
             NearestQueue() : set(Less{this}) {}
             NearestQueue(const NearestQueue&) = delete;
             NearestQueue& operator=(const NearestQueue&) = delete;
-            NearestQueue& operator=(NearestQueue&&) { set.clear(); return *this; }
+            NearestQueue& operator=(NearestQueue&&) {
+                set.clear();
+                return *this;
+            }
             void SetCenter(int x, int z) {
                 if (x == cx && z == cz)
                     return;
@@ -948,6 +1062,7 @@ void RequestRespawn();
             size_t size() const { return set.size(); }
             Key front() const { return *set.begin(); }
             void pop() { set.erase(set.begin()); }
+
         private:
             struct Less {
                 const NearestQueue* q;
@@ -992,7 +1107,7 @@ void RequestRespawn();
         std::shared_ptr<friendworld::Lease> friendLease;
         xbox::Credentials onlineCreds;
         std::string accountKey;
-        std::shared_ptr<EC_KEY> swapKey;  // key pair of a background sign-in that finished during the connect
+        std::shared_ptr<EC_KEY> swapKey; // key pair of a background sign-in that finished during the connect
         std::string playerUuid;
         std::string serverAddress;
         std::string gameVersion;
@@ -1013,7 +1128,7 @@ void RequestRespawn();
         };
         std::vector<BrokenSupport> brokenSupports;
         std::mutex supportMutex;
-        std::chrono::steady_clock::time_point lastSwingAt{};
+        std::chrono::steady_clock::time_point lastSwingAt;
         std::deque<BlockActionData> pendingBlockActions;
         std::deque<ServerMotion> serverMotions;
         void QueueServerMotion(ServerMotion motion);
@@ -1022,6 +1137,13 @@ void RequestRespawn();
         std::array<uint64_t, 2> ownFlagWords{};
         std::array<bool, 2> ownFlagWordsKnown{};
         std::optional<proto::PlayerAttributesEntry> movementAttribute;
+        // own copy of the movement AttributeInstance: modifiers, base (min, max, value), limits, value
+        std::vector<proto::PlayerAttributesEntryModifiersEntry> movementModifiers;
+        std::array<float, 3> movementBase{};
+        std::array<float, 2> movementLimits{};
+        float movementValue = 0.1f;
+        std::vector<FreezeUpdate> freezeUpdates;
+        void ApplyMovementAttribute(const proto::PlayerAttributesEntry& entry);
         int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
         int predictionSyncCountdown = -1;
@@ -1029,8 +1151,8 @@ void RequestRespawn();
         bool initializedSent = false;
         bool startGameSeen = false;
         bool spawnSeen = false;
-        std::chrono::steady_clock::time_point spawnAt{};
-        std::chrono::steady_clock::time_point startGameAt{};
+        std::chrono::steady_clock::time_point spawnAt;
+        std::chrono::steady_clock::time_point startGameAt;
         std::atomic<int> viewCenterChunk[2] = {0, 0};
         int viewRadiusChunks = 0;
         uint64_t movePacketsSent = 0;
@@ -1039,7 +1161,7 @@ void RequestRespawn();
         CommandResult commandResult;
         uint64_t statLevelChunks = 0, statRequestsSent = 0, statSubChunkReplies = 0, statSubChunksFailed = 0;
         std::atomic<uint64_t> statSubChunksApplied{0};
-        std::chrono::steady_clock::time_point lastStatLog{};
+        std::chrono::steady_clock::time_point lastStatLog;
         float startPos[3] = {0, 0, 0};
         bool haveStartPos = false;
         std::set<std::pair<int, int>> seenColumns;
@@ -1052,8 +1174,11 @@ void RequestRespawn();
 
         bool mayFly = false;
         bool noClip = false;
+        // ability 11, MovementAbilitiesComponent bit 2: changes jump while gliding
+        bool instabuild = false;
         int gameType = 0;
         bool isFlying = false;
+        uint32_t abilitiesSeq = 0;
         float flySpeed = 0.05f;
         float vFlySpeed = 1.0f;
         float walkSpeed = 0.1f;
@@ -1068,15 +1193,15 @@ void RequestRespawn();
         std::atomic<int> dimensionId{0};
         std::atomic<uint32_t> hurtCounter{0};
         float lastHealth = -1.0f;
-        std::chrono::steady_clock::time_point lastHurtAt{};
+        std::chrono::steady_clock::time_point lastHurtAt;
         void NoteHurt();
         void NoteKnockback(float vx, float vz);
         mutable std::mutex hurtMutex;
         HurtSource hurtSource;
         float knockX = 0, knockZ = 0;
-        std::chrono::steady_clock::time_point knockAt{};
+        std::chrono::steady_clock::time_point knockAt;
         std::atomic<bool> dimAckPending{false};
-        std::chrono::steady_clock::time_point dimAckSince{};
+        std::chrono::steady_clock::time_point dimAckSince;
         std::optional<uint32_t> dimLoadingId;
         void ResetWorldForDimension();
         void FinishDimensionChange();
@@ -1090,10 +1215,10 @@ void RequestRespawn();
         std::mutex idCountMutex;
         std::map<uint32_t, uint64_t> idCounts;
         std::atomic<uint32_t> diagLastId{0};
-        std::chrono::steady_clock::time_point diagAt{};
+        std::chrono::steady_clock::time_point diagAt;
         uint64_t diagPrevPackets = 0;
         bool diagLostLogged = false;
-        std::chrono::steady_clock::time_point timeAt{};
+        std::chrono::steady_clock::time_point timeAt;
 
         void RegisterPlayerStateHandlers();
         void ResetPlayerState();
@@ -1104,6 +1229,11 @@ void RequestRespawn();
         InventoryView inventory;
         proto::ItemV4 inventoryRaw[36];
         std::atomic<int64_t> ridingUid{0};
+        std::atomic<bool> ridingDriver{false};
+        std::atomic<uint64_t> predictedVehicleRuntime{0};
+        std::optional<std::array<float, 3>> ownSeatOffset;
+        std::mutex vehicleCorrectionMutex;
+        std::deque<VehicleCorrection> vehicleCorrections;
         proto::ItemV4 extraRaw[20];
         proto::ItemV4 horseRaw[17];
         int horseWindow = -1;
@@ -1112,11 +1242,17 @@ void RequestRespawn();
         bool chestJustOpened = false;
         proto::ContainerSlotType chestSlotType = proto::ContainerSlotType::Container;
         std::chrono::steady_clock::time_point invServerAt[36]{};
-        struct RecipeIngredientInfo { bool empty = true; std::string name, tag; int meta = 0; };
+        struct RecipeIngredientInfo {
+            bool empty = true;
+            std::string name, tag;
+            int meta = 0;
+        };
         struct RecipeInfo {
-            bool shaped = false; int w = 0, h = 0;
+            bool shaped = false;
+            int w = 0, h = 0;
             std::vector<RecipeIngredientInfo> in;
-            proto::ItemV4 out; ItemStackInfo outInfo;
+            proto::ItemV4 out;
+            ItemStackInfo outInfo;
             uint32_t netId = 0;
         };
         std::vector<RecipeInfo> recipes;
@@ -1135,21 +1271,32 @@ void RequestRespawn();
         bool invCloseWanted = false;
         int32_t invPendingRequest = 0;
         std::map<int32_t, std::chrono::steady_clock::time_point> invInFlight;
-        std::chrono::steady_clock::time_point invPendingAt{};
+        std::chrono::steady_clock::time_point invPendingAt;
         void InvRecomputeOutputLocked();
         ItemStackInfo& InvInfoLocked(int addr);
         proto::ItemV4& InvRawLocked(int addr);
         void InvEnqueue(std::function<bool(proto::ItemStackRequest&)> op);
         bool SendCloseNow();
-        struct ActiveEffect { int id = 0; int amplifier = 0; int32_t duration = 0; uint64_t appliedTick = 0; bool ambient = false, particles = true; };
+        struct ActiveEffect {
+            int id = 0;
+            int amplifier = 0;
+            int32_t duration = 0;
+            uint64_t appliedTick = 0;
+            bool ambient = false, particles = true;
+        };
         std::vector<ActiveEffect> activeEffects;
         std::vector<EffectUpdate> pendingEffectUpdates;
         std::vector<ServerMovementEffect> pendingMovementEffects;
-        bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false, workbenchJustOpened = false;
+        bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false,
+             workbenchJustOpened = false;
         bool horseJustOpened = false;
         int inventoryWindow = 0;
         int32_t nextStackRequestId = -3;
-        struct PendingDrop { int slot; int count; int attempt; };
+        struct PendingDrop {
+            int slot;
+            int count;
+            int attempt;
+        };
         std::map<int32_t, PendingDrop> pendingDrops;
         int dropForm = 0;
         bool SendDropRequest(int slot, int count, int attempt);

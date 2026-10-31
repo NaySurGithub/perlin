@@ -18,7 +18,16 @@ namespace perlin {
 
     enum class DepthFunc : uint8_t { LessEqual, Less, Equal, Always, Greater, GreaterEqual, NotEqual, Never };
 
-    enum class StencilFunc : uint8_t { Always, Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual, Never };
+    enum class StencilFunc : uint8_t {
+        Always,
+        Equal,
+        NotEqual,
+        Less,
+        LessEqual,
+        Greater,
+        GreaterEqual,
+        Never
+    };
 
     enum class StencilOp : uint8_t { Keep, Replace, Zero, Increment, Decrement, Invert };
 

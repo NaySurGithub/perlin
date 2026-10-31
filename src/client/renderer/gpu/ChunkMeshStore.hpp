@@ -61,7 +61,8 @@ namespace perlin::gpu {
         void ReleaseEmptyPages();
 
         // frustum + radius + cave culling; fills the near-to-far visible list
-        void Select(const Frustum& frustum, float camX, float camY, float camZ, int cullRadius, bool caveCulling, double now);
+        void Select(const Frustum& frustum, float camX, float camY, float camZ, int cullRadius,
+                    bool caveCulling, double now);
         void CollectRuns(RenderLayer layer, bool farToNear, std::vector<Run>& out);
         bool SectionReached(int sx, int sy, int sz, bool caveCulling) const;
 
@@ -73,7 +74,9 @@ namespace perlin::gpu {
         rhi::BufferHandle Extension(uint32_t page) const { return pages[page].ext.Buffer(); }
 
         rhi::BufferHandle Vertices(uint32_t page) const { return pages[page].vb.Buffer(); }
-        rhi::BufferHandle Indices(uint32_t page, RenderLayer layer) const { return pages[page].ib[static_cast<size_t>(layer)].Buffer(); }
+        rhi::BufferHandle Indices(uint32_t page, RenderLayer layer) const {
+            return pages[page].ib[static_cast<size_t>(layer)].Buffer();
+        }
         size_t Pages() const { return pages.size(); }
         size_t Chunks() const { return chunks.size(); }
         size_t LodTiles() const { return lods.size(); }
@@ -91,12 +94,14 @@ namespace perlin::gpu {
             int emptyFrames = 0;
             bool live = false;
         };
-        static int64_t Key(int cx, int cz) { return (static_cast<int64_t>(cx) << 32) | static_cast<uint32_t>(cz); }
+        static int64_t Key(int cx, int cz) {
+            return (static_cast<int64_t>(cx) << 32) | static_cast<uint32_t>(cz);
+        }
         int CreatePage(uint32_t vCap, const std::array<uint32_t, kRenderLayerCount>& iCap);
         bool Alloc(uint32_t v, const std::array<uint32_t, kRenderLayerCount>& need, Chunk& out);
         void Free(Chunk& c);
-        void Upload(std::unordered_map<int64_t, Chunk>& target, bool lod, int cx, int cz, int size, const Tessellator& tess,
-                    uint64_t version);
+        void Upload(std::unordered_map<int64_t, Chunk>& target, bool lod, int cx, int cz, int size,
+                    const Tessellator& tess, uint64_t version);
         void UpdateCave(float camX, float camY, float camZ, double now);
         // lod tiles in 8x8 groups: one box test rejects (or accepts) a whole group before any tile is looked at
         struct LodGroup {

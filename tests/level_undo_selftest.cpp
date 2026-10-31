@@ -23,7 +23,8 @@ int main() {
     assert(lv.RewindTo(3));
     assert(lv.GetBlock(1, 70, 1) == 6);
     assert(lv.RewindTo(2));
-    assert(lv.HasChunk(1, 0) && lv.HasChunk(2, 0) && lv.GetBlock(17, 70, 1) == 9 && lv.GetBlock(33, 10, 3) == 4);
+    assert(lv.HasChunk(1, 0) && lv.HasChunk(2, 0) && lv.GetBlock(17, 70, 1) == 9 &&
+           lv.GetBlock(33, 10, 3) == 4);
     assert(lv.RewindTo(1));
     assert(lv.GetBlock(1, 70, 1) == 5 && lv.GetBlock(17, 70, 1) == 0);
     {
@@ -33,10 +34,12 @@ int main() {
         l2.EnsureChunk(0, 0);
         std::vector<uint16_t> cells(4096, 3);
         l2.SetSubChunk(0, 0, 4, cells.data());
-        std::vector<DirtyChunk> d1; l2.DrainDirty(d1);
+        std::vector<DirtyChunk> d1;
+        l2.DrainDirty(d1);
         l2.SetEpoch(1);
         l2.SetSubChunk(0, 0, 4, cells.data());
-        std::vector<DirtyChunk> d2; l2.DrainDirty(d2);
+        std::vector<DirtyChunk> d2;
+        l2.DrainDirty(d2);
         assert(d2.empty());
     }
     lv.SetBlock(1, 70, 1, 8);

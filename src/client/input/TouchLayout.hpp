@@ -1,7 +1,10 @@
 #pragma once
 #include <algorithm>
 namespace perlin::touchlayout {
-    struct ToolBox { float x, y, w, h; const char* label; };
+    struct ToolBox {
+        float x, y, w, h;
+        const char* label;
+    };
 
     inline void ToolBoxes(int width, int height, ToolBox out[4]) {
         const float u = static_cast<float>(std::min(width, height));

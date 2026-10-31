@@ -28,7 +28,8 @@ namespace perlin {
                                                 const std::string& verb, const std::string& path,
                                                 const std::string& body, const std::string& contentType,
                                                 int timeoutSecs = 15) {
-            http::Response r = http::Request(host, port, g_secureSignaling.load(), verb, path, body, contentType, {}, timeoutSecs);
+            http::Response r = http::Request(host, port, g_secureSignaling.load(), verb, path, body,
+                                             contentType, {}, timeoutSecs);
             return {r.status, std::move(r.body)};
         }
 
@@ -118,7 +119,8 @@ namespace perlin {
 
         if (!Probe(host, port, serverInfo, lastError))
             return false;
-        Log("nethernet", "probe ok: '{}' protocol {} version {}", serverInfo.name, serverInfo.protocol, serverInfo.version);
+        Log("nethernet", "probe ok: '{}' protocol {} version {}", serverInfo.name, serverInfo.protocol,
+            serverInfo.version);
 
         std::random_device rd;
         std::mt19937_64 rng((static_cast<uint64_t>(rd()) << 32) | rd());
@@ -140,12 +142,14 @@ namespace perlin {
             return false;
         }
 
-        impl->pc->onGatheringStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::GatheringState state) {
-            const auto keep = w.lock();
-            if (keep && state == rtc::PeerConnection::GatheringState::Complete)
-                raw->gatheringDone = true;
-        });
-        impl->pc->onStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::State state) {
+        impl->pc->onGatheringStateChange(
+            [raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::GatheringState state) {
+                const auto keep = w.lock();
+                if (keep && state == rtc::PeerConnection::GatheringState::Complete)
+                    raw->gatheringDone = true;
+            });
+        impl->pc->onStateChange([raw = impl.get(),
+                                 w = std::weak_ptr<int>(life)](rtc::PeerConnection::State state) {
             const auto keep = w.lock();
             if (!keep)
                 return;
@@ -250,8 +254,8 @@ namespace perlin {
 
         std::string netIdStr = std::to_string(netId);
         HttpRequest(host, port, "GET",
-                    "/v1/join?version=" + std::string(kBedrockVersion) + "&protocol=" + std::to_string(kBedrockProtocol) +
-                        "&platform=1&id=" + netIdStr,
+                    "/v1/join?version=" + std::string(kBedrockVersion) +
+                        "&protocol=" + std::to_string(kBedrockProtocol) + "&platform=1&id=" + netIdStr,
                     "", "", 5);
         std::string wpath = "/v1/join/" + netIdStr;
         Log("nethernet", "offer ready ({} bytes), POSTing to /v1/join/{}...", offer.size(), netIdStr);
@@ -320,7 +324,6 @@ namespace perlin {
         return true;
     }
 
-
     namespace {
         std::string LowerAscii(std::string s) {
             for (char& c : s)
@@ -328,7 +331,8 @@ namespace perlin {
             return s;
         }
 
-        bool MakeIceServer(const friendworld::IceServerInfo& info, const std::string& url, rtc::IceServer& out) {
+        bool MakeIceServer(const friendworld::IceServerInfo& info, const std::string& url,
+                           rtc::IceServer& out) {
             const size_t colon = url.find(':');
             if (colon == std::string::npos)
                 return false;
@@ -352,7 +356,7 @@ namespace perlin {
             if (scheme == "stun" || scheme == "stuns") {
                 out = rtc::IceServer(host, port);
             } else if (scheme == "turn" || scheme == "turns") {
-                const auto relay = scheme == "turns" ? rtc::IceServer::RelayType::TurnTls
+                const auto relay = scheme == "turns"    ? rtc::IceServer::RelayType::TurnTls
                                    : transport == "tcp" ? rtc::IceServer::RelayType::TurnTcp
                                                         : rtc::IceServer::RelayType::TurnUdp;
                 out = rtc::IceServer(host, port, info.username, info.password, relay);
@@ -400,11 +404,12 @@ namespace perlin {
             Disconnect();
             return false;
         }
-        impl->pc->onGatheringStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::GatheringState state) {
-            const auto keep = w.lock();
-            if (keep && state == rtc::PeerConnection::GatheringState::Complete)
-                raw->gatheringDone = true;
-        });
+        impl->pc->onGatheringStateChange(
+            [raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::GatheringState state) {
+                const auto keep = w.lock();
+                if (keep && state == rtc::PeerConnection::GatheringState::Complete)
+                    raw->gatheringDone = true;
+            });
         auto localCandidates = std::make_shared<std::vector<std::string>>();
         auto localMutex = std::make_shared<std::mutex>();
         impl->pc->onLocalCandidate([localCandidates, localMutex](rtc::Candidate c) {
@@ -415,13 +420,19 @@ namespace perlin {
             localCandidates->push_back(std::move(text));
         });
         impl->pc->onIceStateChange([](rtc::PeerConnection::IceState state) {
-            Log("nethernet", "ICE state {} (0 new, 1 checking, 2 connected, 3 completed, 4 failed, 5 disconnected, 6 closed)", static_cast<int>(state));
+            Log("nethernet",
+                "ICE state {} (0 new, 1 checking, 2 connected, 3 completed, 4 failed, 5 disconnected, 6 "
+                "closed)",
+                static_cast<int>(state));
         });
-        impl->pc->onStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::State state) {
+        impl->pc->onStateChange([raw = impl.get(),
+                                 w = std::weak_ptr<int>(life)](rtc::PeerConnection::State state) {
             const auto keep = w.lock();
             if (!keep)
                 return;
-            Log("nethernet", "peer state {} (0 new, 1 connecting, 2 connected, 3 disconnected, 4 failed, 5 closed)", static_cast<int>(state));
+            Log("nethernet",
+                "peer state {} (0 new, 1 connecting, 2 connected, 3 disconnected, 4 failed, 5 closed)",
+                static_cast<int>(state));
             if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed)
                 raw->failed = true;
         });
@@ -472,17 +483,18 @@ namespace perlin {
         auto inbox = std::make_shared<Inbox>();
         const std::string hostId = LowerAscii(lease.hostNetworkId);
         const std::string idText = std::to_string(connectionId);
-        lease.signaling->SetHandler([inbox, hostId, idText](const std::string& from, const std::string& text) {
-            if (LowerAscii(from) != hostId)
-                return;
-            const size_t a = text.find(' ');
-            const size_t b = a == std::string::npos ? a : text.find(' ', a + 1);
-            if (b == std::string::npos || text.substr(a + 1, b - a - 1) != idText)
-                return;
-            std::lock_guard lock(inbox->m);
-            inbox->items.emplace_back(text.substr(0, a), text.substr(b + 1));
-            inbox->cv.notify_all();
-        });
+        lease.signaling->SetHandler(
+            [inbox, hostId, idText](const std::string& from, const std::string& text) {
+                if (LowerAscii(from) != hostId)
+                    return;
+                const size_t a = text.find(' ');
+                const size_t b = a == std::string::npos ? a : text.find(' ', a + 1);
+                if (b == std::string::npos || text.substr(a + 1, b - a - 1) != idText)
+                    return;
+                std::lock_guard lock(inbox->m);
+                inbox->items.emplace_back(text.substr(0, a), text.substr(b + 1));
+                inbox->cv.notify_all();
+            });
         const auto detach = [&] { lease.signaling->SetHandler(nullptr); };
 
         impl->pc->setLocalDescription();
@@ -532,7 +544,8 @@ namespace perlin {
 
         Log("nethernet", "sending the offer to {} (connection {})", lease.hostNetworkId, idText);
         std::string sendError;
-        if (!lease.signaling->Send(lease.hostNetworkId, "CONNECTREQUEST " + idText + " " + identified, true, sendError)) {
+        if (!lease.signaling->Send(lease.hostNetworkId, "CONNECTREQUEST " + idText + " " + identified, true,
+                                   sendError)) {
             detach();
             lastError = "could not reach the host: " + sendError;
             Disconnect();
@@ -548,7 +561,8 @@ namespace perlin {
             Log("nethernet", "sending {} local candidates", mine.size());
             for (const std::string& c : mine) {
                 std::string ignored;
-                lease.signaling->Send(lease.hostNetworkId, "CANDIDATEADD " + idText + " " + c, false, ignored);
+                lease.signaling->Send(lease.hostNetworkId, "CANDIDATEADD " + idText + " " + c, false,
+                                      ignored);
             }
         }
 
@@ -577,7 +591,8 @@ namespace perlin {
             bool got = false;
             {
                 std::unique_lock lock(inbox->m);
-                inbox->cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return !inbox->items.empty(); });
+                inbox->cv.wait_for(lock, std::chrono::milliseconds(50),
+                                   [&] { return !inbox->items.empty(); });
                 if (!inbox->items.empty()) {
                     item = std::move(inbox->items.front());
                     inbox->items.pop_front();
@@ -588,7 +603,8 @@ namespace perlin {
                 continue;
             if (item.first == "CONNECTRESPONSE" && !haveAnswer) {
                 try {
-                    impl->pc->setRemoteDescription(rtc::Description(StripIdentityLines(item.second), rtc::Description::Type::Answer));
+                    impl->pc->setRemoteDescription(
+                        rtc::Description(StripIdentityLines(item.second), rtc::Description::Type::Answer));
                     haveAnswer = true;
                     Log("nethernet", "answer received:\n{}", StripIdentityLines(item.second));
                     for (const std::string& c : pendingCandidates)
@@ -614,7 +630,8 @@ namespace perlin {
         }
         detach();
         if (!impl || !impl->reliableOpen.load()) {
-            lastError = haveAnswer ? "the connection to the host never opened (ICE/DTLS failed; the host's network may block peer-to-peer)"
+            lastError = haveAnswer ? "the connection to the host never opened (ICE/DTLS failed; the host's "
+                                     "network may block peer-to-peer)"
                                    : "the host did not answer";
             Disconnect();
             return false;
@@ -639,8 +656,7 @@ namespace perlin {
                     impl->pc->onStateChange(nullptr);
                     impl->pc->onGatheringStateChange(nullptr);
                 }
-            } catch (...) {
-            }
+            } catch (...) {}
             Impl* doomed = impl.release();
             std::thread([doomed] {
                 std::this_thread::sleep_for(std::chrono::milliseconds(750));

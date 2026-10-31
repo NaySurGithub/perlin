@@ -17,7 +17,8 @@ namespace perlin {
     }
 
     bool RakNet::Connect(const std::string&, uint16_t) {
-        lastError = "RakNet needs UDP sockets, which browsers do not provide - use a NetherNet (WebRTC) server";
+        lastError =
+            "RakNet needs UDP sockets, which browsers do not provide - use a NetherNet (WebRTC) server";
         return false;
     }
 

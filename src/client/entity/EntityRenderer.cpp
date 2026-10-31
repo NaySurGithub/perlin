@@ -31,7 +31,9 @@
 namespace perlin::entity {
     namespace {
         void ApplyJavaCrouch(attachable::Pose& pose, const attachable::Geometry* g) {
-            static const float zs = PERLIN_ENV("PERLIN_ZSIGN") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ZSIGN"))) : -1.0f;
+            static const float zs = PERLIN_ENV("PERLIN_ZSIGN")
+                                        ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ZSIGN")))
+                                        : -1.0f;
             const auto find = [&](const char* name) -> const attachable::Bone* {
                 if (g)
                     for (const auto& b : g->bones)
@@ -47,9 +49,10 @@ namespace perlin::entity {
                 const auto* b = find(name);
                 return b ? b->rotation : glm::vec3(0.0f);
             };
-            const auto local = [&](const char* name, const glm::vec3& c, const glm::vec3& rot, const glm::vec3& pos) {
-                return glm::translate(glm::mat4(1.0f), pos) * glm::translate(glm::mat4(1.0f), c) * attachable::EulerZYX(restOf(name) + rot) *
-                       glm::translate(glm::mat4(1.0f), -c);
+            const auto local = [&](const char* name, const glm::vec3& c, const glm::vec3& rot,
+                                   const glm::vec3& pos) {
+                return glm::translate(glm::mat4(1.0f), pos) * glm::translate(glm::mat4(1.0f), c) *
+                       attachable::EulerZYX(restOf(name) + rot) * glm::translate(glm::mat4(1.0f), -c);
             };
             auto& body = pose["body"];
             const glm::vec3 bodyPivot = pivotOf("body", {0.0f, 24.0f, 0.0f});
@@ -63,16 +66,18 @@ namespace perlin::entity {
                 const glm::vec3 c = pivotOf(name, fallbackPivot);
                 glm::vec3 rot = x.rotation;
                 rot.x += extraX;
-                const glm::mat4 desired = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -down, 0.0f)) * oldBody * local(name, c, rot, x.position);
+                const glm::mat4 desired = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -down, 0.0f)) *
+                                          oldBody * local(name, c, rot, x.position);
                 const glm::mat4 fit = invNew * desired;
                 const float b = std::asin(std::clamp(-fit[0][2], -1.0f, 1.0f));
                 const float cc = std::atan2(fit[1][2], fit[2][2]);
                 const float a = std::atan2(fit[0][1], fit[0][0]);
                 const glm::vec3 euler(-glm::degrees(cc), -glm::degrees(b), glm::degrees(a) / zs);
                 x.rotation = euler - restOf(name);
-                const glm::mat3 r(glm::rotate(glm::mat4(1.0f), glm::radians(zs * euler.z), glm::vec3(0, 0, 1)) *
-                                  glm::rotate(glm::mat4(1.0f), glm::radians(-euler.y), glm::vec3(0, 1, 0)) *
-                                  glm::rotate(glm::mat4(1.0f), glm::radians(-euler.x), glm::vec3(1, 0, 0)));
+                const glm::mat3 r(
+                    glm::rotate(glm::mat4(1.0f), glm::radians(zs * euler.z), glm::vec3(0, 0, 1)) *
+                    glm::rotate(glm::mat4(1.0f), glm::radians(-euler.y), glm::vec3(0, 1, 0)) *
+                    glm::rotate(glm::mat4(1.0f), glm::radians(-euler.x), glm::vec3(1, 0, 0)));
                 const glm::vec3 t(fit[3]);
                 x.position = t - c + r * c;
             };
@@ -86,9 +91,12 @@ namespace perlin::entity {
 
         void StyleFromMaterial(UiDraw& draw, const char* name) {
             const std::string_view materialName(name);
-            if (materialName.starts_with("particles_")) draw.material = DrawMaterial::Particle;
-            else if (materialName.starts_with("name_")) draw.material = DrawMaterial::Nametag;
-            else if (materialName == "cracks_overlay") draw.material = DrawMaterial::Cracks;
+            if (materialName.starts_with("particles_"))
+                draw.material = DrawMaterial::Particle;
+            else if (materialName.starts_with("name_"))
+                draw.material = DrawMaterial::Nametag;
+            else if (materialName == "cracks_overlay")
+                draw.material = DrawMaterial::Cracks;
             const material::Def* def = material::Registry::Instance().Get().Find(name);
             if (!def)
                 return;
@@ -141,7 +149,9 @@ namespace perlin::entity {
     }
 
     namespace {
-        const float kAttachDrop = PERLIN_ENV("PERLIN_ATTACH_DROP") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ATTACH_DROP"))) : -24.0f;
+        const float kAttachDrop = PERLIN_ENV("PERLIN_ATTACH_DROP")
+                                      ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ATTACH_DROP")))
+                                      : -24.0f;
     }
 
     struct EntityRenderer::View {
@@ -175,10 +185,14 @@ namespace perlin::entity {
         double born = 0, lastSeen = 0, now = 0;
         float dt = 0;
         float animTime = 0;
-        float glideTime = 0, yawSpeed = 0, standAmount = 0, sitAmount = 0, swimAmount = 0, lieAmount = 0, swellAmount = 0;
+        float glideTime = 0, yawSpeed = 0, standAmount = 0, sitAmount = 0, swimAmount = 0, lieAmount = 0,
+              swellAmount = 0;
         molang::Scope scope;
         bool initialised = false;
-        struct AnimStamp { double start = 0; uint32_t seen = 0; };
+        struct AnimStamp {
+            double start = 0;
+            uint32_t seen = 0;
+        };
         std::unordered_map<std::string, AnimStamp> animStart;
         uint32_t animEpoch = 0;
         struct CtrlState {
@@ -206,12 +220,19 @@ namespace perlin::entity {
             }
 
             bool Volatile(const std::string& name) const override {
-                return name == "anim_time" || name == "all_animations_finished" || name == "any_animation_finished";
+                return name == "anim_time" || name == "all_animations_finished" ||
+                       name == "any_animation_finished";
             }
 
             bool Context(const std::string& name, Value& out) override {
-                if (name == "is_first_person") { out = Value::Num(firstPerson ? 1 : 0); return true; }
-                if (name == "player_offhand_arm_height") { out = Value::Num(offArmHeight); return true; }
+                if (name == "is_first_person") {
+                    out = Value::Num(firstPerson ? 1 : 0);
+                    return true;
+                }
+                if (name == "player_offhand_arm_height") {
+                    out = Value::Num(offArmHeight);
+                    return true;
+                }
                 return false;
             }
         };
@@ -229,12 +250,14 @@ namespace perlin::entity {
         if (!assets.Seat(v.type, sx, sy, sz))
             sy = -0.2f;
         const double yawRad = glm::radians(static_cast<double>(v.yaw));
-        const glm::dvec3 forward(-std::sin(yawRad), 0.0, std::cos(yawRad)), side(std::cos(yawRad), 0.0, std::sin(yawRad));
+        const glm::dvec3 forward(-std::sin(yawRad), 0.0, std::cos(yawRad)),
+            side(std::cos(yawRad), 0.0, std::sin(yawRad));
         const bool rails = v.type.contains("boat") || v.type.contains("minecart");
         double lift = rails ? 0.1 : 0.0;
         if (playerRider && !rails)
             lift -= v.type == "minecraft:cushion" ? 0.35 : 0.6;
-        return v.pos + side * static_cast<double>(sx) + forward * static_cast<double>(sz) + glm::dvec3(0.0, sy + lift, 0.0);
+        return v.pos + side * static_cast<double>(sx) + forward * static_cast<double>(sz) +
+               glm::dvec3(0.0, sy + lift, 0.0);
     }
 
     void EntityRenderer::ResolveSeats(std::vector<Entity>& entities) const {
@@ -263,7 +286,9 @@ namespace perlin::entity {
         if (e.boxWidth > 0.0f && e.boxHeight > 0.0f)
             return {e.boxWidth * scale, e.boxHeight * scale};
         if (e.isPlayer)
-            return {0.6f, (e.Has(flag::Gliding) || e.Has(flag::Swimming) || e.crawling) ? 0.6f : e.Has(flag::Sneaking) ? 1.5f : 1.8f};
+            return {0.6f, (e.Has(flag::Gliding) || e.Has(flag::Swimming) || e.crawling) ? 0.6f
+                          : e.Has(flag::Sneaking)                                       ? 1.5f
+                                                                                        : 1.8f};
         if (e.isItem)
             return {0.25f, 0.25f};
         float w, h;
@@ -306,7 +331,8 @@ namespace perlin::entity {
         skinGeometry.clear();
         voxelGeometry.clear();
         skinOwners.clear();
-        for (auto& geometry : orbGeometry) geometry.clear();
+        for (auto& geometry : orbGeometry)
+            geometry.clear();
     }
 
     void EntityRenderer::PruneSkinCaches() {
@@ -376,10 +402,15 @@ namespace perlin::entity {
                     const int sc = std::max(1, s.capeWidth / 64);
                     for (int y = sc; y < 17 * sc && y < s.capeHeight; y++)
                         for (int x = 0; x < 10 * sc; x++) {
-                            const size_t a = (static_cast<size_t>(y) * static_cast<size_t>(s.capeWidth) + static_cast<size_t>(sc + x)) * 4;
-                            const size_t b = (static_cast<size_t>(y) * static_cast<size_t>(s.capeWidth) + static_cast<size_t>(12 * sc + x)) * 4;
+                            const size_t a = (static_cast<size_t>(y) * static_cast<size_t>(s.capeWidth) +
+                                              static_cast<size_t>(sc + x)) *
+                                             4;
+                            const size_t b = (static_cast<size_t>(y) * static_cast<size_t>(s.capeWidth) +
+                                              static_cast<size_t>(12 * sc + x)) *
+                                             4;
                             for (int c = 0; c < 4; c++)
-                                std::swap(swapped[a + static_cast<size_t>(c)], swapped[b + static_cast<size_t>(c)]);
+                                std::swap(swapped[a + static_cast<size_t>(c)],
+                                          swapped[b + static_cast<size_t>(c)]);
                         }
                     id = renderer->UiCreateTexture(s.capeWidth, s.capeHeight, swapped.data(), false);
                 }
@@ -393,7 +424,8 @@ namespace perlin::entity {
             }
         }
         if (e.isPlayer && key == "default") {
-            const std::string path = e.skin && e.skin->slim ? "textures/entity/alex" : "textures/entity/steve";
+            const std::string path =
+                e.skin && e.skin->slim ? "textures/entity/alex" : "textures/entity/steve";
             auto it = textures.find(path);
             if (it == textures.end()) {
                 Texture t;
@@ -409,7 +441,8 @@ namespace perlin::entity {
 
     void EntityRenderer::TickPlayerBody(const Entity& e, View& v, float dt, float prevYaw) {
         // v.yaw holds the server yaw here: what a ridden vehicle turns the body toward
-        v.yaw = v.body.Frame(v.pos.x, v.pos.z, v.headYaw, dt, v.attackTime > 0.0f, e.Has(flag::Riding), v.yaw);
+        v.yaw =
+            v.body.Frame(v.pos.x, v.pos.z, v.headYaw, dt, v.attackTime > 0.0f, e.Has(flag::Riding), v.yaw);
         v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / std::max(dt, 0.001f);
     }
 
@@ -429,12 +462,13 @@ namespace perlin::entity {
             v.swingSerial = e.swingSerial;
         }
         const bool projectile = e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident" ||
-                                        e.type == "minecraft:snowball" || e.type == "minecraft:egg" || e.type == "minecraft:ender_pearl" ||
-                                        e.type == "minecraft:splash_potion" || e.type == "minecraft:lingering_potion" ||
-                                        e.type == "minecraft:xp_bottle" || e.type == "minecraft:fireball" ||
-                                        e.type == "minecraft:wither_skull" || e.type == "minecraft:small_fireball" ||
-                                        e.type == "minecraft:shulker_bullet" || e.type == "minecraft:llama_spit" ||
-                                        e.type == "minecraft:dragon_fireball";
+                                e.type == "minecraft:snowball" || e.type == "minecraft:egg" ||
+                                e.type == "minecraft:ender_pearl" || e.type == "minecraft:splash_potion" ||
+                                e.type == "minecraft:lingering_potion" || e.type == "minecraft:xp_bottle" ||
+                                e.type == "minecraft:fireball" || e.type == "minecraft:wither_skull" ||
+                                e.type == "minecraft:small_fireball" ||
+                                e.type == "minecraft:shulker_bullet" || e.type == "minecraft:llama_spit" ||
+                                e.type == "minecraft:dragon_fireball";
         const bool buffered = !e.isSelf && !projectile;
         const double follow = e.isSelf ? 1.0 : 1.0 - std::exp(-static_cast<double>(dt) / 0.06);
         v.lastPos = v.pos;
@@ -474,7 +508,9 @@ namespace perlin::entity {
                 const double span = b.t - a.t;
                 const double f = span > 1e-6 ? std::clamp((renderT - a.t) / span, 0.0, 1.0) : 1.0;
                 v.pos = a.pos + (b.pos - a.pos) * f;
-                const auto mix = [&](float x, float y) { return x + WrapDegrees(y - x) * static_cast<float>(f); };
+                const auto mix = [&](float x, float y) {
+                    return x + WrapDegrees(y - x) * static_cast<float>(f);
+                };
                 v.yaw = mix(a.yaw, b.yaw);
                 v.headYaw = mix(a.headYaw, b.headYaw);
                 v.pitch = a.pitch + WrapDegrees(b.pitch - a.pitch) * static_cast<float>(f);
@@ -483,7 +519,9 @@ namespace perlin::entity {
             } else if (!v.samples.empty()) {
                 const double catchUp = 1.0 - std::exp(-static_cast<double>(dt) / 0.06);
                 v.pos += (v.samples.back().pos - v.pos) * catchUp;
-                const auto turnTo = [&](float cur, float target) { return cur + WrapDegrees(target - cur) * static_cast<float>(catchUp); };
+                const auto turnTo = [&](float cur, float target) {
+                    return cur + WrapDegrees(target - cur) * static_cast<float>(catchUp);
+                };
                 v.yaw = turnTo(v.yaw, v.samples.back().yaw);
                 v.headYaw = turnTo(v.headYaw, v.samples.back().headYaw);
                 v.pitch += WrapDegrees(v.samples.back().pitch - v.pitch) * static_cast<float>(catchUp);
@@ -491,7 +529,9 @@ namespace perlin::entity {
             v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
         } else {
             v.pos = glm::length(d) > 24.0 ? e.pos : v.pos + d * follow;
-            const auto turn = [&](float cur, float target) { return cur + WrapDegrees(target - cur) * static_cast<float>(follow); };
+            const auto turn = [&](float cur, float target) {
+                return cur + WrapDegrees(target - cur) * static_cast<float>(follow);
+            };
             v.yaw = turn(v.yaw, e.yaw);
             v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
             v.headYaw = turn(v.headYaw, e.headYaw);
@@ -502,7 +542,8 @@ namespace perlin::entity {
             const double len = glm::length(d);
             if (len > 0.04) {
                 const float targetYaw = static_cast<float>(std::atan2(-d.x, d.z) * 180.0 / 3.14159265358979);
-                const float targetPitch = static_cast<float>(-std::asin(std::clamp(d.y / len, -1.0, 1.0)) * 180.0 / 3.14159265358979);
+                const float targetPitch = static_cast<float>(-std::asin(std::clamp(d.y / len, -1.0, 1.0)) *
+                                                             180.0 / 3.14159265358979);
                 const float aim = 1.0f - std::exp(-dt / 0.03f);
                 v.yaw = v.yaw + WrapDegrees(targetYaw - v.yaw) * aim;
                 v.pitch = v.pitch + (targetPitch - v.pitch) * aim;
@@ -599,7 +640,10 @@ namespace perlin::entity {
 
             if (e.isPlayer)
                 v.cape.Sample(p, in.capePhysics == 2, walk * 6.0f,
-                              in.capePhysics > 0 ? std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f) : 0.0f, dt);
+                              in.capePhysics > 0 ? std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) *
+                                                       (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f)
+                                                 : 0.0f,
+                              dt);
         }
 
         const bool usingItem = e.Has(flag::UsingItem) || e.AimingBow();
@@ -629,8 +673,7 @@ namespace perlin::entity {
         if (e.dying) {
             v.deathTime = std::min(v.deathTime + dt, 1.0f);
             v.hurtTimer = 0.5f;
-        }
-        else
+        } else
             v.deathTime = 0.0f;
         const auto ease = [&](float& value, bool on, float seconds) {
             const float step = dt / seconds;
@@ -644,8 +687,8 @@ namespace perlin::entity {
         ease(v.swellAmount, e.Has(flag::Ignited), 1.5f);
     }
 
-    void EntityRenderer::RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, Pose& pose, const FrameIn& in,
-                                       const attachable::Geometry* bindGeometry) {
+    void EntityRenderer::RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, Pose& pose,
+                                       const FrameIn& in, const attachable::Geometry* bindGeometry) {
         (void)in;
         const attachable::BindLookup restRotation = attachable::RestRotationLookup(bindGeometry);
         const attachable::BindLookup defaultTranslation = attachable::DefaultTranslationLookup(bindGeometry);
@@ -685,15 +728,20 @@ namespace perlin::entity {
                         for (const auto& [animShort, blend] : st->second.animations) {
                             (void)blend;
                             const auto child = def.animations.find(animShort);
-                            const Animation* ca = child != def.animations.end() ? assets.animations.Find(child->second) : nullptr;
+                            const Animation* ca = child != def.animations.end()
+                                                      ? assets.animations.Find(child->second)
+                                                      : nullptr;
                             if (!ca) {
                                 all = false;
                                 continue;
                             }
-                            key.assign(path).append(id).append("/").append(cs.state).append("/").append(child->second);
+                            key.assign(path).append(id).append("/").append(cs.state).append("/").append(
+                                child->second);
                             const auto startIt = v.animStart.find(key);
-                            const double start = startIt != v.animStart.end() ? startIt->second.start : cs.entered;
-                            const bool done = ca->loop != Animation::Loop::Yes && ca->length > 0 && now - start >= ca->length;
+                            const double start =
+                                startIt != v.animStart.end() ? startIt->second.start : cs.entered;
+                            const bool done = ca->loop != Animation::Loop::Yes && ca->length > 0 &&
+                                              now - start >= ca->length;
                             all = all && done;
                             any = any || done;
                         }
@@ -731,7 +779,8 @@ namespace perlin::entity {
             host->animTime = static_cast<float>(since);
             if (PERLIN_ENV("PERLIN_POSE_DEBUG"))
                 Log("anim", "{} {} w={}", e.type, id, weight);
-            attachable::Apply(*a, scope, static_cast<float>(since), weight, pose, restRotation, defaultTranslation);
+            attachable::Apply(*a, scope, static_cast<float>(since), weight, pose, restRotation,
+                              defaultTranslation);
         };
         for (const auto& entry : def.animate) {
             const float w = entry.weight ? static_cast<float>(entry.weight->Number(scope)) : 1.0f;
@@ -747,8 +796,12 @@ namespace perlin::entity {
         (void)e;
     }
 
-    bool EntityRenderer::Build(const Entity& e, View& v, const FrameIn& in, std::vector<Layer>& layers, float& outScale) {
-        struct FpPoseGuard { FpPoseGuard(bool on) { attachable::gFirstPersonPose = on; } ~FpPoseGuard() { attachable::gFirstPersonPose = false; } } fpPoseGuard(v.fp);
+    bool EntityRenderer::Build(const Entity& e, View& v, const FrameIn& in, std::vector<Layer>& layers,
+                               float& outScale) {
+        struct FpPoseGuard {
+            FpPoseGuard(bool on) { attachable::gFirstPersonPose = on; }
+            ~FpPoseGuard() { attachable::gFirstPersonPose = false; }
+        } fpPoseGuard(v.fp);
         const ClientEntityDef* def = assets.Entity(e.type);
         if (!def)
             return false;
@@ -784,9 +837,12 @@ namespace perlin::entity {
         {
             const std::string& usedItem = e.mainHand;
             float maxUse = 72000.0f;
-            if (usedItem == "minecraft:crossbow") maxUse = 25.0f;
-            else if (HandRenderer::IsFood(usedItem)) maxUse = 32.0f;
-            else if (usedItem == "minecraft:spyglass") maxUse = 1200.0f;
+            if (usedItem == "minecraft:crossbow")
+                maxUse = 25.0f;
+            else if (HandRenderer::IsFood(usedItem))
+                maxUse = 32.0f;
+            else if (usedItem == "minecraft:spyglass")
+                maxUse = 1200.0f;
             host.maxUseTicks = maxUse;
             if (v.fp && fp) {
                 host.using_ = fp->using_;
@@ -796,7 +852,8 @@ namespace perlin::entity {
             } else {
                 host.using_ = e.Has(flag::UsingItem) || e.AimingBow();
                 host.usedTicks = host.using_ ? static_cast<float>((v.now - v.usingSince) * 20.0) : 0.0f;
-                host.blocking = host.using_ && (usedItem == "minecraft:shield" || e.offHand == "minecraft:shield");
+                host.blocking =
+                    host.using_ && (usedItem == "minecraft:shield" || e.offHand == "minecraft:shield");
             }
         }
         host.timeOfDay = std::fmod(in.worldTicks, 24000.0) / 24000.0;
@@ -804,7 +861,13 @@ namespace perlin::entity {
         v.scope.host = &host;
         v.scope.queryCache.clear();
         v.scope.cacheQueries = true;
-        struct CacheGuard { molang::Scope& sc; ~CacheGuard() { sc.cacheQueries = false; sc.queryCache.clear(); } } cacheGuard{v.scope};
+        struct CacheGuard {
+            molang::Scope& sc;
+            ~CacheGuard() {
+                sc.cacheQueries = false;
+                sc.queryCache.clear();
+            }
+        } cacheGuard{v.scope};
         v.hasArmR = v.hasArmL = false;
         auto& vars = v.scope.variables;
         vars["attack_time"] = Value::Num(v.attackTime);
@@ -835,9 +898,12 @@ namespace perlin::entity {
             vars["swim_amount"] = Value::Num(v.swimAmount);
             vars["is_holding_right"] = Value::Num(e.mainHand.empty() ? 0.0 : 1.0);
             vars["is_holding_left"] = Value::Num(e.offHand.empty() ? 0.0 : 1.0);
-            vars["is_holding_spyglass"] = Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:spyglass" ? 1.0 : 0.0);
-            vars["is_tooting_goat_horn"] = Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:goat_horn" ? 1.0 : 0.0);
-            vars["is_using_brush"] = Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:brush" ? 1.0 : 0.0);
+            vars["is_holding_spyglass"] =
+                Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:spyglass" ? 1.0 : 0.0);
+            vars["is_tooting_goat_horn"] =
+                Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:goat_horn" ? 1.0 : 0.0);
+            vars["is_using_brush"] =
+                Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:brush" ? 1.0 : 0.0);
         }
 
         const attachable::Geometry* bindGeometry = nullptr;
@@ -874,14 +940,16 @@ namespace perlin::entity {
         RunAnimations(e, v, *def, pose, in, bindGeometry);
         if (PERLIN_ENV("PERLIN_POSE_DEBUG"))
             for (const auto& [bn, xf] : pose)
-                Log("pose", "{} {} rot {},{},{} pos {},{},{}", e.type, bn, xf.rotation.x, xf.rotation.y, xf.rotation.z, xf.position.x, xf.position.y, xf.position.z);
+                Log("pose", "{} {} rot {},{},{} pos {},{},{}", e.type, bn, xf.rotation.x, xf.rotation.y,
+                    xf.rotation.z, xf.position.x, xf.position.y, xf.position.z);
         if (e.isPlayer && e.Has(flag::Riding) && v.swimAmount < 0.01f && v.lieAmount < 0.01f) {
             pose["rightleg"].rotation = {-81.0f, -18.0f, -4.5f};
             pose["leftleg"].rotation = {-81.0f, 18.0f, 4.5f};
             pose["rightarm"].rotation.x += -36.0f;
             pose["leftarm"].rotation.x += -36.0f;
         }
-        if (e.isPlayer && !v.fp && e.Has(flag::Sneaking) && v.swimAmount < 0.01f && v.lieAmount < 0.01f && !e.Has(flag::Riding))
+        if (e.isPlayer && !v.fp && e.Has(flag::Sneaking) && v.swimAmount < 0.01f && v.lieAmount < 0.01f &&
+            !e.Has(flag::Riding))
             ApplyJavaCrouch(pose, bindGeometry);
         if (e.isPlayer && e.isSelf) {
             const SkinParts& parts = in.ownParts;
@@ -916,10 +984,12 @@ namespace perlin::entity {
                 previousRoll = v.cape.roll[i];
             }
             const float turned = std::sin(WrapDegrees(v.yaw - v.headYaw) * 0.017453292f);
-            pose["shoulders"].rotation = glm::vec3(0.0f, std::clamp(v.limbAmount, 0.0f, 1.0f) * turned * turned * turned * 60.0f, 0.0f);
+            pose["shoulders"].rotation = glm::vec3(
+                0.0f, std::clamp(v.limbAmount, 0.0f, 1.0f) * turned * turned * turned * 60.0f, 0.0f);
         }
         if (v.fp) {
-            static const float px = PERLIN_ENV("PERLIN_FPX") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_FPX"))) : 1.0f;
+            static const float px =
+                PERLIN_ENV("PERLIN_FPX") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_FPX"))) : 1.0f;
             for (auto& [boneName, xf] : pose)
                 xf.position.x *= px;
         }
@@ -993,12 +1063,12 @@ namespace perlin::entity {
                 }
                 return;
             }
-            if (in.skins3d && e.isPlayer && e.skin && texKey == "default" && !e.skin->skinRgba.empty() && geometry &&
-                glm::distance(e.pos, in.playerPos) < 16.0) {
+            if (in.skins3d && e.isPlayer && e.skin && texKey == "default" && !e.skin->skinRgba.empty() &&
+                geometry && glm::distance(e.pos, in.playerPos) < 16.0) {
                 auto& voxel = voxelGeometry[e.skin->serial];
                 if (!voxel)
-                    voxel = std::make_unique<attachable::Geometry>(
-                        attachable::VoxelizeSkinLayers(*geometry, e.skin->skinRgba.data(), e.skin->skinWidth, e.skin->skinHeight));
+                    voxel = std::make_unique<attachable::Geometry>(attachable::VoxelizeSkinLayers(
+                        *geometry, e.skin->skinRgba.data(), e.skin->skinWidth, e.skin->skinHeight));
                 geometry = voxel.get();
             }
             bool physicsCape = false;
@@ -1007,9 +1077,12 @@ namespace perlin::entity {
                     capeGeometries.Load(capegeo::kNoShoulder);
                     capeGeometries.Load(capegeo::kShoulder);
                 }
-                if (const attachable::Geometry* physics = capeGeometries.Find(in.capePhysics == 2 ? "geometry.cape_physics_shoulder" : "geometry.cape_physics_plain")) {
+                if (const attachable::Geometry* physics =
+                        capeGeometries.Find(in.capePhysics == 2 ? "geometry.cape_physics_shoulder"
+                                                                : "geometry.cape_physics_plain")) {
                     geometry = physics;
-                    geometryId = in.capePhysics == 2 ? "geometry.cape_physics_shoulder" : "geometry.cape_physics_plain";
+                    geometryId = in.capePhysics == 2 ? "geometry.cape_physics_shoulder"
+                                                     : "geometry.cape_physics_plain";
                     physicsCape = true;
                 }
             }
@@ -1046,17 +1119,20 @@ namespace perlin::entity {
             std::vector<std::pair<std::string, bool>> explicitVisibility;
             bool defaultVisible = true;
             std::vector<std::pair<std::string, bool>> rules;
+            rules.reserve(rc->parts.size());
             for (const auto& part : rc->parts)
                 rules.emplace_back(part.pattern, part.visible ? part.visible->Eval(v.scope).Truthy() : true);
             (void)explicitVisibility;
             (void)defaultVisible;
-            const attachable::BoneFilter filter = rules.empty() ? attachable::BoneFilter() : attachable::BoneFilter([&](const std::string& bone) {
-                bool visible = true;
-                for (const auto& [pattern, on] : rules)
-                    if (Matches(pattern, bone))
-                        visible = on;
-                return visible;
-            });
+            const attachable::BoneFilter filter = rules.empty()
+                                                      ? attachable::BoneFilter()
+                                                      : attachable::BoneFilter([&](const std::string& bone) {
+                                                            bool visible = true;
+                                                            for (const auto& [pattern, on] : rules)
+                                                                if (Matches(pattern, bone))
+                                                                    visible = on;
+                                                            return visible;
+                                                        });
             std::vector<std::pair<std::string, std::string>> materialRules;
             for (const auto& r : rc->materials) {
                 if (!r.value)
@@ -1091,9 +1167,10 @@ namespace perlin::entity {
             layer.translucent = rc->translucent;
             for (const std::string& group : groups) {
                 const bool single = groups.size() == 1;
-                const attachable::BoneFilter groupFilter = single ? filter : attachable::BoneFilter([&](const std::string& bone) {
-                    return materialOf(bone) == group && (!filter || filter(bone));
-                });
+                const attachable::BoneFilter groupFilter =
+                    single ? filter : attachable::BoneFilter([&](const std::string& bone) {
+                        return materialOf(bone) == group && (!filter || filter(bone));
+                    });
                 attachable::BuiltMesh mesh;
                 attachable::BuildMesh(*geometry, pose, nullptr, mesh, groupFilter, nullptr, true);
                 if (mesh.body.empty())
@@ -1101,11 +1178,14 @@ namespace perlin::entity {
                 static const bool debug = PERLIN_ENV("PERLIN_ENTITY_DEBUG") != nullptr;
                 if (debug && !warned["dbg:" + e.type + controllerId + group]) {
                     warned["dbg:" + e.type + controllerId + group] = true;
-                    Log("entity", "{} controller {} geometry {} texture {} material {} quads {} (bones {})", e.type, controllerId, geometryId, layer.texture, group, mesh.body.size(), geometry->bones.size());
+                    Log("entity", "{} controller {} geometry {} texture {} material {} quads {} (bones {})",
+                        e.type, controllerId, geometryId, layer.texture, group, mesh.body.size(),
+                        geometry->bones.size());
                 }
                 Layer copy = layer;
                 const auto named = def->materials.find(group);
-                copy.material = assets.materialLibrary.Find(named != def->materials.end() ? named->second : group);
+                copy.material =
+                    assets.materialLibrary.Find(named != def->materials.end() ? named->second : group);
                 if (copy.material.colorMask)
                     copy.maskRgb = DyeColorRgb(e.color);
                 copy.quads = std::move(mesh.body);
@@ -1118,7 +1198,8 @@ namespace perlin::entity {
                 continue;
             addLayer(rcRef.id, false);
         }
-        if (e.isPlayer && e.skin && e.skin->capeWidth > 0 && !e.Has(flag::Invisible) && !v.fp && e.armor[1] != "minecraft:elytra" && (!e.isSelf || in.ownParts.cape))
+        if (e.isPlayer && e.skin && e.skin->capeWidth > 0 && !e.Has(flag::Invisible) && !v.fp &&
+            e.armor[1] != "minecraft:elytra" && (!e.isSelf || in.ownParts.cape))
             addLayer("controller.render.player.cape", true);
         if (itemRenderer && e.isPlayer) {
             const auto bind = [&](const std::string& name, const glm::mat4& boneWorld, bool left) {
@@ -1128,9 +1209,9 @@ namespace perlin::entity {
                 if (!v.fp && !bedrockAttach && (name == "minecraft:bow" || name == "minecraft:crossbow"))
                     return;
                 attachable::Frame frame;
-                if (!itemRenderer->ThirdPersonAttachable(name, left, v.fp, e.Has(flag::Sneaking), host.using_ && !left, host.usedTicks,
-                                                         host.blocking, static_cast<double>(in.time - v.born), e.mainHand, e.offHand,
-                                                         frame))
+                if (!itemRenderer->ThirdPersonAttachable(
+                        name, left, v.fp, e.Has(flag::Sneaking), host.using_ && !left, host.usedTicks,
+                        host.blocking, static_cast<double>(in.time - v.born), e.mainHand, e.offHand, frame))
                     return;
                 for (const attachable::Part& part : frame.parts) {
                     Layer layer;
@@ -1142,9 +1223,11 @@ namespace perlin::entity {
                         return f;
                     }();
                     const glm::mat4 fpFix = v.fp ? glm::scale(glm::mat4(1.0f), fpScale) : glm::mat4(1.0f);
-                    const glm::mat4 bone = (part.texture.starts_with("textures/entity/")
-                                               ? boneWorld * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, kAttachDrop, 0.0f))
-                                               : boneWorld) * fpFix;
+                    const glm::mat4 bone =
+                        (part.texture.starts_with("textures/entity/")
+                             ? boneWorld * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, kAttachDrop, 0.0f))
+                             : boneWorld) *
+                        fpFix;
                     layer.material = assets.materialLibrary.Find("entity_alphatest");
                     layer.quads = part.quads;
                     for (attachable::Quad& q : layer.quads) {
@@ -1222,18 +1305,24 @@ namespace perlin::entity {
                 bool haveRoot = false;
                 if (bindGeometry && e.isPlayer)
                     haveRoot = attachable::BoneWorld(*bindGeometry, pose, "root", rootWorld, rootPivot);
-                attachable::BuildMesh(*geometry, *meshPose, nullptr, mesh, attachable::BoneFilter(), haveRoot ? &rootWorld : nullptr, true);
-                if (PERLIN_ENV("PERLIN_ARMOR_DEBUG"))
-                {
+                attachable::BuildMesh(*geometry, *meshPose, nullptr, mesh, attachable::BoneFilter(),
+                                      haveRoot ? &rootWorld : nullptr, true);
+                if (PERLIN_ENV("PERLIN_ARMOR_DEBUG")) {
                     glm::vec3 lo(1e9f), hi(-1e9f);
                     for (const auto& q : mesh.body)
-                        for (const auto& pt : q.p) { lo = glm::min(lo, pt); hi = glm::max(hi, pt); }
-                    Log("armor", "  quads={} bones={} lo={},{},{} hi={},{},{}", mesh.body.size(), geometry->bones.size(), lo.x, lo.y, lo.z, hi.x, hi.y, hi.z);
+                        for (const auto& pt : q.p) {
+                            lo = glm::min(lo, pt);
+                            hi = glm::max(hi, pt);
+                        }
+                    Log("armor", "  quads={} bones={} lo={},{},{} hi={},{},{}", mesh.body.size(),
+                        geometry->bones.size(), lo.x, lo.y, lo.z, hi.x, hi.y, hi.z);
                 }
                 if (mesh.body.empty())
                     continue;
                 Layer layer;
-                layer.texture = (item == "minecraft:elytra" && e.isPlayer && e.skin && e.skin->capeWidth > 0) ? std::string("#cape") : texture;
+                layer.texture = (item == "minecraft:elytra" && e.isPlayer && e.skin && e.skin->capeWidth > 0)
+                                    ? std::string("#cape")
+                                    : texture;
                 layer.material = assets.materialLibrary.Find("entity_alphatest");
                 layer.quads = std::move(mesh.body);
                 layer.body = false;
@@ -1244,9 +1333,13 @@ namespace perlin::entity {
         return !layers.empty();
     }
 
-    namespace { double gEntityProf[3] = {}; int gEntityProfFrames = 0; }
+    namespace {
+        double gEntityProf[3] = {};
+        int gEntityProfFrames = 0;
+    }
 
-    void EntityRenderer::Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale, const FrameIn& in) {
+    void EntityRenderer::Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale,
+                              const FrameIn& in) {
         static const glm::vec3 l0 = glm::normalize(glm::vec3(0.2f, 1.0f, -0.7f));
         static const glm::vec3 l1 = glm::normalize(glm::vec3(-0.2f, 1.0f, 0.7f));
         bool billboard = false;
@@ -1258,8 +1351,10 @@ namespace perlin::entity {
                 }
         const bool mirrored = !fpModel && !billboard;
         const float rotation = (fpModel || billboard) ? 180.0f : -v.yaw;
-        const glm::mat4 mirrorZ = mirrored ? glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, -1.0f)) : glm::mat4(1.0f);
-        const glm::mat3 rot = glm::mat3(glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ);
+        const glm::mat4 mirrorZ =
+            mirrored ? glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, -1.0f)) : glm::mat4(1.0f);
+        const glm::mat3 rot =
+            glm::mat3(glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ);
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(v.pos));
         model = glm::rotate(model, rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ;
         if (v.deathTime > 0.0f) {
@@ -1290,8 +1385,8 @@ namespace perlin::entity {
         }
         // lobbed items tumble around x/z instead of holding a fixed pose
         if (e.type == "minecraft:xp_bottle" || e.type == "minecraft:splash_potion" ||
-            e.type == "minecraft:lingering_potion" || e.type == "minecraft:snowball" || e.type == "minecraft:egg" ||
-            e.type == "minecraft:ender_pearl") {
+            e.type == "minecraft:lingering_potion" || e.type == "minecraft:snowball" ||
+            e.type == "minecraft:egg" || e.type == "minecraft:ender_pearl") {
             const float spin = std::fmod(static_cast<float>((in.time - v.born) * 10800.0), 360.0f);
             model = glm::rotate(model, spin * kDeg, glm::vec3(1, 0, 0));
         }
@@ -1305,12 +1400,14 @@ namespace perlin::entity {
                 light = fp->light;
         }
         if (dollModel) {
-            model = *dollModel * glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ * glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f));
+            model = *dollModel * glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ *
+                    glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f));
             light = glm::vec3(1.0f);
         }
         const float hurt = v.hurtTimer > 0.0f ? std::min(1.0f, v.hurtTimer / 0.5f) : 0.0f;
 
         std::vector<const Layer*> ordered;
+        ordered.reserve(layers.size());
         for (const Layer& l : layers)
             ordered.push_back(&l);
         std::stable_sort(ordered.begin(), ordered.end(), [](const Layer* a, const Layer* b) {
@@ -1342,8 +1439,7 @@ namespace perlin::entity {
                         if (layer.material.colorMask)
                             BakeColorMask(t, layer.maskRgb);
                         id = renderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false);
-                    }
-                    else if (!warned[layer.texture]) {
+                    } else if (!warned[layer.texture]) {
                         warned[layer.texture] = true;
                         Log("entity", "texture {} not found", layer.texture);
                     }
@@ -1353,7 +1449,8 @@ namespace perlin::entity {
             }
             if (PERLIN_ENV("PERLIN_ENTITY_DEBUG") && !warned["draw:" + e.type + layer.texture]) {
                 warned["draw:" + e.type + layer.texture] = true;
-                Log("entity", "  draw {} tex {} id {} scale {} pos {},{},{} quads {}", e.type, layer.texture, texture, scale, v.pos.x, v.pos.y, v.pos.z, layer.quads.size());
+                Log("entity", "  draw {} tex {} id {} scale {} pos {},{},{} quads {}", e.type, layer.texture,
+                    texture, scale, v.pos.x, v.pos.y, v.pos.z, layer.quads.size());
             }
             if (!texture)
                 continue;
@@ -1366,21 +1463,25 @@ namespace perlin::entity {
             const glm::vec3 tint(layer.tint[0], layer.tint[1], layer.tint[2]);
             for (const attachable::Quad& q : layer.quads) {
                 const glm::vec3 n = rot * q.n;
-                const float lit = std::min(1.0f, (std::max(0.0f, glm::dot(n, l0)) + std::max(0.0f, glm::dot(n, l1))) * 0.6f + 0.4f);
-                const uint32_t color = fullbright ? PackColor(tint, layer.tint[3]) : PackColor(light * lit * tint, layer.tint[3]);
+                const float lit = std::min(
+                    1.0f, (std::max(0.0f, glm::dot(n, l0)) + std::max(0.0f, glm::dot(n, l1))) * 0.6f + 0.4f);
+                const uint32_t color = fullbright ? PackColor(tint, layer.tint[3])
+                                                  : PackColor(light * lit * tint, layer.tint[3]);
                 const uint32_t base = static_cast<uint32_t>(vertices.size());
                 for (int i = 0; i < 4; i++)
                     vertices.push_back({q.p[i].x, q.p[i].y, q.p[i].z, color, q.uv[i].x, q.uv[i].y});
                 for (uint32_t i : {0u, 1u, 2u, 0u, 2u, 3u})
                     indices.push_back(base + i);
             }
-            const uint32_t mesh = renderer->UiCreateFrameMesh(vertices.data(), static_cast<uint32_t>(vertices.size()), indices.data(),
-                                                         static_cast<uint32_t>(indices.size()));
+            const uint32_t mesh =
+                renderer->UiCreateFrameMesh(vertices.data(), static_cast<uint32_t>(vertices.size()),
+                                            indices.data(), static_cast<uint32_t>(indices.size()));
             if (PERLIN_ENV("PERLIN_ENTITY_DEBUG") && !warned["mesh:" + e.type]) {
                 warned["mesh:" + e.type] = true;
-                std::cout << "[entity]   mesh " << mesh << " verts " << vertices.size() << " v0 " << vertices[0].x << "," << vertices[0].y << ","
-                          << vertices[0].z << " uv " << vertices[0].u << "," << vertices[0].v << " color " << std::hex << vertices[0].abgr
-                          << std::dec << std::endl;
+                std::cout << "[entity]   mesh " << mesh << " verts " << vertices.size() << " v0 "
+                          << vertices[0].x << "," << vertices[0].y << "," << vertices[0].z << " uv "
+                          << vertices[0].u << "," << vertices[0].v << " color " << std::hex
+                          << vertices[0].abgr << std::dec << std::endl;
             }
             if (!mesh)
                 continue;
@@ -1391,9 +1492,10 @@ namespace perlin::entity {
             std::copy_n(&model[0][0], 16, draw.model);
             draw.premultiplied = false;
             using Blend = MaterialInfo::Blend;
-            draw.alphaCutoff = layer.material.blend == Blend::AlphaTest ? 0.1f
+            draw.alphaCutoff = layer.material.blend == Blend::AlphaTest                                ? 0.1f
                                : layer.material.blend == Blend::Opaque && layer.material.emissive == 0 ? 0.0f
-                               : layer.material.blend == Blend::Opaque ? 0.0f : 0.01f;
+                               : layer.material.blend == Blend::Opaque                                 ? 0.0f
+                                                                       : 0.01f;
             if (layer.material.blend == Blend::AlphaTest || layer.material.blend == Blend::Opaque)
                 draw.blend = 0;
             else
@@ -1402,20 +1504,26 @@ namespace perlin::entity {
             draw.colorMask = layer.material.colorMask;
             draw.emissive = layer.material.emissive;
             if (layerHurt > 0.0f) {
-                draw.overlay[0] = 1.0f; draw.overlay[1] = 0.0f; draw.overlay[2] = 0.0f; draw.overlay[3] = 0.3f;
+                draw.overlay[0] = 1.0f;
+                draw.overlay[1] = 0.0f;
+                draw.overlay[2] = 0.0f;
+                draw.overlay[3] = 0.3f;
             }
             draw.depthWrite = layer.material.depthWrite && draw.blend != 2;
             draw.depth = layer.material.depthTest;
             draw.depthFunc = layer.material.depthFunc;
             draw.colorWrite = layer.material.colorWrite;
             draw.alphaWrite = layer.material.alphaWrite;
-            if (layer.material.customBlend && layer.material.blend != Blend::AlphaTest && layer.material.blend != Blend::Opaque) {
+            if (layer.material.customBlend && layer.material.blend != Blend::AlphaTest &&
+                layer.material.blend != Blend::Opaque) {
                 draw.customBlend = true;
                 draw.blendSrc = layer.material.blendSrc;
                 draw.blendDst = layer.material.blendDst;
             }
             if (fpModel && PERLIN_ENV("PERLIN_FP_DEBUG"))
-                std::cout << "[fp] submit mesh=" << mesh << " tex=" << texture << " blend=" << draw.blend << " cutoff=" << draw.alphaCutoff << " verts=" << vertices.size() << " c=" << std::hex << vertices[0].abgr << std::dec << std::endl;
+                std::cout << "[fp] submit mesh=" << mesh << " tex=" << texture << " blend=" << draw.blend
+                          << " cutoff=" << draw.alphaCutoff << " verts=" << vertices.size()
+                          << " c=" << std::hex << vertices[0].abgr << std::dec << std::endl;
             if (dollModel && dollClip) {
                 draw.scissor = true;
                 std::copy_n(dollClip, 4, draw.scissorRect);
@@ -1431,7 +1539,8 @@ namespace perlin::entity {
                 item.name = name;
                 item.count = 1;
                 item.maxDamage = ui::MaxDurability(name);
-                const float bowTicks = !left && e.AimingBow() ? static_cast<float>((v.now - v.usingSince) * 20.0) : -1.0f;
+                const float bowTicks =
+                    !left && e.AimingBow() ? static_cast<float>((v.now - v.usingSince) * 20.0) : -1.0f;
                 itemRenderer->DrawHeldItem(item, model * arm, left, light, bowTicks);
             };
             itemRenderer->SetWorldShadowOnly(shadowOnlyPass);
@@ -1467,23 +1576,29 @@ namespace perlin::entity {
             Log("fp", "built={} layers={} main='{}'", built, layers.size(), e.mainHand);
         if (built) {
             const float eyeBlocks = e.Has(flag::Sneaking) ? 1.27f : 1.62f;
-            static const float eyeOverride = PERLIN_ENV("PERLIN_FPEYE") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_FPEYE"))) : 20.0f;
+            static const float eyeOverride = PERLIN_ENV("PERLIN_FPEYE")
+                                                 ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_FPEYE")))
+                                                 : 20.0f;
             static const bool mirror = PERLIN_ENV("PERLIN_FPNOMIR") == nullptr;
             const float eyePx = eyeOverride > 0 ? eyeOverride : eyeBlocks * 16.0f / scale;
             const glm::mat4 flip = mirror ? glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, -1.0f))
                                           : glm::rotate(glm::mat4(1.0f), 3.14159265f, glm::vec3(0, 1, 0));
-            glm::mat4 m = state.viewEffect * flip *
-                          glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f)) * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -eyePx, 0.0f));
+            glm::mat4 m = state.viewEffect * flip * glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f)) *
+                          glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -eyePx, 0.0f));
             if (PERLIN_ENV("PERLIN_FP_DEBUG"))
                 for (const Layer& l : layers) {
                     glm::vec3 lo(1e9f), hi(-1e9f), mlo(1e9f), mhi(-1e9f);
                     for (const auto& q : l.quads)
                         for (const auto& pt : q.p) {
-                            lo = glm::min(lo, pt); hi = glm::max(hi, pt);
+                            lo = glm::min(lo, pt);
+                            hi = glm::max(hi, pt);
                             const glm::vec3 w = glm::vec3(m * glm::vec4(pt, 1.0f));
-                            mlo = glm::min(mlo, w); mhi = glm::max(mhi, w);
+                            mlo = glm::min(mlo, w);
+                            mhi = glm::max(mhi, w);
                         }
-                    Log("fp", "layer {} quads={} model {},{},{} .. {},{},{} view {},{},{} .. {},{},{}", l.texture, l.quads.size(), lo.x, lo.y, lo.z, hi.x, hi.y, hi.z, mlo.x, mlo.y, mlo.z, mhi.x, mhi.y, mhi.z);
+                    Log("fp", "layer {} quads={} model {},{},{} .. {},{},{} view {},{},{} .. {},{},{}",
+                        l.texture, l.quads.size(), lo.x, lo.y, lo.z, hi.x, hi.y, hi.z, mlo.x, mlo.y, mlo.z,
+                        mhi.x, mhi.y, mhi.z);
                 }
             fpModel = &m;
             Draw(e, v, layers, scale, in);
@@ -1493,7 +1608,8 @@ namespace perlin::entity {
         fp = nullptr;
     }
 
-    void EntityRenderer::RenderDoll(const Entity& e, const FrameIn& in, float cx, float feetY, float pxPerBlock, const int clip[4]) {
+    void EntityRenderer::RenderDoll(const Entity& e, const FrameIn& in, float cx, float feetY,
+                                    float pxPerBlock, const int clip[4]) {
         if (!renderer)
             return;
         const std::string& root = ui::UiAssets::Instance().VanillaRoot();
@@ -1563,7 +1679,10 @@ namespace perlin::entity {
             return;
         const uint32_t color = PackColor(glm::vec3(0.0f), std::min(alpha, 1.0f));
         const float r = radius;
-        const UiVertex v[4] = {{-r, 0, -r, color, 0, 0}, {r, 0, -r, color, 1, 0}, {r, 0, r, color, 1, 1}, {-r, 0, r, color, 0, 1}};
+        const UiVertex v[4] = {{-r, 0, -r, color, 0, 0},
+                               {r, 0, -r, color, 1, 0},
+                               {r, 0, r, color, 1, 1},
+                               {-r, 0, r, color, 0, 1}};
         const uint32_t idx[6] = {0, 1, 2, 0, 2, 3};
         const uint32_t mesh = renderer->UiCreateFrameMesh(v, 4, idx, 6);
         if (!mesh)
@@ -1595,7 +1714,8 @@ namespace perlin::entity {
                 particleSheet = renderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false);
         }
         const float yawR = in.cameraYaw * kDeg, pitchR = in.cameraPitch * kDeg;
-        const glm::vec3 forward(-std::sin(yawR) * std::cos(pitchR), -std::sin(pitchR), std::cos(yawR) * std::cos(pitchR));
+        const glm::vec3 forward(-std::sin(yawR) * std::cos(pitchR), -std::sin(pitchR),
+                                std::cos(yawR) * std::cos(pitchR));
         const glm::vec3 right(-std::cos(yawR), 0.0f, -std::sin(yawR));
         const glm::vec3 up = glm::cross(right, forward);
         const glm::dvec3 base(std::floor(in.camera.x), std::floor(in.camera.y), std::floor(in.camera.z));
@@ -1637,7 +1757,8 @@ namespace perlin::entity {
                 CustomBatch& b = grouped[{q.texture, q.blend}];
                 const glm::vec3 c = glm::vec3(q.centre - base);
                 const uint32_t i0 = static_cast<uint32_t>(b.vertices.size());
-                const glm::vec3 p0 = c - q.right - q.up, p1 = c + q.right - q.up, p2 = c + q.right + q.up, p3 = c - q.right + q.up;
+                const glm::vec3 p0 = c - q.right - q.up, p1 = c + q.right - q.up, p2 = c + q.right + q.up,
+                                p3 = c - q.right + q.up;
                 b.vertices.push_back({p0.x, p0.y, p0.z, q.abgr, q.u0, q.v1});
                 b.vertices.push_back({p1.x, p1.y, p1.z, q.abgr, q.u1, q.v1});
                 b.vertices.push_back({p2.x, p2.y, p2.z, q.abgr, q.u1, q.v0});
@@ -1656,8 +1777,9 @@ namespace perlin::entity {
                 }
                 if (!cached->second || b.vertices.empty())
                     continue;
-                const uint32_t mesh = renderer->UiCreateFrameMesh(b.vertices.data(), static_cast<uint32_t>(b.vertices.size()), b.indices.data(),
-                                                             static_cast<uint32_t>(b.indices.size()));
+                const uint32_t mesh =
+                    renderer->UiCreateFrameMesh(b.vertices.data(), static_cast<uint32_t>(b.vertices.size()),
+                                                b.indices.data(), static_cast<uint32_t>(b.indices.size()));
                 if (!mesh)
                     continue;
                 pendingMeshes.push_back(mesh);
@@ -1666,7 +1788,9 @@ namespace perlin::entity {
                 draw.texture = cached->second;
                 std::copy_n(&model[0][0], 16, draw.model);
                 draw.premultiplied = false;
-                StyleFromMaterial(draw, keyPair.second == 1 ? "particles_add" : (keyPair.second == 2 ? "particles_blend" : "particles_alpha"));
+                StyleFromMaterial(draw, keyPair.second == 1
+                                            ? "particles_add"
+                                            : (keyPair.second == 2 ? "particles_blend" : "particles_alpha"));
                 draw.alphaCutoff = keyPair.second == 0 ? 0.5f : 0.02f;
                 draw.emissive = 2;
                 draw.shadowOnly = shadowOnlyPass;
@@ -1683,7 +1807,8 @@ namespace perlin::entity {
                     uint32_t id = 0;
                     std::vector<uint8_t> rgba;
                     if (in.tilePixels && in.tilePixels(tile, rgba) && !rgba.empty()) {
-                        const int side = static_cast<int>(std::lround(std::sqrt(static_cast<double>(rgba.size() / 4))));
+                        const int side =
+                            static_cast<int>(std::lround(std::sqrt(static_cast<double>(rgba.size() / 4))));
                         id = renderer->UiCreateTexture(side, side, rgba.data(), false);
                     }
                     it = particleTiles.emplace(tile, id).first;
@@ -1692,8 +1817,9 @@ namespace perlin::entity {
             }
             if (!texture || b.vertices.empty())
                 continue;
-            const uint32_t mesh = renderer->UiCreateFrameMesh(b.vertices.data(), static_cast<uint32_t>(b.vertices.size()), b.indices.data(),
-                                                         static_cast<uint32_t>(b.indices.size()));
+            const uint32_t mesh =
+                renderer->UiCreateFrameMesh(b.vertices.data(), static_cast<uint32_t>(b.vertices.size()),
+                                            b.indices.data(), static_cast<uint32_t>(b.indices.size()));
             if (!mesh)
                 continue;
             pendingMeshes.push_back(mesh);
@@ -1717,13 +1843,15 @@ namespace perlin::entity {
         if (!fontTexture || fontTextureVersion != font.Version()) {
             if (fontTexture)
                 renderer->UiDestroyTexture(fontTexture);
-            fontTexture = renderer->UiCreateTexture(font.AtlasWidth(), font.AtlasHeight(), font.Atlas().data(), false);
+            fontTexture =
+                renderer->UiCreateTexture(font.AtlasWidth(), font.AtlasHeight(), font.Atlas().data(), false);
             fontTextureVersion = font.Version();
         }
         if (!fontTexture)
             return;
         const float yawR = in.cameraYaw * kDeg, pitchR = in.cameraPitch * kDeg;
-        const glm::vec3 forward(-std::sin(yawR) * std::cos(pitchR), -std::sin(pitchR), std::cos(yawR) * std::cos(pitchR));
+        const glm::vec3 forward(-std::sin(yawR) * std::cos(pitchR), -std::sin(pitchR),
+                                std::cos(yawR) * std::cos(pitchR));
         const glm::vec3 right(-std::cos(yawR), 0.0f, -std::sin(yawR));
         const glm::vec3 up = glm::cross(right, forward);
         constexpr float kScale = 0.025f;
@@ -1731,7 +1859,8 @@ namespace perlin::entity {
             std::vector<std::string> rows;
             for (size_t start = 0;;) {
                 const size_t nl = tag.text.find('\n', start);
-                rows.push_back(tag.text.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
+                rows.push_back(
+                    tag.text.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
                 if (nl == std::string::npos)
                     break;
                 start = nl + 1;
@@ -1743,10 +1872,12 @@ namespace perlin::entity {
             bgI.clear();
             textI.clear();
             const auto corner = [&](float x, float y) { return right * (x * kScale) + up * (-y * kScale); };
-            const auto quad = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, float x0, float y0, float x1, float y1, float u0,
-                                  float v0, float u1, float v1, uint32_t color) {
+            const auto quad = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, float x0, float y0,
+                                  float x1, float y1, float u0, float v0, float u1, float v1,
+                                  uint32_t color) {
                 const uint32_t base = static_cast<uint32_t>(vv.size());
-                const glm::vec3 p0 = corner(x0, y1), p1 = corner(x1, y1), p2 = corner(x1, y0), p3 = corner(x0, y0);
+                const glm::vec3 p0 = corner(x0, y1), p1 = corner(x1, y1), p2 = corner(x1, y0),
+                                p3 = corner(x0, y0);
                 vv.push_back({p0.x, p0.y, p0.z, color, u0, v1});
                 vv.push_back({p1.x, p1.y, p1.z, color, u1, v1});
                 vv.push_back({p2.x, p2.y, p2.z, color, u1, v0});
@@ -1757,41 +1888,48 @@ namespace perlin::entity {
             glm::vec3 col(1.0f);
             bool bold = false;
             for (size_t row = 0; row < rows.size(); row++) {
-            const std::string& text = rows[row];
-            const float rowY = (static_cast<float>(row) - static_cast<float>(rows.size() - 1)) * 10.0f;
-            const float width = font.Width(text);
-            const float left = -width * 0.5f;
-            if (!text.empty())
-                quad(bgV, bgI, left - 1.0f, rowY - 1.0f, left + width + 1.0f, rowY + 8.0f, 0, 0, 0, 0, PackColor(glm::vec3(0.0f), 0.25f));
-            float pen = left;
-            for (size_t i = 0; i < text.size();) {
-                uint32_t cp = 0;
-                if (!ui::McFont::Next(text, i, cp))
-                    break;
-                if (cp == 0xA7 && i < text.size()) {
-                    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i++])));
-                    uint32_t rgb = 0;
-                    if (ui::FormatCodeColor(c, rgb)) {
-                        col = glm::vec3(static_cast<float>((rgb >> 16) & 0xFF), static_cast<float>((rgb >> 8) & 0xFF), static_cast<float>(rgb & 0xFF)) / 255.0f;
-                        bold = false;
-                    } else if (c == 'l') {
-                        bold = true;
-                    } else if (c == 'r') {
-                        col = glm::vec3(1.0f);
-                        bold = false;
+                const std::string& text = rows[row];
+                const float rowY = (static_cast<float>(row) - static_cast<float>(rows.size() - 1)) * 10.0f;
+                const float width = font.Width(text);
+                const float left = -width * 0.5f;
+                if (!text.empty())
+                    quad(bgV, bgI, left - 1.0f, rowY - 1.0f, left + width + 1.0f, rowY + 8.0f, 0, 0, 0, 0,
+                         PackColor(glm::vec3(0.0f), 0.25f));
+                float pen = left;
+                for (size_t i = 0; i < text.size();) {
+                    uint32_t cp = 0;
+                    if (!ui::McFont::Next(text, i, cp))
+                        break;
+                    if (cp == 0xA7 && i < text.size()) {
+                        const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i++])));
+                        uint32_t rgb = 0;
+                        if (ui::FormatCodeColor(c, rgb)) {
+                            col = glm::vec3(static_cast<float>((rgb >> 16) & 0xFF),
+                                            static_cast<float>((rgb >> 8) & 0xFF),
+                                            static_cast<float>(rgb & 0xFF)) /
+                                  255.0f;
+                            bold = false;
+                        } else if (c == 'l') {
+                            bold = true;
+                        } else if (c == 'r') {
+                            col = glm::vec3(1.0f);
+                            bold = false;
+                        }
+                        continue;
                     }
-                    continue;
+                    if (cp < 0x20)
+                        continue;
+                    const ui::McFont::Glyph& g = font.Get(cp);
+                    if (g.width > 0)
+                        quad(textV, textI, pen + g.left, rowY + g.top, pen + g.left + g.width,
+                             rowY + g.top + g.height, g.u0, g.v0, g.u1, g.v1,
+                             PackColor(g.colored ? glm::vec3(1.0f) : col));
+                    pen += static_cast<float>(g.advance) + (bold ? 1.0f : 0.0f);
                 }
-                if (cp < 0x20)
-                    continue;
-                const ui::McFont::Glyph& g = font.Get(cp);
-                if (g.width > 0)
-                    quad(textV, textI, pen + g.left, rowY + g.top, pen + g.left + g.width, rowY + g.top + g.height, g.u0, g.v0, g.u1, g.v1, PackColor(g.colored ? glm::vec3(1.0f) : col));
-                pen += static_cast<float>(g.advance) + (bold ? 1.0f : 0.0f);
-            }
             }
             glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(tag.at.x, tag.at.y, tag.at.z));
-            const auto submit = [&](std::vector<UiVertex> vv, const std::vector<uint32_t>& ii, uint32_t texture, bool seeThrough, float alpha) {
+            const auto submit = [&](std::vector<UiVertex> vv, const std::vector<uint32_t>& ii,
+                                    uint32_t texture, bool seeThrough, float alpha) {
                 if (vv.empty())
                     return;
                 if (alpha != 1.0f)
@@ -1799,7 +1937,8 @@ namespace perlin::entity {
                         const uint32_t a = static_cast<uint32_t>(static_cast<float>(v.abgr >> 24) * alpha);
                         v.abgr = (v.abgr & 0x00FFFFFFu) | (a << 24);
                     }
-                const uint32_t mesh = renderer->UiCreateFrameMesh(vv.data(), static_cast<uint32_t>(vv.size()), ii.data(), static_cast<uint32_t>(ii.size()));
+                const uint32_t mesh = renderer->UiCreateFrameMesh(
+                    vv.data(), static_cast<uint32_t>(vv.size()), ii.data(), static_cast<uint32_t>(ii.size()));
                 if (!mesh)
                     return;
                 pendingMeshes.push_back(mesh);
@@ -1822,7 +1961,9 @@ namespace perlin::entity {
             if (!tag.sneaking)
                 submit(textV, textI, fontTexture, false, 1.0f);
             if (in.nametagDepth && !bgV.empty()) {
-                const uint32_t mesh = renderer->UiCreateFrameMesh(bgV.data(), static_cast<uint32_t>(bgV.size()), bgI.data(), static_cast<uint32_t>(bgI.size()));
+                const uint32_t mesh =
+                    renderer->UiCreateFrameMesh(bgV.data(), static_cast<uint32_t>(bgV.size()), bgI.data(),
+                                                static_cast<uint32_t>(bgI.size()));
                 if (mesh) {
                     pendingMeshes.push_back(mesh);
                     UiDraw draw;
@@ -1845,7 +1986,8 @@ namespace perlin::entity {
 
     void EntityRenderer::DrawCracks(const FrameIn& in) {
         for (const auto& c : in.cracks) {
-            const std::string path = "textures/environment/destroy_stage_" + std::to_string(std::clamp(c.stage, 0, 9));
+            const std::string path =
+                "textures/environment/destroy_stage_" + std::to_string(std::clamp(c.stage, 0, 9));
             auto it = textures.find(path);
             if (it == textures.end()) {
                 Texture t;
@@ -1890,7 +2032,8 @@ namespace perlin::entity {
                 face({x0, y1, z0}, {x0, y1, z1}, {x0, y0, z1}, {x0, y0, z0});
                 face({x1, y1, z1}, {x1, y1, z0}, {x1, y0, z0}, {x1, y0, z1});
             }
-            const uint32_t mesh = renderer->UiCreateFrameMesh(v.data(), static_cast<uint32_t>(v.size()), idx.data(), static_cast<uint32_t>(idx.size()));
+            const uint32_t mesh = renderer->UiCreateFrameMesh(v.data(), static_cast<uint32_t>(v.size()),
+                                                              idx.data(), static_cast<uint32_t>(idx.size()));
             if (!mesh)
                 continue;
             pendingMeshes.push_back(mesh);
@@ -1948,7 +2091,8 @@ namespace perlin::entity {
             // server holograms hide the model, keep the name: entity scaled to zero, or invisible mob/armor stand with no gear
             // (with armor or held items only those show; Draw hides the body)
             const bool gearless = e.mainHand.empty() && e.offHand.empty() &&
-                                  std::all_of(std::begin(e.armor), std::end(e.armor), [](const std::string& a) { return a.empty(); });
+                                  std::all_of(std::begin(e.armor), std::end(e.armor),
+                                              [](const std::string& a) { return a.empty(); });
             const bool modelHidden = !e.isPlayer && (e.scale == 0.0f || (e.Has(flag::Invisible) && gearless));
             if (e.dying && v.deathTime >= 1.0f && !e.isSelf)
                 continue;
@@ -1960,34 +2104,44 @@ namespace perlin::entity {
                     h = hb.second;
                 }
                 const float r = std::max(w, h) * 0.5f + 0.75f + (e.isItem ? 0.0f : 0.5f * h);
-                const float x = static_cast<float>(v.pos.x), y = static_cast<float>(v.pos.y), z = static_cast<float>(v.pos.z);
+                const float x = static_cast<float>(v.pos.x), y = static_cast<float>(v.pos.y),
+                            z = static_cast<float>(v.pos.z);
                 if (!in.frustum->Visible(x - r, y - 0.5f, z - r, x + r, y + std::max(h, 0.5f) + r, z + r)) {
                     culled++;
                     continue;
                 }
                 // behind walls: no model; names still show through walls
                 if (in.sectionReached && !e.isSelf && !e.isPlayer && e.nameTag.empty() &&
-                    !in.sectionReached(static_cast<int>(std::floor(x)) >> 4, static_cast<int>(std::floor(y)) >> 4,
+                    !in.sectionReached(static_cast<int>(std::floor(x)) >> 4,
+                                       static_cast<int>(std::floor(y)) >> 4,
                                        static_cast<int>(std::floor(z)) >> 4)) {
                     culled++;
                     continue;
                 }
             }
-            if (in.blobShadows && !modelHidden && !e.Has(flag::Invisible) && e.type != "minecraft:cushion" && !(e.isSelf && in.firstPerson)) {
+            if (in.blobShadows && !modelHidden && !e.Has(flag::Invisible) && e.type != "minecraft:cushion" &&
+                !(e.isSelf && in.firstPerson)) {
                 if (e.isItem) {
                     DrawShadow(v.pos, 0.15f, 0.75f, in);
                 } else if (!e.dying || v.deathTime < 0.9f) {
                     const auto hb = HitBox(e);
-                    DrawShadow(v.pos, std::min(hb.first, 1.4f) * 0.8f * (e.scale > 0 ? e.scale : 1.0f), 1.0f, in);
+                    DrawShadow(v.pos, std::min(hb.first, 1.4f) * 0.8f * (e.scale > 0 ? e.scale : 1.0f), 1.0f,
+                               in);
                 }
             }
             // invisible players hide their name; invisible holograms (armor stands, mobs) keep an always-shown name
             const bool nameHidden = e.Has(flag::Invisible) && (e.isPlayer || !e.Has(flag::AlwaysShowName));
             // name shown only when the server allows it (can-show / always-show flags); fake-player npcs leave both off
             // text: name tag, falling back to a player's username
-            const bool nameAllowed = e.isSelf || e.Has(flag::CanShowName) || e.Has(flag::AlwaysShowName) || !e.isPlayer;
-            if (in.nametags && !e.isItem && !nameHidden && nameAllowed && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
-                const std::string& label = style && style->nameTag == 1 ? std::string() : style && style->nameTag == 2 ? style->nameText : !e.nameTag.empty() ? e.nameTag : e.isPlayer ? e.name : e.nameTag;
+            const bool nameAllowed =
+                e.isSelf || e.Has(flag::CanShowName) || e.Has(flag::AlwaysShowName) || !e.isPlayer;
+            if (in.nametags && !e.isItem && !nameHidden && nameAllowed &&
+                !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
+                const std::string& label = style && style->nameTag == 1   ? std::string()
+                                           : style && style->nameTag == 2 ? style->nameText
+                                           : !e.nameTag.empty()           ? e.nameTag
+                                           : e.isPlayer                   ? e.name
+                                                                          : e.nameTag;
                 const double d2 = glm::dot(delta, delta);
                 if (!label.empty() && d2 < (e.isPlayer ? 64.0 * 64.0 : 16.0 * 16.0)) {
                     if (std::getenv("PERLIN_DEBUG_NAMETAGS") != nullptr) {
@@ -2000,13 +2154,17 @@ namespace perlin::entity {
                             for (char& c : flat)
                                 if (c == '\n')
                                     c = '|';
-                            Log("nametag", "draw rid={} type={}{} taglen={} text={}", e.runtimeId, e.type, (e.isPlayer ? " player" : ""), e.nameTag.size(), flat);
+                            Log("nametag", "draw rid={} type={}{} taglen={} text={}", e.runtimeId, e.type,
+                                (e.isPlayer ? " player" : ""), e.nameTag.size(), flat);
                         }
                     }
                     const auto hb = HitBox(e);
                     Tag t;
                     t.text = label;
-                    t.at = v.pos + glm::dvec3(0.0, static_cast<double>(hb.second * (e.scale > 0 ? e.scale : 1.0f)) + 0.5, 0.0);
+                    t.at =
+                        v.pos +
+                        glm::dvec3(0.0, static_cast<double>(hb.second * (e.scale > 0 ? e.scale : 1.0f)) + 0.5,
+                                   0.0);
                     t.sneaking = e.Has(flag::Sneaking);
                     tags.push_back(std::move(t));
                 }
@@ -2025,7 +2183,8 @@ namespace perlin::entity {
                     glm::vec3 light(1.0f);
                     if (in.light)
                         light = in.light(v.pos + glm::dvec3(0.0, 0.5, 0.0));
-                    itemRenderer->DrawWorldItem(item, v.pos, static_cast<float>((in.time - v.born) * 20.0), e.runtimeId, light);
+                    itemRenderer->DrawWorldItem(item, v.pos, static_cast<float>((in.time - v.born) * 20.0),
+                                                e.runtimeId, light);
                     drawn++;
                 }
                 continue;
@@ -2042,7 +2201,8 @@ namespace perlin::entity {
                     Texture atlas;
                     if (ui::UiAssets::Instance().Image(layer.texture, atlas))
                         geometry = attachable::ExtrudeSprite(atlas, (icon % 4) * atlas.width / 4,
-                            (icon / 4) * atlas.height / 4, atlas.width / 4, atlas.height / 4, 4.8f, 4.8f, 1.2f);
+                                                             (icon / 4) * atlas.height / 4, atlas.width / 4,
+                                                             atlas.height / 4, 4.8f, 4.8f, 1.2f);
                 }
                 layer.quads = geometry;
                 facing.yaw = static_cast<float>(age * 2.0 + (e.runtimeId % 360) * 137.0);
@@ -2061,7 +2221,12 @@ namespace perlin::entity {
             }
             const double dist2 = glm::dot(delta, delta);
             const bool pinned = e.dying || e.Has(flag::Riding);
-            const double reuseFor = pinned ? 0.0 : dist2 > 80.0 * 80.0 ? 0.066 : dist2 > 48.0 * 48.0 ? 0.033 : dist2 > 24.0 * 24.0 ? 0.016 : dist2 > 16.0 * 16.0 ? 0.008 : 0.0035;
+            const double reuseFor = pinned                ? 0.0
+                                    : dist2 > 80.0 * 80.0 ? 0.066
+                                    : dist2 > 48.0 * 48.0 ? 0.033
+                                    : dist2 > 24.0 * 24.0 ? 0.016
+                                    : dist2 > 16.0 * 16.0 ? 0.008
+                                                          : 0.0035;
             const auto drawStyled = [&](const std::vector<Layer>& layers, float scale) {
                 if (!style) {
                     Draw(e, v, layers, scale, in);
@@ -2089,7 +2254,8 @@ namespace perlin::entity {
                 unrenderable++;
                 if (!warned["build:" + e.type]) {
                     warned["build:" + e.type] = true;
-                    Log("entity", "cannot render {}{}", e.type, (assets.Entity(e.type) ? " (no usable layer)" : " (no definition)"));
+                    Log("entity", "cannot render {}{}", e.type,
+                        (assets.Entity(e.type) ? " (no usable layer)" : " (no definition)"));
                 }
                 continue;
             }
@@ -2103,7 +2269,8 @@ namespace perlin::entity {
         }
         shadowOnlyPass = false;
         if (PERLIN_ENV("PERLIN_PROFILE") && ++gEntityProfFrames >= 120) {
-            Log("profile", "entity build={} draw={} shadow+rest={}", gEntityProf[0] / gEntityProfFrames, gEntityProf[1] / gEntityProfFrames, gEntityProf[2] / gEntityProfFrames);
+            Log("profile", "entity build={} draw={} shadow+rest={}", gEntityProf[0] / gEntityProfFrames,
+                gEntityProf[1] / gEntityProfFrames, gEntityProf[2] / gEntityProfFrames);
             gEntityProf[0] = gEntityProf[1] = gEntityProf[2] = 0;
             gEntityProfFrames = 0;
         }
@@ -2121,12 +2288,17 @@ namespace perlin::entity {
                 const double yawDeg = v != views.end() ? v->second->yaw : e.yaw;
                 const auto [w, h] = HitBox(e);
                 const double half = w * 0.5;
-                AddBox({pos.x - half, pos.y, pos.z - half}, {pos.x + half, pos.y + h, pos.z + half}, white, 1.0f);
+                AddBox({pos.x - half, pos.y, pos.z - half}, {pos.x + half, pos.y + h, pos.z + half}, white,
+                       1.0f);
                 if (e.isPlayer) {
                     const double eye = pos.y + (e.Has(flag::Sneaking) ? 1.27 : 1.62);
-                    AddBox({pos.x - half, eye - 0.01, pos.z - half}, {pos.x + half, eye + 0.01, pos.z + half}, red, 1.0f);
+                    AddBox({pos.x - half, eye - 0.01, pos.z - half}, {pos.x + half, eye + 0.01, pos.z + half},
+                           red, 1.0f);
                     const double yr = yawDeg * kDeg;
-                    lines.push_back({{pos.x, eye, pos.z}, {pos.x - std::sin(yr) * 2.0, eye, pos.z + std::cos(yr) * 2.0}, blue, 1.5f});
+                    lines.push_back({{pos.x, eye, pos.z},
+                                     {pos.x - std::sin(yr) * 2.0, eye, pos.z + std::cos(yr) * 2.0},
+                                     blue,
+                                     1.5f});
                 }
             }
         }
@@ -2135,12 +2307,16 @@ namespace perlin::entity {
                 lines.push_back({l.a, l.b, l.colour, l.width});
         DrawModMeshes(in);
         if (in.chunkBorders) {
-            const int pcx = static_cast<int>(std::floor(in.playerPos.x)) >> 4, pcz = static_cast<int>(std::floor(in.playerPos.z)) >> 4;
+            const int pcx = static_cast<int>(std::floor(in.playerPos.x)) >> 4,
+                      pcz = static_cast<int>(std::floor(in.playerPos.z)) >> 4;
             const int sectionY = static_cast<int>(std::floor(in.playerPos.y)) >> 4;
             const double minY = -64.0, maxY = 320.0;
             const double x0 = pcx * 16.0, z0 = pcz * 16.0, x1 = x0 + 16.0, z1 = z0 + 16.0;
             const float thin = 1.0f / 2.5f, thick = 4.0f / 2.5f;
-            const auto argb = [](int r, int g, int b) { return 0xFF000000u | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(r); };
+            const auto argb = [](int r, int g, int b) {
+                return 0xFF000000u | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(g) << 8) |
+                       static_cast<uint32_t>(r);
+            };
             const uint32_t red = 0x800000FFu;
             const uint32_t cell = argb(0, 155, 155);
             const uint32_t yellow = argb(255, 255, 0);
@@ -2194,20 +2370,24 @@ namespace perlin::entity {
             glm::dvec3 hand;
             if (owner->isSelf && in.firstPerson) {
                 const double yr = in.cameraYaw * kDeg, pr = in.cameraPitch * kDeg;
-                const glm::dvec3 fwd(-std::sin(yr) * std::cos(pr), -std::sin(pr), std::cos(yr) * std::cos(pr));
+                const glm::dvec3 fwd(-std::sin(yr) * std::cos(pr), -std::sin(pr),
+                                     std::cos(yr) * std::cos(pr));
                 const glm::dvec3 rgt(-std::cos(yr), 0.0, -std::sin(yr));
                 const glm::dvec3 upv = glm::cross(rgt, fwd);
                 hand = in.camera + fwd * 0.65 + rgt * 0.38 - upv * 0.32;
             } else {
                 const double f = ownerYaw * kDeg, s = std::sin(f), c = std::cos(f);
-                hand = ownerPos + glm::dvec3(-c * 0.35 - s * 0.8, 1.62 * 0.8 + (owner->Has(flag::Sneaking) ? -0.1875 : 0.0), -s * 0.35 + c * 0.8);
+                hand = ownerPos + glm::dvec3(-c * 0.35 - s * 0.8,
+                                             1.62 * 0.8 + (owner->Has(flag::Sneaking) ? -0.1875 : 0.0),
+                                             -s * 0.35 + c * 0.8);
             }
             const glm::dvec3 hookPos = hv->second->pos;
             const glm::dvec3 rel = hand - (hookPos + glm::dvec3(0.0, 0.25, 0.0));
             glm::dvec3 previous = hookPos + glm::dvec3(0.0, 0.25, 0.0);
             for (int i = 1; i <= 16; i++) {
                 const double p = i / 16.0;
-                const glm::dvec3 point = hookPos + glm::dvec3(rel.x * p, rel.y * (p * p + p) * 0.5 + 0.25, rel.z * p);
+                const glm::dvec3 point =
+                    hookPos + glm::dvec3(rel.x * p, rel.y * (p * p + p) * 0.5 + 0.25, rel.z * p);
                 lines.push_back({previous, point, 0xFF000000u, 0.4f});
                 previous = point;
             }
@@ -2224,14 +2404,17 @@ namespace perlin::entity {
     }
 
     void EntityRenderer::AddBox(const glm::dvec3& lo, const glm::dvec3& hi, uint32_t colour, float width) {
-        const glm::dvec3 c[8] = {{lo.x, lo.y, lo.z}, {hi.x, lo.y, lo.z}, {hi.x, lo.y, hi.z}, {lo.x, lo.y, hi.z},
-                                 {lo.x, hi.y, lo.z}, {hi.x, hi.y, lo.z}, {hi.x, hi.y, hi.z}, {lo.x, hi.y, hi.z}};
-        static const int edges[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6}, {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+        const glm::dvec3 c[8] = {{lo.x, lo.y, lo.z}, {hi.x, lo.y, lo.z}, {hi.x, lo.y, hi.z},
+                                 {lo.x, lo.y, hi.z}, {lo.x, hi.y, lo.z}, {hi.x, hi.y, lo.z},
+                                 {hi.x, hi.y, hi.z}, {lo.x, hi.y, hi.z}};
+        static const int edges[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
+                                         {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
         for (const auto& e : edges)
             lines.push_back({c[e[0]], c[e[1]], colour, width});
     }
 
-    void EntityRenderer::AddShapeOutline(const std::vector<std::pair<glm::dvec3, glm::dvec3>>& boxes, uint32_t colour) {
+    void EntityRenderer::AddShapeOutline(const std::vector<std::pair<glm::dvec3, glm::dvec3>>& boxes,
+                                         uint32_t colour) {
         if (boxes.empty())
             return;
         std::vector<double> c[3];
@@ -2242,17 +2425,22 @@ namespace perlin::entity {
             }
         for (auto& v : c) {
             std::sort(v.begin(), v.end());
-            v.erase(std::unique(v.begin(), v.end(), [](double x, double y) { return std::fabs(x - y) < 1e-6; }), v.end());
+            v.erase(
+                std::unique(v.begin(), v.end(), [](double x, double y) { return std::fabs(x - y) < 1e-6; }),
+                v.end());
         }
-        const int n[3] = {static_cast<int>(c[0].size()) - 1, static_cast<int>(c[1].size()) - 1, static_cast<int>(c[2].size()) - 1};
+        const int n[3] = {static_cast<int>(c[0].size()) - 1, static_cast<int>(c[1].size()) - 1,
+                          static_cast<int>(c[2].size()) - 1};
         if (n[0] < 1 || n[1] < 1 || n[2] < 1)
             return;
         const auto filled = [&](int i, int j, int k) {
             if (i < 0 || j < 0 || k < 0 || i >= n[0] || j >= n[1] || k >= n[2])
                 return false;
-            const glm::dvec3 centre((c[0][i] + c[0][i + 1]) * 0.5, (c[1][j] + c[1][j + 1]) * 0.5, (c[2][k] + c[2][k + 1]) * 0.5);
+            const glm::dvec3 centre((c[0][i] + c[0][i + 1]) * 0.5, (c[1][j] + c[1][j + 1]) * 0.5,
+                                    (c[2][k] + c[2][k + 1]) * 0.5);
             for (const auto& [lo, hi] : boxes)
-                if (centre.x > lo.x && centre.x < hi.x && centre.y > lo.y && centre.y < hi.y && centre.z > lo.z && centre.z < hi.z)
+                if (centre.x > lo.x && centre.x < hi.x && centre.y > lo.y && centre.y < hi.y &&
+                    centre.z > lo.z && centre.z < hi.z)
                     return true;
             return false;
         };
@@ -2319,7 +2507,8 @@ namespace perlin::entity {
             const uint32_t endColour = l.colourEnd ? l.colourEnd : l.colour;
             for (int i = 0; i < n; i++) {
                 const double t0 = static_cast<double>(i) / n, t1 = static_cast<double>(i + 1) / n;
-                pieces.push_back({l.a + (l.b - l.a) * t0, l.a + (l.b - l.a) * t1, lerpColour(l.colour, endColour, t0), l.width,
+                pieces.push_back({l.a + (l.b - l.a) * t0, l.a + (l.b - l.a) * t1,
+                                  lerpColour(l.colour, endColour, t0), l.width,
                                   lerpColour(l.colour, endColour, t1)});
             }
         }
@@ -2354,8 +2543,9 @@ namespace perlin::entity {
         lines.clear();
         if (vertices.empty())
             return;
-        const uint32_t mesh = renderer->UiCreateFrameMesh(vertices.data(), static_cast<uint32_t>(vertices.size()), indices.data(),
-                                                     static_cast<uint32_t>(indices.size()));
+        const uint32_t mesh =
+            renderer->UiCreateFrameMesh(vertices.data(), static_cast<uint32_t>(vertices.size()),
+                                        indices.data(), static_cast<uint32_t>(indices.size()));
         if (!mesh)
             return;
         pendingMeshes.push_back(mesh);
@@ -2366,7 +2556,8 @@ namespace perlin::entity {
         draw.depth = true;
         draw.depthWrite = false;
         glm::mat4 model(1.0f);
-        model[3] = glm::vec4(static_cast<float>(in.camera.x), static_cast<float>(in.camera.y), static_cast<float>(in.camera.z), 1.0f);
+        model[3] = glm::vec4(static_cast<float>(in.camera.x), static_cast<float>(in.camera.y),
+                             static_cast<float>(in.camera.z), 1.0f);
         std::copy_n(&model[0][0], 16, draw.model);
         draw.shadowOnly = shadowOnlyPass;
         renderer->UiSubmit(UiLayer::World, draw);
@@ -2381,8 +2572,9 @@ namespace perlin::entity {
             std::vector<uint32_t> indices(m.vertices.size() - m.vertices.size() % 3);
             for (uint32_t i = 0; i < indices.size(); i++)
                 indices[i] = i;
-            const uint32_t mesh = renderer->UiCreateFrameMesh(m.vertices.data(), static_cast<uint32_t>(m.vertices.size()), indices.data(),
-                                                             static_cast<uint32_t>(indices.size()));
+            const uint32_t mesh =
+                renderer->UiCreateFrameMesh(m.vertices.data(), static_cast<uint32_t>(m.vertices.size()),
+                                            indices.data(), static_cast<uint32_t>(indices.size()));
             if (!mesh)
                 continue;
             pendingMeshes.push_back(mesh);
@@ -2425,13 +2617,14 @@ namespace perlin::entity {
         };
 
         const BedCube kBedCubes[] = {
-            {{0, 0, 0}, {16, 32, 6}, {0, 0}},
-            {{13, 29, 6}, {3, 3, 3}, {12, 38}},
-            {{0, 29, 6}, {3, 3, 3}, {0, 38}},   {{13, 0, 6}, {3, 3, 3}, {12, 44}}, {{0, 0, 6}, {3, 3, 3}, {0, 44}},
+            {{0, 0, 0}, {16, 32, 6}, {0, 0}}, {{13, 29, 6}, {3, 3, 3}, {12, 38}},
+            {{0, 29, 6}, {3, 3, 3}, {0, 38}}, {{13, 0, 6}, {3, 3, 3}, {12, 44}},
+            {{0, 0, 6}, {3, 3, 3}, {0, 44}},
         };
 
-        const char* const kDyeNames[] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
-                                         "silver", "cyan", "purple", "blue", "brown", "green", "red", "black"};
+        const char* const kDyeNames[] = {"white", "orange", "magenta", "light_blue", "yellow", "lime",
+                                         "pink",  "gray",   "silver",  "cyan",       "purple", "blue",
+                                         "brown", "green",  "red",     "black"};
 
         struct WrappedLine {
             std::string text;
@@ -2442,7 +2635,8 @@ namespace perlin::entity {
             std::vector<std::string> lines;
             for (size_t start = 0;;) {
                 const size_t nl = text.find('\n', start);
-                std::string row = text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+                std::string row =
+                    text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
                 while (!row.empty() && font.Width(row) > maxWidth) {
                     size_t cut = row.size();
                     while (cut > 1 && font.Width(row.substr(0, cut)) > maxWidth)
@@ -2472,19 +2666,57 @@ namespace perlin::entity {
         };
 
         const PaintingMotive kPaintings[] = {
-            {"Kebab", 16, 16, 0, 0},     {"Aztec", 16, 16, 16, 0},     {"Alban", 16, 16, 32, 0},     {"Aztec2", 16, 16, 48, 0},
-            {"Bomb", 16, 16, 64, 0},     {"Plant", 16, 16, 80, 0},     {"Wasteland", 16, 16, 96, 0}, {"Pool", 32, 16, 0, 32},
-            {"Courbet", 32, 16, 32, 32}, {"Sea", 32, 16, 64, 32},      {"Sunset", 32, 16, 96, 32},   {"Creebet", 32, 16, 128, 32},
-            {"Wanderer", 16, 32, 0, 64}, {"Graham", 16, 32, 16, 64},   {"Match", 32, 32, 0, 128},    {"Bust", 32, 32, 32, 128},
-            {"Stage", 32, 32, 64, 128},  {"Void", 32, 32, 96, 128},    {"SkullAndRoses", 32, 32, 128, 128}, {"Wither", 32, 32, 160, 128},
-            {"Fighters", 64, 32, 0, 96}, {"Pointer", 64, 64, 0, 192},  {"Pigscene", 64, 64, 64, 192}, {"BurningSkull", 64, 64, 128, 192},
-            {"Skeleton", 64, 48, 192, 64}, {"DonkeyKong", 64, 48, 192, 112}, {"Earth", 32, 32, 0, 160}, {"Wind", 32, 32, 32, 160},
-            {"Fire", 32, 32, 64, 160},   {"Water", 32, 32, 96, 160},   {"baroque", 32, 32, -1, 0},   {"humble", 32, 32, -1, 0},
-            {"meditative", 16, 16, -1, 0}, {"prairie_ride", 16, 32, -1, 0}, {"unpacked", 64, 64, -1, 0}, {"backyard", 48, 64, -1, 0},
-            {"bouquet", 48, 48, -1, 0},  {"cavebird", 48, 48, -1, 0},  {"changing", 64, 32, -1, 0},  {"cotan", 48, 48, -1, 0},
-            {"endboss", 48, 48, -1, 0},  {"fern", 48, 48, -1, 0},      {"finding", 64, 32, -1, 0},   {"lowmist", 64, 32, -1, 0},
-            {"orb", 64, 64, -1, 0},      {"owlemons", 48, 48, -1, 0},  {"passage", 64, 32, -1, 0},   {"pond", 48, 64, -1, 0},
-            {"sunflowers", 48, 48, -1, 0}, {"tides", 48, 48, -1, 0},   {"dennis", 48, 48, -1, 0},
+            {"Kebab", 16, 16, 0, 0},
+            {"Aztec", 16, 16, 16, 0},
+            {"Alban", 16, 16, 32, 0},
+            {"Aztec2", 16, 16, 48, 0},
+            {"Bomb", 16, 16, 64, 0},
+            {"Plant", 16, 16, 80, 0},
+            {"Wasteland", 16, 16, 96, 0},
+            {"Pool", 32, 16, 0, 32},
+            {"Courbet", 32, 16, 32, 32},
+            {"Sea", 32, 16, 64, 32},
+            {"Sunset", 32, 16, 96, 32},
+            {"Creebet", 32, 16, 128, 32},
+            {"Wanderer", 16, 32, 0, 64},
+            {"Graham", 16, 32, 16, 64},
+            {"Match", 32, 32, 0, 128},
+            {"Bust", 32, 32, 32, 128},
+            {"Stage", 32, 32, 64, 128},
+            {"Void", 32, 32, 96, 128},
+            {"SkullAndRoses", 32, 32, 128, 128},
+            {"Wither", 32, 32, 160, 128},
+            {"Fighters", 64, 32, 0, 96},
+            {"Pointer", 64, 64, 0, 192},
+            {"Pigscene", 64, 64, 64, 192},
+            {"BurningSkull", 64, 64, 128, 192},
+            {"Skeleton", 64, 48, 192, 64},
+            {"DonkeyKong", 64, 48, 192, 112},
+            {"Earth", 32, 32, 0, 160},
+            {"Wind", 32, 32, 32, 160},
+            {"Fire", 32, 32, 64, 160},
+            {"Water", 32, 32, 96, 160},
+            {"baroque", 32, 32, -1, 0},
+            {"humble", 32, 32, -1, 0},
+            {"meditative", 16, 16, -1, 0},
+            {"prairie_ride", 16, 32, -1, 0},
+            {"unpacked", 64, 64, -1, 0},
+            {"backyard", 48, 64, -1, 0},
+            {"bouquet", 48, 48, -1, 0},
+            {"cavebird", 48, 48, -1, 0},
+            {"changing", 64, 32, -1, 0},
+            {"cotan", 48, 48, -1, 0},
+            {"endboss", 48, 48, -1, 0},
+            {"fern", 48, 48, -1, 0},
+            {"finding", 64, 32, -1, 0},
+            {"lowmist", 64, 32, -1, 0},
+            {"orb", 64, 64, -1, 0},
+            {"owlemons", 48, 48, -1, 0},
+            {"passage", 64, 32, -1, 0},
+            {"pond", 48, 64, -1, 0},
+            {"sunflowers", 48, 48, -1, 0},
+            {"tides", 48, 48, -1, 0},
+            {"dennis", 48, 48, -1, 0},
         };
     }
 
@@ -2509,7 +2741,8 @@ namespace perlin::entity {
         const float hw = static_cast<float>(motive->w) / 32.0f, hh = static_cast<float>(motive->h) / 32.0f;
         const float depth = 1.0f / 32.0f;
         const bool atlas = motive->ox >= 0;
-        const uint32_t texture = TextureByPath(atlas ? "textures/painting/kz" : std::string("textures/painting/") + motive->title);
+        const uint32_t texture =
+            TextureByPath(atlas ? "textures/painting/kz" : std::string("textures/painting/") + motive->title);
         const uint32_t borderTexture = atlas ? texture : TextureByPath("textures/painting/kz");
         if (!texture)
             return;
@@ -2534,8 +2767,8 @@ namespace perlin::entity {
         }
         std::vector<UiVertex> front, border;
         std::vector<uint32_t> fi, bi;
-        const auto quad = [](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec3 p3,
-                             uint32_t c, float u0, float v0, float u1, float v1) {
+        const auto quad = [](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, glm::vec3 p0, glm::vec3 p1,
+                             glm::vec3 p2, glm::vec3 p3, uint32_t c, float u0, float v0, float u1, float v1) {
             const uint32_t i0 = static_cast<uint32_t>(vv.size());
             vv.push_back({p0.x, p0.y, p0.z, c, u0, v1});
             vv.push_back({p1.x, p1.y, p1.z, c, u1, v1});
@@ -2544,18 +2777,26 @@ namespace perlin::entity {
             for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u, 0u, 2u, 1u, 0u, 3u, 2u})
                 ii.push_back(i0 + k);
         };
-        quad(front, fi, world(hw, -hh, -depth), world(-hw, -hh, -depth), world(-hw, hh, -depth), world(hw, hh, -depth), color, fu0, fv0, fu1, fv1);
-        quad(border, bi, world(-hw, -hh, depth), world(hw, -hh, depth), world(hw, hh, depth), world(-hw, hh, depth), color, bu0, bv0, bu1, bv1);
-        quad(border, bi, world(hw, -hh, depth), world(hw, -hh, -depth), world(hw, hh, -depth), world(hw, hh, depth), color, bu0, bv0, bu1, bv1);
-        quad(border, bi, world(-hw, -hh, -depth), world(-hw, -hh, depth), world(-hw, hh, depth), world(-hw, hh, -depth), color, bu0, bv0, bu1, bv1);
-        quad(border, bi, world(-hw, hh, depth), world(hw, hh, depth), world(hw, hh, -depth), world(-hw, hh, -depth), color, bu0, bv0, bu1, bv1);
-        quad(border, bi, world(-hw, -hh, -depth), world(hw, -hh, -depth), world(hw, -hh, depth), world(-hw, -hh, depth), color, bu0, bv0, bu1, bv1);
+        quad(front, fi, world(hw, -hh, -depth), world(-hw, -hh, -depth), world(-hw, hh, -depth),
+             world(hw, hh, -depth), color, fu0, fv0, fu1, fv1);
+        quad(border, bi, world(-hw, -hh, depth), world(hw, -hh, depth), world(hw, hh, depth),
+             world(-hw, hh, depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(hw, -hh, depth), world(hw, -hh, -depth), world(hw, hh, -depth),
+             world(hw, hh, depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(-hw, -hh, -depth), world(-hw, -hh, depth), world(-hw, hh, depth),
+             world(-hw, hh, -depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(-hw, hh, depth), world(hw, hh, depth), world(hw, hh, -depth),
+             world(-hw, hh, -depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(-hw, -hh, -depth), world(hw, -hh, -depth), world(hw, -hh, depth),
+             world(-hw, -hh, depth), color, bu0, bv0, bu1, bv1);
         glm::mat4 model(1.0f);
-        model[3] = glm::vec4(static_cast<float>(base.x), static_cast<float>(base.y), static_cast<float>(base.z), 1.0f);
+        model[3] = glm::vec4(static_cast<float>(base.x), static_cast<float>(base.y),
+                             static_cast<float>(base.z), 1.0f);
         const auto submit = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, uint32_t tex) {
             if (!tex || vv.empty())
                 return;
-            const uint32_t mesh = renderer->UiCreateFrameMesh(vv.data(), static_cast<uint32_t>(vv.size()), ii.data(), static_cast<uint32_t>(ii.size()));
+            const uint32_t mesh = renderer->UiCreateFrameMesh(vv.data(), static_cast<uint32_t>(vv.size()),
+                                                              ii.data(), static_cast<uint32_t>(ii.size()));
             if (!mesh)
                 return;
             pendingMeshes.push_back(mesh);
@@ -2601,7 +2842,11 @@ namespace perlin::entity {
             static const std::vector<SkullModelDef> models = [] {
                 std::vector<SkullModelDef> m(7);
                 const auto plain = [](const char* tex, float tw, float th, bool hat) {
-                    SkullModelDef d{tex, tw, th, {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f}}, {{0, -4, -8, -4, 8, 8, 8, 0, 0, 0, false}}};
+                    SkullModelDef d{tex,
+                                    tw,
+                                    th,
+                                    {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f}},
+                                    {{0, -4, -8, -4, 8, 8, 8, 0, 0, 0, false}}};
                     if (hat)
                         d.boxes.push_back({0, -4, -8, -4, 8, 8, 8, 32, 0, 0.25f, false});
                     return d;
@@ -2611,7 +2856,9 @@ namespace perlin::entity {
                 m[2] = plain("textures/entity/zombie/zombie", 64, 32, true);
                 m[3] = plain("textures/entity/steve", 64, 64, true);
                 m[4] = plain("textures/entity/creeper/creeper", 64, 32, false);
-                m[5] = SkullModelDef{"textures/entity/dragon/dragon", 256, 256,
+                m[5] = SkullModelDef{"textures/entity/dragon/dragon",
+                                     256,
+                                     256,
                                      {{-1, glm::vec3(0.0f, -7.986666f, 0.0f), glm::vec3(0.0f), 0.75f},
                                       {0, glm::vec3(0.0f, 4.0f, -8.0f), glm::vec3(0.2f, 0.0f, 0.0f), 1.0f}},
                                      {{0, -6, -1, -24, 12, 5, 16, 176, 44, 0, false},
@@ -2621,7 +2868,9 @@ namespace perlin::entity {
                                       {0, 3, -12, -4, 2, 4, 6, 0, 0, 0, false},
                                       {0, 3, -3, -22, 2, 2, 4, 112, 0, 0, false},
                                       {1, -6, 0, -16, 12, 4, 16, 176, 65, 0, false}}};
-                m[6] = SkullModelDef{"textures/entity/piglin/piglin", 64, 64,
+                m[6] = SkullModelDef{"textures/entity/piglin/piglin",
+                                     64,
+                                     64,
                                      {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f},
                                       {0, glm::vec3(4.5f, -6.0f, 0.0f), glm::vec3(0.0f, 0.0f, -0.7f), 1.0f},
                                       {0, glm::vec3(-4.5f, -6.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.7f), 1.0f}},
@@ -2631,11 +2880,14 @@ namespace perlin::entity {
                                       {0, -3, -2, -5, 1, 2, 1, 2, 0, 0, false},
                                       {1, 0, 0, -2, 1, 5, 4, 51, 6, 0, false},
                                       {2, -1, 0, -2, 1, 5, 4, 39, 6, 0, false}}};
-                static const char* const kCopper[] = {"textures/entity/copper_golem/copper_golem", "textures/entity/copper_golem/copper_golem_exposed",
+                static const char* const kCopper[] = {"textures/entity/copper_golem/copper_golem",
+                                                      "textures/entity/copper_golem/copper_golem_exposed",
                                                       "textures/entity/copper_golem/copper_golem_weathered",
                                                       "textures/entity/copper_golem/copper_golem_oxidized"};
                 for (const char* tex : kCopper)
-                    m.push_back(SkullModelDef{tex, 64, 64,
+                    m.push_back(SkullModelDef{tex,
+                                              64,
+                                              64,
                                               {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f},
                                                {0, glm::vec3(0.0f, -5.0f, 0.0f), glm::vec3(0.0f), 1.0f},
                                                {1, glm::vec3(0.0f, -6.0f, 0.0f), glm::vec3(0.0f), 1.0f},
@@ -2651,17 +2903,23 @@ namespace perlin::entity {
                                                {4, 0, -1, -2, 3, 10, 4, 50, 16, 0, false},
                                                {5, -4, 0, -2, 4, 5, 4, 0, 27, 0, false},
                                                {5, 0, 0, -2, 4, 5, 4, 16, 27, 0, false}}});
-                m.push_back(SkullModelDef{"textures/blocks/conduit_base", 32, 16,
+                m.push_back(SkullModelDef{"textures/blocks/conduit_base",
+                                          32,
+                                          16,
                                           {{-1, glm::vec3(0.0f, -8.0f, 0.0f), glm::vec3(0.0f), 1.0f}},
                                           {{0, -3, -3, -3, 6, 6, 6, 0, 0, 0, false}}});
-                m.push_back(SkullModelDef{"textures/entity/banner/banner_base", 64, 64,
+                m.push_back(SkullModelDef{"textures/entity/banner/banner_base",
+                                          64,
+                                          64,
                                           {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 2.0f / 3.0f},
                                            {0, glm::vec3(0.0f, -44.0f, 0.0f), glm::vec3(0.0f), 1.0f}},
                                           {{0, -1, -42, -1, 2, 42, 2, 44, 0, 0, false},
                                            {0, -10, -44, -1, 20, 2, 2, 0, 42, 0, false},
                                            {1, -10, 0, -2, 20, 40, 1, 0, 0, 0, false}},
                                           1});
-                m.push_back(SkullModelDef{"textures/entity/banner/banner_base", 64, 64,
+                m.push_back(SkullModelDef{"textures/entity/banner/banner_base",
+                                          64,
+                                          64,
                                           {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 2.0f / 3.0f},
                                            {0, glm::vec3(0.0f, -20.5f, 10.5f), glm::vec3(0.0f), 1.0f}},
                                           {{0, -10, -20.5f, 9.5f, 20, 2, 2, 0, 42, 0, false},
@@ -2669,21 +2927,29 @@ namespace perlin::entity {
                                           1});
                 const auto chest = [](const char* tex, bool large) {
                     const float w = large ? 30.0f : 14.0f;
-                    SkullModelDef d{tex, large ? 128.0f : 64.0f, 64.0f,
-                                    {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f}, {0, glm::vec3(-7.0f, -9.0f, 7.0f), glm::vec3(0.0f), 1.0f}},
+                    SkullModelDef d{tex,
+                                    large ? 128.0f : 64.0f,
+                                    64.0f,
+                                    {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f},
+                                     {0, glm::vec3(-7.0f, -9.0f, 7.0f), glm::vec3(0.0f), 1.0f}},
                                     {{0, -7, -10, -7, w, 10, 14, 0, 19, 0, false},
                                      {1, 0, -5, -14, w, 5, 14, 0, 0, 0, false},
                                      {1, large ? 14.0f : 6.0f, -2, -15, 2, 4, 1, 0, 0, 0, false}}};
                     d.lidPart = 1;
                     return d;
                 };
-                for (const char* tex : {"textures/entity/chest/normal", "textures/entity/chest/trapped", "textures/entity/chest/ender",
-                                        "textures/entity/chest/copper_default", "textures/entity/chest/copper_exposed",
-                                        "textures/entity/chest/copper_weathered", "textures/entity/chest/copper_oxidized"})
+                for (const char* tex :
+                     {"textures/entity/chest/normal", "textures/entity/chest/trapped",
+                      "textures/entity/chest/ender", "textures/entity/chest/copper_default",
+                      "textures/entity/chest/copper_exposed", "textures/entity/chest/copper_weathered",
+                      "textures/entity/chest/copper_oxidized"})
                     m.push_back(chest(tex, false));
-                for (const char* tex : {"textures/entity/chest/double_normal", "textures/entity/chest/trapped_double",
-                                        "textures/entity/chest/copper_default_double", "textures/entity/chest/copper_exposed_double",
-                                        "textures/entity/chest/copper_weathered_double", "textures/entity/chest/copper_oxidized_double"})
+                for (const char* tex :
+                     {"textures/entity/chest/double_normal", "textures/entity/chest/trapped_double",
+                      "textures/entity/chest/copper_default_double",
+                      "textures/entity/chest/copper_exposed_double",
+                      "textures/entity/chest/copper_weathered_double",
+                      "textures/entity/chest/copper_oxidized_double"})
                     m.push_back(chest(tex, true));
                 return m;
             }();
@@ -2698,7 +2964,8 @@ namespace perlin::entity {
             m = glm::translate(m, p.offset);
             m = glm::rotate(m, p.rotation.z, glm::vec3(0, 0, 1));
             m = glm::rotate(m, p.rotation.y, glm::vec3(0, 1, 0));
-            m = glm::rotate(m, p.rotation.x + (part == def.flagPart || part == def.lidPart ? flagXRot : 0.0f), glm::vec3(1, 0, 0));
+            m = glm::rotate(m, p.rotation.x + (part == def.flagPart || part == def.lidPart ? flagXRot : 0.0f),
+                            glm::vec3(1, 0, 0));
             return glm::scale(m, glm::vec3(p.scale));
         }
     }
@@ -2713,13 +2980,16 @@ namespace perlin::entity {
         if (!fontTexture || fontTextureVersion != font.Version()) {
             if (fontTexture)
                 renderer->UiDestroyTexture(fontTexture);
-            fontTexture = renderer->UiCreateTexture(font.AtlasWidth(), font.AtlasHeight(), font.Atlas().data(), false);
+            fontTexture =
+                renderer->UiCreateTexture(font.AtlasWidth(), font.AtlasHeight(), font.Atlas().data(), false);
             fontTextureVersion = font.Version();
         }
-        const auto submit = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, uint32_t texture, float cutoff) {
+        const auto submit = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, uint32_t texture,
+                                float cutoff) {
             if (vv.empty() || !texture)
                 return;
-            const uint32_t mesh = renderer->UiCreateFrameMesh(vv.data(), static_cast<uint32_t>(vv.size()), ii.data(), static_cast<uint32_t>(ii.size()));
+            const uint32_t mesh = renderer->UiCreateFrameMesh(vv.data(), static_cast<uint32_t>(vv.size()),
+                                                              ii.data(), static_cast<uint32_t>(ii.size()));
             if (!mesh)
                 return;
             pendingMeshes.push_back(mesh);
@@ -2751,8 +3021,11 @@ namespace perlin::entity {
             const double dist2 = glm::dot(delta, delta);
             if (dist2 > maxDist * maxDist)
                 continue;
-            if (in.frustum && !in.frustum->Visible(static_cast<float>(d.origin.x) - 1.0f, static_cast<float>(d.origin.y) - 0.5f, static_cast<float>(d.origin.z) - 1.0f,
-                                                   static_cast<float>(d.origin.x) + 2.0f, static_cast<float>(d.origin.y) + 1.5f, static_cast<float>(d.origin.z) + 2.0f))
+            if (in.frustum &&
+                !in.frustum->Visible(
+                    static_cast<float>(d.origin.x) - 1.0f, static_cast<float>(d.origin.y) - 0.5f,
+                    static_cast<float>(d.origin.z) - 1.0f, static_cast<float>(d.origin.x) + 2.0f,
+                    static_cast<float>(d.origin.y) + 1.5f, static_cast<float>(d.origin.z) + 2.0f))
                 continue;
             if (in.sectionReached && !in.sectionReached(static_cast<int>(std::floor(d.origin.x)) >> 4,
                                                         static_cast<int>(std::floor(d.origin.y)) >> 4,
@@ -2768,26 +3041,71 @@ namespace perlin::entity {
                 ox = 0.5f + dx * cs - dz * sn;
                 oz = 0.5f + dx * sn + dz * cs;
             };
-            const glm::vec3 base(static_cast<float>(d.origin.x), static_cast<float>(d.origin.y), static_cast<float>(d.origin.z));
+            const glm::vec3 base(static_cast<float>(d.origin.x), static_cast<float>(d.origin.y),
+                                 static_cast<float>(d.origin.z));
             if (d.kind == BlockEntityDraw::Kind::Bed) {
                 auto& batch = beds[std::clamp(d.color, 0, 15)];
-                struct BFace { int dir; float u0, v0, u1, v1; int tile; };
-                struct BBox { float from[3], to[3]; std::vector<BFace> faces; };
+                struct BFace {
+                    int dir;
+                    float u0, v0, u1, v1;
+                    int tile;
+                };
+                struct BBox {
+                    float from[3], to[3];
+                    std::vector<BFace> faces;
+                };
                 static const BBox kFoot[] = {
-                    {{0, 3, 0}, {16, 9, 16}, {{0, 0, 0, 16, 16, 8}, {1, 0, 0, 16, 16, 0}, {3, 0, 7, 16, 13, 1}, {4, 0, 7, 16, 13, 3}, {5, 0, 7, 16, 13, 2}}},
-                    {{0, 0, 13}, {3, 3, 16}, {{0, 7, 13, 10, 16, 3}, {2, 10, 13, 13, 16, 3}, {3, 0, 13, 3, 16, 1}, {4, 13, 13, 16, 16, 3}, {5, 3, 13, 6, 16, 1}}},
-                    {{13, 0, 13}, {16, 3, 16}, {{0, 6, 13, 9, 16, 2}, {2, 3, 13, 6, 16, 2}, {3, 13, 13, 16, 16, 1}, {4, 10, 13, 13, 16, 1}, {5, 0, 13, 3, 16, 2}}},
+                    {{0, 3, 0},
+                     {16, 9, 16},
+                     {{0, 0, 0, 16, 16, 8},
+                      {1, 0, 0, 16, 16, 0},
+                      {3, 0, 7, 16, 13, 1},
+                      {4, 0, 7, 16, 13, 3},
+                      {5, 0, 7, 16, 13, 2}}},
+                    {{0, 0, 13},
+                     {3, 3, 16},
+                     {{0, 7, 13, 10, 16, 3},
+                      {2, 10, 13, 13, 16, 3},
+                      {3, 0, 13, 3, 16, 1},
+                      {4, 13, 13, 16, 16, 3},
+                      {5, 3, 13, 6, 16, 1}}},
+                    {{13, 0, 13},
+                     {16, 3, 16},
+                     {{0, 6, 13, 9, 16, 2},
+                      {2, 3, 13, 6, 16, 2},
+                      {3, 13, 13, 16, 16, 1},
+                      {4, 10, 13, 13, 16, 1},
+                      {5, 0, 13, 3, 16, 2}}},
                 };
                 static const BBox kHead[] = {
-                    {{0, 3, 0}, {16, 9, 16}, {{0, 0, 0, 16, 16, 8}, {1, 0, 0, 16, 16, 4}, {2, 0, 7, 16, 13, 5}, {4, 0, 7, 16, 13, 7}, {5, 0, 7, 16, 13, 6}}},
-                    {{0, 0, 0}, {3, 3, 3}, {{0, 6, 13, 9, 16, 7}, {2, 13, 13, 16, 16, 5}, {3, 3, 13, 6, 16, 7}, {4, 0, 13, 3, 16, 7}, {5, 10, 13, 13, 16, 5}}},
-                    {{13, 0, 0}, {16, 3, 3}, {{0, 7, 13, 10, 16, 6}, {2, 0, 13, 3, 16, 5}, {3, 10, 13, 13, 16, 6}, {4, 3, 13, 6, 16, 5}, {5, 13, 13, 16, 16, 6}}},
+                    {{0, 3, 0},
+                     {16, 9, 16},
+                     {{0, 0, 0, 16, 16, 8},
+                      {1, 0, 0, 16, 16, 4},
+                      {2, 0, 7, 16, 13, 5},
+                      {4, 0, 7, 16, 13, 7},
+                      {5, 0, 7, 16, 13, 6}}},
+                    {{0, 0, 0},
+                     {3, 3, 3},
+                     {{0, 6, 13, 9, 16, 7},
+                      {2, 13, 13, 16, 16, 5},
+                      {3, 3, 13, 6, 16, 7},
+                      {4, 0, 13, 3, 16, 7},
+                      {5, 10, 13, 13, 16, 5}}},
+                    {{13, 0, 0},
+                     {16, 3, 3},
+                     {{0, 7, 13, 10, 16, 6},
+                      {2, 0, 13, 3, 16, 5},
+                      {3, 10, 13, 13, 16, 6},
+                      {4, 3, 13, 6, 16, 5},
+                      {5, 13, 13, 16, 16, 6}}},
                 };
                 const float kShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
                 const auto emitPiece = [&](const BBox* boxes, int count, float zOff) {
                     for (int bi = 0; bi < count; bi++) {
                         const BBox& bx = boxes[bi];
-                        const float x0 = bx.from[0], y0 = bx.from[1], z0 = bx.from[2], x1 = bx.to[0], y1 = bx.to[1], z1 = bx.to[2];
+                        const float x0 = bx.from[0], y0 = bx.from[1], z0 = bx.from[2], x1 = bx.to[0],
+                                    y1 = bx.to[1], z1 = bx.to[2];
                         const auto P = [&](float x, float y, float z) {
                             float ox, oz;
                             rotate(x / 16.0f, z / 16.0f + zOff, ox, oz);
@@ -2796,15 +3114,47 @@ namespace perlin::entity {
                         for (const BFace& f : bx.faces) {
                             glm::vec3 tl, tr, br, bl;
                             switch (f.dir) {
-                            case 0: tl = P(x0, y0, z1); tr = P(x1, y0, z1); br = P(x1, y0, z0); bl = P(x0, y0, z0); break;
-                            case 1: tl = P(x0, y1, z0); tr = P(x1, y1, z0); br = P(x1, y1, z1); bl = P(x0, y1, z1); break;
-                            case 2: tl = P(x1, y1, z0); tr = P(x0, y1, z0); br = P(x0, y0, z0); bl = P(x1, y0, z0); break;
-                            case 3: tl = P(x0, y1, z1); tr = P(x1, y1, z1); br = P(x1, y0, z1); bl = P(x0, y0, z1); break;
-                            case 4: tl = P(x0, y1, z0); tr = P(x0, y1, z1); br = P(x0, y0, z1); bl = P(x0, y0, z0); break;
-                            default: tl = P(x1, y1, z1); tr = P(x1, y1, z0); br = P(x1, y0, z0); bl = P(x1, y0, z1); break;
+                            case 0:
+                                tl = P(x0, y0, z1);
+                                tr = P(x1, y0, z1);
+                                br = P(x1, y0, z0);
+                                bl = P(x0, y0, z0);
+                                break;
+                            case 1:
+                                tl = P(x0, y1, z0);
+                                tr = P(x1, y1, z0);
+                                br = P(x1, y1, z1);
+                                bl = P(x0, y1, z1);
+                                break;
+                            case 2:
+                                tl = P(x1, y1, z0);
+                                tr = P(x0, y1, z0);
+                                br = P(x0, y0, z0);
+                                bl = P(x1, y0, z0);
+                                break;
+                            case 3:
+                                tl = P(x0, y1, z1);
+                                tr = P(x1, y1, z1);
+                                br = P(x1, y0, z1);
+                                bl = P(x0, y0, z1);
+                                break;
+                            case 4:
+                                tl = P(x0, y1, z0);
+                                tr = P(x0, y1, z1);
+                                br = P(x0, y0, z1);
+                                bl = P(x0, y0, z0);
+                                break;
+                            default:
+                                tl = P(x1, y1, z1);
+                                tr = P(x1, y1, z0);
+                                br = P(x1, y0, z0);
+                                bl = P(x1, y0, z1);
+                                break;
                             }
-                            const float tu = static_cast<float>((f.tile % 4) * 16), tv = static_cast<float>((f.tile / 4) * 16);
-                            const float uu0 = (tu + f.u0) / 64.0f, vv0 = (tv + f.v0) / 48.0f, uu1 = (tu + f.u1) / 64.0f, vv1 = (tv + f.v1) / 48.0f;
+                            const float tu = static_cast<float>((f.tile % 4) * 16),
+                                        tv = static_cast<float>((f.tile / 4) * 16);
+                            const float uu0 = (tu + f.u0) / 64.0f, vv0 = (tv + f.v0) / 48.0f,
+                                        uu1 = (tu + f.u1) / 64.0f, vv1 = (tv + f.v1) / 48.0f;
                             const uint32_t color = PackColor(light * kShade[f.dir]);
                             const uint32_t i0 = static_cast<uint32_t>(batch.first.size());
                             batch.first.push_back({tl.x, tl.y, tl.z, color, uu0, vv0});
@@ -2823,32 +3173,39 @@ namespace perlin::entity {
             if (d.kind == BlockEntityDraw::Kind::Skull) {
                 const SkullModelDef& def = SkullModelFor(d.skull);
                 const bool banner = def.flagPart >= 0;
-                glm::mat4 place = glm::translate(glm::mat4(1.0f), base + glm::vec3(0.5f, d.onWall ? 0.25f : 0.0f, 0.5f));
+                glm::mat4 place =
+                    glm::translate(glm::mat4(1.0f), base + glm::vec3(0.5f, d.onWall ? 0.25f : 0.0f, 0.5f));
                 place = glm::rotate(place, -(d.yaw + 180.0f) * kDeg, glm::vec3(0, 1, 0));
                 if (d.onWall)
                     place = glm::translate(place, glm::vec3(0.0f, 0.0f, 0.25f));
                 place = glm::scale(place, glm::vec3(-1.0f / 16.0f, -1.0f / 16.0f, 1.0f / 16.0f));
                 float flagXRot = 0.0f;
                 if (banner) {
-                    const double t = in.worldTicks + static_cast<double>(d.origin.x * 7.0 + d.origin.y * 9.0 + d.origin.z * 13.0);
+                    const double t = in.worldTicks + static_cast<double>(d.origin.x * 7.0 + d.origin.y * 9.0 +
+                                                                         d.origin.z * 13.0);
                     const float phase = static_cast<float>(t - std::floor(t / 100.0) * 100.0) / 100.0f;
                     flagXRot = (-0.0125f + 0.01f * std::cos(6.2831853f * phase)) * 3.14159265f;
                 }
                 if (def.lidPart >= 0)
                     flagXRot = -d.lid * 1.5707963f;
-                const auto emitBox = [&](SkullBatch& batch, const SkullBox& b, float extraGrow, const glm::vec3& tint) {
+                const auto emitBox = [&](SkullBatch& batch, const SkullBox& b, float extraGrow,
+                                         const glm::vec3& tint) {
                     const glm::mat4 m = place * SkullPartMatrix(def, b.part, flagXRot);
                     const float g = b.grow + extraGrow;
                     float x0 = b.x - g, x1 = b.x + b.w + g;
                     const float y0 = b.y - g, y1 = b.y + b.h + g, z0 = b.z - g, z1 = b.z + b.d + g;
                     if (b.mirror)
                         std::swap(x0, x1);
-                    const auto P = [&](float x, float y, float z) { return glm::vec3(m * glm::vec4(x, y, z, 1.0f)); };
+                    const auto P = [&](float x, float y, float z) {
+                        return glm::vec3(m * glm::vec4(x, y, z, 1.0f));
+                    };
                     const float u = b.u, v = b.v, w = b.w, h = b.h, dd = b.d;
-                    const auto face = [&](glm::vec3 tl, glm::vec3 tr, glm::vec3 br, glm::vec3 bl, float fu, float fv, float fw, float fh, float shade) {
+                    const auto face = [&](glm::vec3 tl, glm::vec3 tr, glm::vec3 br, glm::vec3 bl, float fu,
+                                          float fv, float fw, float fh, float shade) {
                         const uint32_t color = PackColor(light * shade * tint);
                         const uint32_t i0 = static_cast<uint32_t>(batch.v.size());
-                        const float uu0 = fu / def.texW, vv0 = fv / def.texH, uu1 = (fu + fw) / def.texW, vv1 = (fv + fh) / def.texH;
+                        const float uu0 = fu / def.texW, vv0 = fv / def.texH, uu1 = (fu + fw) / def.texW,
+                                    vv1 = (fv + fh) / def.texH;
                         batch.v.push_back({tl.x, tl.y, tl.z, color, uu0, vv0});
                         batch.v.push_back({tr.x, tr.y, tr.z, color, uu1, vv0});
                         batch.v.push_back({br.x, br.y, br.z, color, uu1, vv1});
@@ -2856,20 +3213,27 @@ namespace perlin::entity {
                         for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
                             batch.i.push_back(i0 + k);
                     };
-                    face(P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0), u + dd, v + dd, w, h, 0.8f);
+                    face(P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0), u + dd, v + dd, w, h,
+                         0.8f);
                     face(P(x0, y0, z1), P(x0, y0, z0), P(x0, y1, z0), P(x0, y1, z1), u, v + dd, dd, h, 0.6f);
-                    face(P(x1, y0, z0), P(x1, y0, z1), P(x1, y1, z1), P(x1, y1, z0), u + dd + w, v + dd, dd, h, 0.6f);
-                    face(P(x1, y0, z1), P(x0, y0, z1), P(x0, y1, z1), P(x1, y1, z1), u + 2 * dd + w, v + dd, w, h, 0.8f);
+                    face(P(x1, y0, z0), P(x1, y0, z1), P(x1, y1, z1), P(x1, y1, z0), u + dd + w, v + dd, dd,
+                         h, 0.6f);
+                    face(P(x1, y0, z1), P(x0, y0, z1), P(x0, y1, z1), P(x1, y1, z1), u + 2 * dd + w, v + dd,
+                         w, h, 0.8f);
                     face(P(x0, y0, z1), P(x1, y0, z1), P(x1, y0, z0), P(x0, y0, z0), u + dd, v, w, dd, 1.0f);
-                    face(P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1), u + dd + w, v, w, dd, 0.5f);
+                    face(P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1), u + dd + w, v, w, dd,
+                         0.5f);
                 };
                 const auto dyeTint = [](int dye) {
                     const uint32_t rgb = DyeColorRgb(dye);
-                    return glm::vec3(static_cast<float>((rgb >> 16) & 0xFF), static_cast<float>((rgb >> 8) & 0xFF), static_cast<float>(rgb & 0xFF)) / 255.0f;
+                    return glm::vec3(static_cast<float>((rgb >> 16) & 0xFF),
+                                     static_cast<float>((rgb >> 8) & 0xFF), static_cast<float>(rgb & 0xFF)) /
+                           255.0f;
                 };
                 SkullBatch& batch = skulls[def.texture];
                 for (const SkullBox& b : def.boxes)
-                    emitBox(batch, b, 0.0f, banner && b.part == def.flagPart ? dyeTint(d.color) : glm::vec3(1.0f));
+                    emitBox(batch, b, 0.0f,
+                            banner && b.part == def.flagPart ? dyeTint(d.color) : glm::vec3(1.0f));
                 if (banner) {
                     int layer = 0;
                     for (const auto& [texture, dye] : d.patterns) {
@@ -2914,13 +3278,15 @@ namespace perlin::entity {
             }
             const float centerZ = d.hanging ? 0.5f : d.wall ? 0.5f : 0.5f;
             (void)centerZ;
-            const auto emit = [&](const std::string& body, uint32_t argb, bool glow, bool frontSide, float planeZ) {
+            const auto emit = [&](const std::string& body, uint32_t argb, bool glow, bool frontSide,
+                                  float planeZ) {
                 if (body.empty() || planeZ < -0.5f)
                     return;
                 const std::vector<std::string> lines = WrapSignText(body, maxWidth, 4);
                 const float dir = frontSide ? 1.0f : -1.0f;
                 const float rx = frontSide ? 1.0f : -1.0f;
-                const float baseR = static_cast<float>(argb & 0xFF) / 255.0f, baseG = static_cast<float>((argb >> 8) & 0xFF) / 255.0f,
+                const float baseR = static_cast<float>(argb & 0xFF) / 255.0f,
+                            baseG = static_cast<float>((argb >> 8) & 0xFF) / 255.0f,
                             baseB = static_cast<float>((argb >> 16) & 0xFF) / 255.0f;
                 const glm::vec3 ink(baseB, baseG, baseR);
                 const glm::vec3 lit = glow ? glm::vec3(1.0f) : light;
@@ -2937,10 +3303,14 @@ namespace perlin::entity {
                         if (!ui::McFont::Next(line, i, cp))
                             break;
                         if (cp == 0xA7 && i < line.size()) {
-                            const char code = static_cast<char>(std::tolower(static_cast<unsigned char>(line[i++])));
+                            const char code =
+                                static_cast<char>(std::tolower(static_cast<unsigned char>(line[i++])));
                             uint32_t rgb = 0;
                             if (ui::FormatCodeColor(code, rgb)) {
-                                col = glm::vec3(static_cast<float>((rgb >> 16) & 0xFF), static_cast<float>((rgb >> 8) & 0xFF), static_cast<float>(rgb & 0xFF)) / 255.0f;
+                                col = glm::vec3(static_cast<float>((rgb >> 16) & 0xFF),
+                                                static_cast<float>((rgb >> 8) & 0xFF),
+                                                static_cast<float>(rgb & 0xFF)) /
+                                      255.0f;
                                 bold = false;
                             } else if (code == 'l')
                                 bold = true;
@@ -2956,7 +3326,8 @@ namespace perlin::entity {
                         if (g.width > 0) {
                             const uint32_t color = PackColor(g.colored ? glm::vec3(1.0f) : col * lit);
                             for (int pass = 0; pass < (bold ? 2 : 1); pass++) {
-                                const float gx0 = pen + g.left + static_cast<float>(pass), gx1 = gx0 + static_cast<float>(g.width);
+                                const float gx0 = pen + g.left + static_cast<float>(pass),
+                                            gx1 = gx0 + static_cast<float>(g.width);
                                 const auto corner = [&](float gx, float gy) {
                                     float ox, oz;
                                     const float lx = 0.5f + rx * gx * scale, lz = planeZ + dir * 0.0f;
@@ -2964,7 +3335,9 @@ namespace perlin::entity {
                                     return base + glm::vec3(ox, centerY - gy * scale, oz);
                                 };
                                 const uint32_t i0 = static_cast<uint32_t>(text.first.size());
-                                const glm::vec3 p0 = corner(gx0, y0 + g.top + g.height), p1 = corner(gx1, y0 + g.top + g.height), p2 = corner(gx1, y0 + g.top), p3 = corner(gx0, y0 + g.top);
+                                const glm::vec3 p0 = corner(gx0, y0 + g.top + g.height),
+                                                p1 = corner(gx1, y0 + g.top + g.height),
+                                                p2 = corner(gx1, y0 + g.top), p3 = corner(gx0, y0 + g.top);
                                 text.first.push_back({p0.x, p0.y, p0.z, color, g.u0, g.v1});
                                 text.first.push_back({p1.x, p1.y, p1.z, color, g.u1, g.v1});
                                 text.first.push_back({p2.x, p2.y, p2.z, color, g.u1, g.v0});
@@ -2987,7 +3360,8 @@ namespace perlin::entity {
             if (batch.overlay)
                 submit(batch.v, batch.i, TextureByPath(texture), -1.0f);
         for (auto& [color, batch] : beds)
-            submit(batch.first, batch.second, TextureByPath(std::string("bed_") + kDyeNames[color] + ".png"), 0.0f);
+            submit(batch.first, batch.second, TextureByPath(std::string("bed_") + kDyeNames[color] + ".png"),
+                   0.0f);
         submit(text.first, text.second, fontTexture, 0.1f);
     }
 }

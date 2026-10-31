@@ -6,9 +6,12 @@
 
 namespace perlin::heldbuild {
     namespace {
-        const glm::ivec3 kFaceNormal[6] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+        const glm::ivec3 kFaceNormal[6] = {{0, -1, 0}, {0, 1, 0},  {0, 0, -1},
+                                           {0, 0, 1},  {-1, 0, 0}, {1, 0, 0}};
 
-        bool Contains(const std::string& s, const char* part) { return s.contains(part); }
+        bool Contains(const std::string& s, const char* part) {
+            return s.contains(part);
+        }
     }
 
     int FacingFromVec(glm::vec3 v) {
@@ -22,11 +25,11 @@ namespace perlin::heldbuild {
     }
 
     bool IsSnappable(const std::string& name, const std::vector<physics::Box>& shape) {
-        if (Contains(name, "stairs") || Contains(name, "slab") || Contains(name, "fence") || Contains(name, "_wall") ||
-            Contains(name, "glass_pane") || Contains(name, "iron_bars"))
+        if (Contains(name, "stairs") || Contains(name, "slab") || Contains(name, "fence") ||
+            Contains(name, "_wall") || Contains(name, "glass_pane") || Contains(name, "iron_bars"))
             return true;
-        return shape.size() == 1 && shape[0].x0 <= 1e-6 && shape[0].y0 <= 1e-6 && shape[0].z0 <= 1e-6 && shape[0].x1 >= 1.0 - 1e-6 &&
-               shape[0].y1 >= 1.0 - 1e-6 && shape[0].z1 >= 1.0 - 1e-6;
+        return shape.size() == 1 && shape[0].x0 <= 1e-6 && shape[0].y0 <= 1e-6 && shape[0].z0 <= 1e-6 &&
+               shape[0].x1 >= 1.0 - 1e-6 && shape[0].y1 >= 1.0 - 1e-6 && shape[0].z1 >= 1.0 - 1e-6;
     }
 
     // AABB::intersectSegment 0x142D345C0: separating axes on half extents, 0.0001f slack on the cross axes only

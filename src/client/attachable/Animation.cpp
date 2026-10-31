@@ -65,7 +65,8 @@ namespace perlin::attachable {
                 if (k.post.present)
                     out.keys.push_back(std::move(k));
             }
-            std::sort(out.keys.begin(), out.keys.end(), [](const Keyframe& a, const Keyframe& b) { return a.time < b.time; });
+            std::sort(out.keys.begin(), out.keys.end(),
+                      [](const Keyframe& a, const Keyframe& b) { return a.time < b.time; });
             out.present = !out.keys.empty();
         }
     }
@@ -109,8 +110,7 @@ namespace perlin::attachable {
             return glm::mix(p1, p2, t);
         const glm::vec3 p0 = i > 0 ? keys[i - 1].post.Eval(scope) : p1;
         const glm::vec3 p3 = i + 2 < keys.size() ? keys[i + 2].pre.Eval(scope) : p2;
-        return 0.5f * (2.0f * p1 + (p2 - p0) * t +
-                       (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t * t +
+        return 0.5f * (2.0f * p1 + (p2 - p0) * t + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t * t +
                        (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t * t * t);
     }
 
@@ -134,7 +134,8 @@ namespace perlin::attachable {
             }
             if (const Json* len = def.Find("animation_length"))
                 a.length = static_cast<float>(len->NumberOr(0));
-            a.overridePrevious = def.Find("override_previous_animation") && def.Find("override_previous_animation")->BoolOr(false);
+            a.overridePrevious = def.Find("override_previous_animation") &&
+                                 def.Find("override_previous_animation")->BoolOr(false);
             if (const Json* u = def.Find("anim_time_update"))
                 a.animTimeUpdate = ParseValue(*u);
             if (const Json* w = def.Find("blend_weight"))
@@ -152,7 +153,8 @@ namespace perlin::attachable {
                     for (char& c : lower)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     a.bones[lower] = std::move(b);
-                    for (const Channel* c : {&a.bones[lower].rotation, &a.bones[lower].position, &a.bones[lower].scale})
+                    for (const Channel* c :
+                         {&a.bones[lower].rotation, &a.bones[lower].position, &a.bones[lower].scale})
                         if (!c->keys.empty())
                             a.length = std::max(a.length, c->keys.back().time);
                 }
@@ -161,7 +163,8 @@ namespace perlin::attachable {
                 for (const auto& [bone, channels] : a.bones) {
                     (void)bone;
                     for (const Channel* channel : {&channels.position, &channels.rotation, &channels.scale})
-                        if (!channel->keys.empty()) a.length = std::max(a.length, channel->keys.back().time);
+                        if (!channel->keys.empty())
+                            a.length = std::max(a.length, channel->keys.back().time);
                 }
             animations[id] = std::move(a);
         }
@@ -187,19 +190,20 @@ namespace perlin::attachable {
             if (const Json* states = def.Find("states"); states && states->IsObject()) {
                 for (const auto& [name, st] : states->object) {
                     State s;
-                    const auto readList = [&](const char* key,
-                                              std::vector<std::pair<std::string, std::shared_ptr<Expr>>>& dest) {
-                        const Json* arr = st.Find(key);
-                        if (!arr || !arr->IsArray())
-                            return;
-                        for (const Json& item : arr->array) {
-                            if (item.IsString())
-                                dest.emplace_back(item.string, nullptr);
-                            else if (item.IsObject())
-                                for (const auto& [target, cond] : item.object)
-                                    dest.emplace_back(target, ParseValue(cond));
-                        }
-                    };
+                    const auto readList =
+                        [&](const char* key,
+                            std::vector<std::pair<std::string, std::shared_ptr<Expr>>>& dest) {
+                            const Json* arr = st.Find(key);
+                            if (!arr || !arr->IsArray())
+                                return;
+                            for (const Json& item : arr->array) {
+                                if (item.IsString())
+                                    dest.emplace_back(item.string, nullptr);
+                                else if (item.IsObject())
+                                    for (const auto& [target, cond] : item.object)
+                                        dest.emplace_back(target, ParseValue(cond));
+                            }
+                        };
                     readList("animations", s.animations);
                     for (auto& entry : s.animations)
                         for (char& ch : entry.first)
@@ -211,7 +215,8 @@ namespace perlin::attachable {
                             continue;
                         for (const Json& item : arr->array)
                             if (item.IsString())
-                                (std::string(key) == "on_entry" ? s.onEntry : s.onExit).push_back(Expr::Parse(item.string));
+                                (std::string(key) == "on_entry" ? s.onEntry : s.onExit)
+                                    .push_back(Expr::Parse(item.string));
                     }
                     c.states[name] = std::move(s);
                 }
@@ -227,7 +232,8 @@ namespace perlin::attachable {
 
     void StartController(const AnimationLibrary::Controller& controller, molang::Scope& scope,
                          std::string& state, double& entered, bool& started, double now) {
-        if (started) return;
+        if (started)
+            return;
         started = true;
         state = controller.initial;
         entered = now;
@@ -239,23 +245,28 @@ namespace perlin::attachable {
     bool AdvanceController(const AnimationLibrary::Controller& controller, molang::Scope& scope,
                            std::string& state, double& entered, double now) {
         const auto current = controller.states.find(state);
-        if (current == controller.states.end()) return false;
+        if (current == controller.states.end())
+            return false;
         // bedrock processes at most one transition per controller per frame
         for (const auto& [target, condition] : current->second.transitions) {
-            if (!condition || !condition->Eval(scope).Truthy()) continue;
+            if (!condition || !condition->Eval(scope).Truthy())
+                continue;
             const auto next = controller.states.find(target);
-            if (next == controller.states.end()) continue;
-            for (const auto& script : current->second.onExit) script->Eval(scope);
+            if (next == controller.states.end())
+                continue;
+            for (const auto& script : current->second.onExit)
+                script->Eval(scope);
             state = target;
             entered = now;
-            for (const auto& script : next->second.onEntry) script->Eval(scope);
+            for (const auto& script : next->second.onEntry)
+                script->Eval(scope);
             return true;
         }
         return false;
     }
 
-    void Apply(const Animation& a, molang::Scope& scope, float time, float weight, Pose& pose, const BindLookup& bindRotation,
-               const BindLookup& bindTranslation) {
+    void Apply(const Animation& a, molang::Scope& scope, float time, float weight, Pose& pose,
+               const BindLookup& bindRotation, const BindLookup& bindTranslation) {
         if (a.blendWeight)
             weight *= static_cast<float>(a.blendWeight->Number(scope));
         if (a.overridePrevious)
@@ -271,7 +282,9 @@ namespace perlin::attachable {
             if (anim.rotation.present) {
                 setThis(bindRotation ? x.rotation + bindRotation(bone) : x.rotation);
                 glm::vec3 r = anim.rotation.Eval(scope, time);
-                static const float armZ = PERLIN_ENV("PERLIN_ARMZ") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ARMZ"))) : 1.0f;
+                static const float armZ = PERLIN_ENV("PERLIN_ARMZ")
+                                              ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ARMZ")))
+                                              : 1.0f;
                 if (bone == "rightarm" || bone == "leftarm")
                     r.z *= gFirstPersonPose ? 1.0f : armZ;
                 x.rotation += r * weight;

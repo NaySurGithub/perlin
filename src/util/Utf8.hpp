@@ -16,11 +16,16 @@ namespace perlin {
         for (size_t i = 0; i < s.size();) {
             const unsigned char c = static_cast<unsigned char>(s[i]);
             size_t n;
-            if (c < 0x80) n = 0;
-            else if ((c >> 5) == 0x6) n = 1;
-            else if ((c >> 4) == 0xE) n = 2;
-            else if ((c >> 3) == 0x1E) n = 3;
-            else return false;
+            if (c < 0x80)
+                n = 0;
+            else if ((c >> 5) == 0x6)
+                n = 1;
+            else if ((c >> 4) == 0xE)
+                n = 2;
+            else if ((c >> 3) == 0x1E)
+                n = 3;
+            else
+                return false;
             if (i + n >= s.size() + (n == 0 ? 1 : 0))
                 return false;
             for (size_t k = 1; k <= n; k++)

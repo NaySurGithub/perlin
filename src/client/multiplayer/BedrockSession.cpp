@@ -50,7 +50,7 @@ namespace perlin {
         struct CachedLogin {
             std::shared_ptr<EC_KEY> key;
             xbox::Credentials creds;
-            int64_t expires = 0;  // unix seconds
+            int64_t expires = 0; // unix seconds
             std::shared_future<bool> pending;
         };
         std::mutex gLoginMutex;
@@ -66,11 +66,15 @@ namespace perlin {
         }
 
         int64_t NowSeconds() {
-            return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            return std::chrono::duration_cast<std::chrono::seconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
+                .count();
         }
 
         // 5 minutes of margin: a token about to lapse could expire during the join
-        bool Fresh(const CachedLogin& c) { return c.key && c.expires - NowSeconds() > 300; }
+        bool Fresh(const CachedLogin& c) {
+            return c.key && c.expires - NowSeconds() > 300;
+        }
 
         void StoreLogin(const std::string& loginKey, EC_KEY* key, const xbox::Credentials& creds) {
             if (loginKey.empty() || !key)
@@ -84,7 +88,6 @@ namespace perlin {
         }
     }
 
-
     using proto::LevelChunkPacket;
     using proto::PlayerAuthInputPacket;
     using proto::SubChunkEntryEntry;
@@ -93,7 +96,9 @@ namespace perlin {
     using proto::SubchunkRequestPacket;
 
     namespace {
-        bool IsRequestMode(const LevelChunkPacket& p) { return p.highestSubchunkCount.has_value(); }
+        bool IsRequestMode(const LevelChunkPacket& p) {
+            return p.highestSubchunkCount.has_value();
+        }
         int RequestSlots(const LevelChunkPacket& p, int dimensionSlots) {
             if (!p.highestSubchunkCount)
                 return 0;
@@ -193,7 +198,8 @@ namespace perlin {
                 const size_t end = std::min(total, base + kBlock);
                 std::vector<int32_t> table(1 << 14, -1);
                 const auto load = [&](size_t i) {
-                    return static_cast<uint32_t>(in[i]) | (static_cast<uint32_t>(in[i + 1]) << 8) | (static_cast<uint32_t>(in[i + 2]) << 16) |
+                    return static_cast<uint32_t>(in[i]) | (static_cast<uint32_t>(in[i + 1]) << 8) |
+                           (static_cast<uint32_t>(in[i + 2]) << 16) |
                            (static_cast<uint32_t>(in[i + 3]) << 24);
                 };
                 size_t pos = base, lit = base;
@@ -271,7 +277,8 @@ namespace perlin {
                         if (p + 4 > inLen)
                             return false;
                         len = 1 + (tag >> 2);
-                        offset = in[p] | (static_cast<size_t>(in[p + 1]) << 8) | (static_cast<size_t>(in[p + 2]) << 16) |
+                        offset = in[p] | (static_cast<size_t>(in[p + 1]) << 8) |
+                                 (static_cast<size_t>(in[p + 2]) << 16) |
                                  (static_cast<size_t>(in[p + 3]) << 24);
                         p += 4;
                     }
@@ -344,13 +351,11 @@ namespace perlin {
 
     namespace {
 
-        std::optional<proto::LoginPacket> BuildOfflineLogin(int protocol, const std::string& playerName,
-                                                            const std::string& gameVersion,
-                                                            const std::string& serverAddress,
-                                                            ClientIdentity& identity, int maxViewDistance,
-                                                            const LoadedSkin& loadedSkin,
-                                                            const xbox::Credentials* online, const std::string& nonce,
-                                                            std::string& error) {
+        std::optional<proto::LoginPacket>
+        BuildOfflineLogin(int protocol, const std::string& playerName, const std::string& gameVersion,
+                          const std::string& serverAddress, ClientIdentity& identity, int maxViewDistance,
+                          const LoadedSkin& loadedSkin, const xbox::Credentials* online,
+                          const std::string& nonce, std::string& error) {
             if (!identity.Valid() || identity.MultiplayerToken().empty()) {
                 error = "no client identity";
                 return std::nullopt;
@@ -370,23 +375,26 @@ namespace perlin {
                 return h + "." + p + "." + B64Url(raw.data(), raw.size());
             };
 
-            const std::string identityJson = BuildIdentityJson(identity, online ? &online->chainJson : nullptr, error, playerName);
+            const std::string identityJson =
+                BuildIdentityJson(identity, online ? &online->chainJson : nullptr, error, playerName);
             if (identityJson.empty())
                 return std::nullopt;
 
-            const std::string skinData = loadedSkin.hasSkin()
-                                             ? std::string(loadedSkin.skinRgba.begin(), loadedSkin.skinRgba.end())
-                                             : std::string(64 * 64 * 4, '\xFF');
+            const std::string skinData =
+                loadedSkin.hasSkin() ? std::string(loadedSkin.skinRgba.begin(), loadedSkin.skinRgba.end())
+                                     : std::string(64 * 64 * 4, '\xFF');
             std::random_device rd;
             const DeviceProfile device = LoadDeviceProfile();
-            const int64_t clientRandomId = static_cast<int64_t>(((static_cast<uint64_t>(rd()) << 32) | rd()) >> 1);
+            const int64_t clientRandomId =
+                static_cast<int64_t>(((static_cast<uint64_t>(rd()) << 32) | rd()) >> 1);
             claims::ClientData skin;
             skin.ClientRandomId = clientRandomId;
             skin.MaxViewDistance = maxViewDistance;
             skin.DeviceId = device.id;
             skin.GameVersion = gameVersion;
             skin.SelfSignedId = DeriveSelfSignedId(clientRandomId, device.id);
-            skin.SkinId = std::string("c18e65aa-7b21-4637-9b63-8ad63622ef01.") + (loadedSkin.slimArms ? "CustomSlim" : "Custom");
+            skin.SkinId = std::string("c18e65aa-7b21-4637-9b63-8ad63622ef01.") +
+                          (loadedSkin.slimArms ? "CustomSlim" : "Custom");
             skin.SkinColor = "#b37b62";
             skin.ServerAddress = serverAddress;
             skin.Nonce = nonce;
@@ -397,13 +405,16 @@ namespace perlin {
                 skin.SkinImageHeight = loadedSkin.skinHeight;
                 skin.SkinId = loadedSkin.skinId;
             }
-            const char* geometry = loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
+            const char* geometry =
+                loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
             skin.ArmSize = loadedSkin.slimArms ? "slim" : "wide";
             skin.SkinGeometryData = kDefaultSkinGeometryB64;
             skin.SkinGeometryDataEngineVersion = B64Standard("0.0.0");
-            skin.SkinResourcePatch = B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
+            skin.SkinResourcePatch =
+                B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
             if (loadedSkin.hasCape()) {
-                skin.CapeData = B64Standard(std::string(loadedSkin.capeRgba.begin(), loadedSkin.capeRgba.end()));
+                skin.CapeData =
+                    B64Standard(std::string(loadedSkin.capeRgba.begin(), loadedSkin.capeRgba.end()));
                 skin.CapeImageWidth = loadedSkin.capeWidth;
                 skin.CapeImageHeight = loadedSkin.capeHeight;
                 skin.CapeId = loadedSkin.capeId;
@@ -435,14 +446,16 @@ namespace perlin {
                         from++;
                     }
                     const size_t to = jwt.find('.', from);
-                    return to == std::string::npos ? std::string() : B64UrlDecode(jwt.substr(from, to - from));
+                    return to == std::string::npos ? std::string()
+                                                   : B64UrlDecode(jwt.substr(from, to - from));
                 };
                 std::string tokenInfo = "unreadable", chainInfo = "unreadable";
                 if (auto t = json::Document::Parse(part(identity.MultiplayerToken(), 1))) {
                     const json::View r = t->root();
-                    tokenInfo = "iss=" + r["iss"].str() + " aud=" + r["aud"].str() + " xid=" + r["xid"].str() +
-                                " xname=" + r["xname"].str() + " mid=" + r["mid"].str() + " ipt=" + r["ipt"].str() +
-                                " cpk " + (r["cpk"].str() == cpk ? "matches" : "DIFFERS FROM") + " our key";
+                    tokenInfo = "iss=" + r["iss"].str() + " aud=" + r["aud"].str() +
+                                " xid=" + r["xid"].str() + " xname=" + r["xname"].str() +
+                                " mid=" + r["mid"].str() + " ipt=" + r["ipt"].str() + " cpk " +
+                                (r["cpk"].str() == cpk ? "matches" : "DIFFERS FROM") + " our key";
                 }
                 if (auto c = json::Document::Parse(online->chainJson)) {
                     chainInfo.clear();
@@ -452,7 +465,8 @@ namespace perlin {
                         if (auto p = json::Document::Parse(part(link.str(), 1))) {
                             const json::View extra = p->root()["extraData"];
                             if (extra["XUID"].isString())
-                                chainInfo += "xuid=" + extra["XUID"].str() + " name=" + extra["displayName"].str() +
+                                chainInfo += "xuid=" + extra["XUID"].str() +
+                                             " name=" + extra["displayName"].str() +
                                              " titleId=" + extra["titleId"].str() + " ";
                         }
                     }
@@ -460,7 +474,12 @@ namespace perlin {
                 }
                 Log("login", "multiplayer token: {}", tokenInfo);
                 Log("login", "certificate chain: {}", chainInfo);
-                Log("login", "client data: DeviceOS={} model='{}' deviceId={} playFabId={} selfSignedId={} thirdPartyName={} serverAddress={} gameVersion={} inputMode={}/{} platformType={}", skin.DeviceOS, skin.DeviceModel, skin.DeviceId, skin.PlayFabId, skin.SelfSignedId, skin.ThirdPartyName, skin.ServerAddress, skin.GameVersion, skin.CurrentInputMode, skin.DefaultInputMode, skin.PlatformType);
+                Log("login",
+                    "client data: DeviceOS={} model='{}' deviceId={} playFabId={} selfSignedId={} "
+                    "thirdPartyName={} serverAddress={} gameVersion={} inputMode={}/{} platformType={}",
+                    skin.DeviceOS, skin.DeviceModel, skin.DeviceId, skin.PlayFabId, skin.SelfSignedId,
+                    skin.ThirdPartyName, skin.ServerAddress, skin.GameVersion, skin.CurrentInputMode,
+                    skin.DefaultInputMode, skin.PlatformType);
             }
             proto::LoginPacket login;
             login.protocolVersion = protocol;
@@ -471,7 +490,9 @@ namespace perlin {
 
     }
 
-    bool BedrockSession::Connect(const std::string& host, uint16_t port) { return ConnectImpl(host, port, false); }
+    bool BedrockSession::Connect(const std::string& host, uint16_t port) {
+        return ConnectImpl(host, port, false);
+    }
 
     void BedrockSession::SetDisconnectInfo(int reason, const std::string& message, bool lost) {
         std::lock_guard<std::mutex> lk(disconnectMutex);
@@ -545,67 +566,72 @@ namespace perlin {
         packsExpected = 0;
         if (transfer && identity && identity->Valid()) {
         } else {
-        // an early or earlier sign-in for this account skips the whole login
-        std::shared_ptr<EC_KEY> cachedKey;
-        int64_t cachedMinutes = 0;
-        // a sign-in still running in the background: connect meanwhile, take its result before the Login packet
-        std::shared_future<bool> pendingLogin;
-        if (account && !accountKey.empty()) {
-            std::lock_guard lock(gLoginMutex);
-            const CachedLogin& c = gLogins[accountKey];
-            if (c.pending.valid() && c.pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-                pendingLogin = c.pending;
-            else if (Fresh(c)) {
-                cachedKey = c.key;
-                onlineCreds = c.creds;
-                cachedMinutes = (c.expires - NowSeconds()) / 60;
-            }
-        }
-        identity = cachedKey ? std::make_unique<ClientIdentity>(cachedKey.get()) : std::make_unique<ClientIdentity>();
-        if (!identity->Valid()) {
-            lastError = "identity keygen failed";
-            state = State::Failed;
-            return false;
-        }
-        playerUuid = RandomUuid();
-        if (cachedKey) {
-            Log("auth", "reusing the sign-in from earlier ({} min left)", cachedMinutes);
-            authTask = std::async(std::launch::deferred, [] { return std::make_pair(true, std::string()); });
-        } else if (pendingLogin.valid()) {
-            const std::string publicKey = identity->PublicKeyB64();
-            ClientIdentity* identityPtr = identity.get();
-            authTask = std::async(std::launch::async, [this, pendingLogin, publicKey, identityPtr] {
-                pendingLogin.wait();
-                {
-                    std::lock_guard lock(gLoginMutex);
-                    if (const CachedLogin& c = gLogins[accountKey]; Fresh(c)) {
-                        onlineCreds = c.creds;
-                        swapKey = c.key;
-                        return std::make_pair(true, std::string());
-                    }
+            // an early or earlier sign-in for this account skips the whole login
+            std::shared_ptr<EC_KEY> cachedKey;
+            int64_t cachedMinutes = 0;
+            // a sign-in still running in the background: connect meanwhile, take its result before the Login packet
+            std::shared_future<bool> pendingLogin;
+            if (account && !accountKey.empty()) {
+                std::lock_guard lock(gLoginMutex);
+                const CachedLogin& c = gLogins[accountKey];
+                if (c.pending.valid() &&
+                    c.pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                    pendingLogin = c.pending;
+                else if (Fresh(c)) {
+                    cachedKey = c.key;
+                    onlineCreds = c.creds;
+                    cachedMinutes = (c.expires - NowSeconds()) / 60;
                 }
-                std::string authError;
-                const bool ok = account->LoginMinecraft(publicKey, "1.26.60", onlineCreds, authError);
-                if (ok)
-                    StoreLogin(accountKey, identityPtr->Key(), onlineCreds);
-                return std::make_pair(ok, authError);
-            });
-        } else if (account) {
-            constexpr const char* kServiceGameVersion = "1.26.60";
-            ClientIdentity* identityPtr = identity.get();
-            const std::string publicKey = identity->PublicKeyB64();
-            authTask = std::async(std::launch::async, [this, publicKey, kServiceGameVersion, identityPtr] {
-                std::string authError;
-                const bool ok = account->LoginMinecraft(publicKey, kServiceGameVersion, onlineCreds, authError);
-                if (ok)
-                    StoreLogin(accountKey, identityPtr->Key(), onlineCreds);
-                return std::make_pair(ok, authError);
-            });
-        } else if (identity->BuildMultiplayerToken(playerName, playerUuid).empty()) {
-            lastError = "multiplayer token build failed";
-            state = State::Failed;
-            return false;
-        }
+            }
+            identity = cachedKey ? std::make_unique<ClientIdentity>(cachedKey.get())
+                                 : std::make_unique<ClientIdentity>();
+            if (!identity->Valid()) {
+                lastError = "identity keygen failed";
+                state = State::Failed;
+                return false;
+            }
+            playerUuid = RandomUuid();
+            if (cachedKey) {
+                Log("auth", "reusing the sign-in from earlier ({} min left)", cachedMinutes);
+                authTask =
+                    std::async(std::launch::deferred, [] { return std::make_pair(true, std::string()); });
+            } else if (pendingLogin.valid()) {
+                const std::string publicKey = identity->PublicKeyB64();
+                ClientIdentity* identityPtr = identity.get();
+                authTask = std::async(std::launch::async, [this, pendingLogin, publicKey, identityPtr] {
+                    pendingLogin.wait();
+                    {
+                        std::lock_guard lock(gLoginMutex);
+                        if (const CachedLogin& c = gLogins[accountKey]; Fresh(c)) {
+                            onlineCreds = c.creds;
+                            swapKey = c.key;
+                            return std::make_pair(true, std::string());
+                        }
+                    }
+                    std::string authError;
+                    const bool ok = account->LoginMinecraft(publicKey, "1.26.60", onlineCreds, authError);
+                    if (ok)
+                        StoreLogin(accountKey, identityPtr->Key(), onlineCreds);
+                    return std::make_pair(ok, authError);
+                });
+            } else if (account) {
+                constexpr const char* kServiceGameVersion = "1.26.60";
+                ClientIdentity* identityPtr = identity.get();
+                const std::string publicKey = identity->PublicKeyB64();
+                authTask =
+                    std::async(std::launch::async, [this, publicKey, kServiceGameVersion, identityPtr] {
+                        std::string authError;
+                        const bool ok =
+                            account->LoginMinecraft(publicKey, kServiceGameVersion, onlineCreds, authError);
+                        if (ok)
+                            StoreLogin(accountKey, identityPtr->Key(), onlineCreds);
+                        return std::make_pair(ok, authError);
+                    });
+            } else if (identity->BuildMultiplayerToken(playerName, playerUuid).empty()) {
+                lastError = "multiplayer token build failed";
+                state = State::Failed;
+                return false;
+            }
         }
         const auto finishAuth = [this]() -> bool {
             if (!authTask.valid())
@@ -646,7 +672,8 @@ namespace perlin {
             if (!finishAuth())
                 return false;
             auto nether = std::make_unique<NetherNet>();
-            if (friendLease ? nether->ConnectFriend(*friendLease, *identity) : nether->Connect(host, port, *identity)) {
+            if (friendLease ? nether->ConnectFriend(*friendLease, *identity)
+                            : nether->Connect(host, port, *identity)) {
                 net = std::move(nether);
             } else if (!friendLease && transportMode == "auto") {
                 Log("perlin", "nethernet failed ({}), falling back to raknet", nether->LastError());
@@ -721,7 +748,8 @@ namespace perlin {
         if (replayMode)
             return true;
         packetlog::Record(true, packetId, body.data(), body.size());
-        if ((packetId == 144 || packetId == 36 || packetId == 44 || packetId == 31) && tapActive.load(std::memory_order_acquire)) {
+        if ((packetId == 144 || packetId == 36 || packetId == 44 || packetId == 31) &&
+            tapActive.load(std::memory_order_acquire)) {
             std::lock_guard<std::mutex> tl(tapMutex);
             if (recordTap)
                 recordTap(1, packetId, body);
@@ -834,7 +862,7 @@ namespace perlin {
                 std::lock_guard<std::mutex> lk(reqMutex);
                 for (int cx = minX; cx <= maxX && ready; ++cx)
                     for (int cz = minZ; cz <= maxZ; ++cz)
-                        if (!seenColumns.count({cx, cz}) || colPending.count({cx, cz})) {
+                        if (!seenColumns.contains({cx, cz}) || colPending.contains({cx, cz})) {
                             ready = false;
                             break;
                         }
@@ -844,7 +872,9 @@ namespace perlin {
         }
         if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged &&
             lastPacketMs.load() != 0 && net && !net->HasLivenessTimeout()) {
-            const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
             // a quiet server legitimately sends nothing for a while (a flat empty world, a plugin server): wait a full two minutes
             if (nowMs - lastPacketMs.load() > 120000) {
                 diagLostLogged = true;
@@ -867,7 +897,8 @@ namespace perlin {
                 lastError = "connection lost";
                 state = State::Failed;
             }
-            Log("net", "CONNECTION LOST (transport closed) state={} lastError='{}' transport='{}'", (int)state.load(), lastError, net->LastError());
+            Log("net", "CONNECTION LOST (transport closed) state={} lastError='{}' transport='{}'",
+                (int)state.load(), lastError, net->LastError());
         }
         if (!net || !net->IsConnected())
             return;
@@ -883,7 +914,9 @@ namespace perlin {
                     std::lock_guard<std::mutex> lk(timeMutex);
                     known = timeTotal >= 0;
                 }
-                Log("net", "5s: {} packets (last id {} {}), state={}, time {}, chunks={}", (n - diagPrevPackets), diagLastId.load(), PacketName(diagLastId), (int)state.load(), (known ? "known" : "UNKNOWN"), chunksReceived.load());
+                Log("net", "5s: {} packets (last id {} {}), state={}, time {}, chunks={}",
+                    (n - diagPrevPackets), diagLastId.load(), PacketName(diagLastId), (int)state.load(),
+                    (known ? "known" : "UNKNOWN"), chunksReceived.load());
                 diagPrevPackets = n;
                 std::map<uint32_t, uint64_t> counts;
                 {
@@ -909,7 +942,8 @@ namespace perlin {
             HandleBatch(msg);
             if (state == State::Failed)
                 return;
-            if ((++handled & 3) == 0 && std::chrono::steady_clock::now() - receiveStart > std::chrono::microseconds(handled > 400 ? 9000 : 4000)) {
+            if ((++handled & 3) == 0 && std::chrono::steady_clock::now() - receiveStart >
+                                            std::chrono::microseconds(handled > 400 ? 9000 : 4000)) {
                 if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
                     Log("net", "receive budget reached batches={} afterAuthTick={}", handled, LastAuthTick());
                 break;
@@ -926,7 +960,8 @@ namespace perlin {
                 return;
             }
         }
-        const std::vector<uint8_t>& msg = decrypted.empty() && !(cipher && cipher->Active()) ? received : decrypted;
+        const std::vector<uint8_t>& msg =
+            decrypted.empty() && !(cipher && cipher->Active()) ? received : decrypted;
         const uint8_t* data = msg.data();
         size_t size = msg.size();
         std::vector<uint8_t> decompressed;
@@ -990,7 +1025,9 @@ namespace perlin {
     void BedrockSession::OnGamePacket(uint32_t id, const std::vector<uint8_t>& body) {
         diagPackets++;
         diagLastId = id;
-        lastPacketMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        lastPacketMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
         {
             std::lock_guard<std::mutex> lk(idCountMutex);
             idCounts[id]++;
@@ -1046,9 +1083,9 @@ namespace perlin {
 
     bool BedrockSession::SendLogin() {
         std::string error;
-        const auto login =
-            BuildOfflineLogin(serverProtocol, playerName, gameVersion, serverAddress, *identity, maxViewDistance, skin,
-                              account ? &onlineCreds : nullptr, friendLease ? friendLease->nonce : std::string(), error);
+        const auto login = BuildOfflineLogin(
+            serverProtocol, playerName, gameVersion, serverAddress, *identity, maxViewDistance, skin,
+            account ? &onlineCreds : nullptr, friendLease ? friendLease->nonce : std::string(), error);
         if (!login) {
             lastError = "login build failed: " + error;
             return false;
@@ -1057,14 +1094,22 @@ namespace perlin {
         return Send(*login);
     }
 
-    bool BedrockSession::SendResourcePackResponse(proto::ResourcePackClientResponsePacketResponseStatus status) {
+    bool
+    BedrockSession::SendResourcePackResponse(proto::ResourcePackClientResponsePacketResponseStatus status) {
         using Status = proto::ResourcePackClientResponsePacketResponseStatus;
         const char* name = "resourcepackstackfinished";
         switch (status) {
-            case Status::Refused: name = "cancel"; break;
-            case Status::SendPacks: name = "downloading"; break;
-            case Status::HaveAllPacks: name = "downloadingfinished"; break;
-            default: break;
+        case Status::Refused:
+            name = "cancel";
+            break;
+        case Status::SendPacks:
+            name = "downloading";
+            break;
+        case Status::HaveAllPacks:
+            name = "downloadingfinished";
+            break;
+        default:
+            break;
         }
         Log("bedrock", "ResourcePackClientResponse {}", static_cast<int>(status));
         proto::ResourcePackClientResponsePacket p;
@@ -1196,7 +1241,8 @@ namespace perlin {
         {
             std::lock_guard lock(hurtMutex);
             lastHurtAt = now;
-            const bool recentKnock = knockAt.time_since_epoch().count() != 0 && now - knockAt < std::chrono::seconds(1);
+            const bool recentKnock =
+                knockAt.time_since_epoch().count() != 0 && now - knockAt < std::chrono::seconds(1);
             hurtSource.known = recentKnock;
             hurtSource.dx = recentKnock ? -knockX : 0.0f;
             hurtSource.dz = recentKnock ? -knockZ : 0.0f;
@@ -1231,8 +1277,10 @@ namespace perlin {
             const bool settled = ColumnSettled(static_cast<int>(std::floor(current.x)) >> 4,
                                                static_cast<int>(std::floor(current.z)) >> 4);
             const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - dimAckSince).count();
-            Log("bedrock", "dimension_ack afterAuthTick={} elapsedMs={} columnSettled={} pos=({},{},{})", LastAuthTick(), elapsed, settled, current.x, current.y, current.z);
+                                     std::chrono::steady_clock::now() - dimAckSince)
+                                     .count();
+            Log("bedrock", "dimension_ack afterAuthTick={} elapsedMs={} columnSettled={} pos=({},{},{})",
+                LastAuthTick(), elapsed, settled, current.x, current.y, current.z);
         }
         SendPlayerAction(static_cast<uint32_t>(proto::Action::DimensionChangeAck), 0, 0, 0, 0);
         SendLoadingScreen(false, dimLoadingId);
@@ -1312,6 +1360,9 @@ namespace perlin {
         }
         if (hasAction)
             add(InputFlag::PerformBlockActions);
+        // SendPlayerInputPacketSystem 0x146dab080: bit 45 goes with the vehicle rotation and id, never alone
+        if (input.predictedVehicle)
+            add(static_cast<uint32_t>(proto::InputData::ClientPredictedVehicle));
 
         float mx = input.moveX, mz = input.moveZ;
         const float mlen = std::sqrt(mx * mx + mz * mz);
@@ -1352,6 +1403,10 @@ namespace perlin {
             entry.face = action.face;
             f.blockAction = std::vector<proto::PlayerAuthInputPacketBlockActionEntry>{entry};
         }
+        if (input.predictedVehicle) {
+            f.vehicleRotation = proto::Vec2F{(*input.vehicleRotation)[0], (*input.vehicleRotation)[1]};
+            f.predictedVehicle = *input.predictedVehicle;
+        }
         f.analogueMoveVector = {0, 0};
         f.cameraOrientation = {-std::sin(yaw) * cp, -std::sin(pitch), std::cos(yaw) * cp};
         {
@@ -1365,7 +1420,8 @@ namespace perlin {
             f.rawMoveVector = {rx, rz};
         }
         if (movePacketsSent < 3 || movePacketsSent % 200 == 0)
-            Log("move", "input #{} tick={} eye=({},{},{}) move=({},{}) flags={}", movePacketsSent, f.tick, f.position.x, f.position.y, f.position.z, f.moveVector.x, f.moveVector.z, f.inputData.size());
+            Log("move", "input #{} tick={} eye=({},{},{}) move=({},{}) flags={}", movePacketsSent, f.tick,
+                f.position.x, f.position.y, f.position.z, f.moveVector.x, f.moveVector.z, f.inputData.size());
         movePacketsSent++;
         const bool sent = Send(f);
         if (predictionSyncCountdown > 0 && --predictionSyncCountdown == 0 && SendPredictionSync())
@@ -1460,7 +1516,9 @@ namespace perlin {
         }
         serverMotions.push_back(motion);
         if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
-            Log("move", "queued_motion depth={} teleport={} correction={} stamped={} tick={} ground={}", serverMotions.size(), motion.teleport, motion.correction, motion.stampedVelocity, motion.tick, motion.onGround);
+            Log("move", "queued_motion depth={} teleport={} correction={} stamped={} tick={} ground={}",
+                serverMotions.size(), motion.teleport, motion.correction, motion.stampedVelocity, motion.tick,
+                motion.onGround);
     }
 
     bool BedrockSession::TakeServerMotion(ServerMotion& out) {
@@ -1468,6 +1526,15 @@ namespace perlin {
             return false;
         out = serverMotions.front();
         serverMotions.pop_front();
+        return true;
+    }
+
+    bool BedrockSession::TakeVehicleCorrection(VehicleCorrection& out) {
+        std::lock_guard lock(vehicleCorrectionMutex);
+        if (vehicleCorrections.empty())
+            return false;
+        out = vehicleCorrections.front();
+        vehicleCorrections.pop_front();
         return true;
     }
 
@@ -1645,26 +1712,27 @@ namespace perlin {
             return;
         std::lock_guard lock(gLoginMutex);
         CachedLogin& c = gLogins[loginKey];
-        if (Fresh(c) || (c.pending.valid() && c.pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready))
+        if (Fresh(c) ||
+            (c.pending.valid() && c.pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready))
             return;
         c.pending = std::async(std::launch::async, [account, loginKey] {
-            auto identity = std::make_unique<ClientIdentity>();
-            if (!identity->Valid())
-                return false;
-            // other startup requests to PlayFab can collide with this one ("A conflict occurred..."): try again
-            for (int attempt = 1; attempt <= 3; attempt++) {
-                xbox::Credentials creds;
-                std::string error;
-                if (account->LoginMinecraft(identity->PublicKeyB64(), "1.26.60", creds, error)) {
-                    StoreLogin(loginKey, identity->Key(), creds);
-                    Log("auth", "signed in ahead of the join");
-                    return true;
-                }
-                Log("auth", "early sign-in attempt {} failed: {}", attempt, error);
-                std::this_thread::sleep_for(std::chrono::milliseconds(800 * attempt));
-            }
-            return false;
-        }).share();
+                        auto identity = std::make_unique<ClientIdentity>();
+                        if (!identity->Valid())
+                            return false;
+                        // other startup requests to PlayFab can collide with this one ("A conflict occurred..."): try again
+                        for (int attempt = 1; attempt <= 3; attempt++) {
+                            xbox::Credentials creds;
+                            std::string error;
+                            if (account->LoginMinecraft(identity->PublicKeyB64(), "1.26.60", creds, error)) {
+                                StoreLogin(loginKey, identity->Key(), creds);
+                                Log("auth", "signed in ahead of the join");
+                                return true;
+                            }
+                            Log("auth", "early sign-in attempt {} failed: {}", attempt, error);
+                            std::this_thread::sleep_for(std::chrono::milliseconds(800 * attempt));
+                        }
+                        return false;
+                    }).share();
     }
 
     void BedrockSession::NoteModChunk(bool loaded, int x, int z) const {
@@ -1681,12 +1749,15 @@ namespace perlin {
         NoteModChunk(true, pkt.x, pkt.z);
         static int logged = 0;
         static int loggedFull = 0;
-        const bool interesting = pkt.payload.size() > 0 || (int32_t)pkt.subChunkCount != 0;
+        const bool interesting = !pkt.payload.empty() || (int32_t)pkt.subChunkCount != 0;
         if (logged < 4 || (interesting && loggedFull < 40)) {
             logged++;
             if (interesting)
                 loggedFull++;
-            Log("chunk", "LevelChunk ({},{}) dim={} subChunkCount={} requestMode={} limit={} cache={} payload={}B", pkt.x, pkt.z, pkt.dimension, (int32_t)pkt.subChunkCount, IsRequestMode(pkt), pkt.highestSubchunkCount.value_or(-1), pkt.cacheEnabled, pkt.payload.size());
+            Log("chunk",
+                "LevelChunk ({},{}) dim={} subChunkCount={} requestMode={} limit={} cache={} payload={}B",
+                pkt.x, pkt.z, pkt.dimension, (int32_t)pkt.subChunkCount, IsRequestMode(pkt),
+                pkt.highestSubchunkCount.value_or(-1), pkt.cacheEnabled, pkt.payload.size());
         }
         if (pkt.cacheEnabled) {
             static bool warned = false;
@@ -1706,8 +1777,8 @@ namespace perlin {
         }
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
         const bool requestMode = IsRequestMode(pkt);
-        const bool far = requestMode &&
-                         std::max(std::abs(pkt.x - viewCenterChunk[0]), std::abs(pkt.z - viewCenterChunk[1])) > nearRadius;
+        const bool far = requestMode && std::max(std::abs(pkt.x - viewCenterChunk[0]),
+                                                 std::abs(pkt.z - viewCenterChunk[1])) > nearRadius;
         netLevel.EnsureChunk(pkt.x, pkt.z, true, far);
         {
             std::lock_guard<std::mutex> lk(reqMutex);
@@ -1723,7 +1794,8 @@ namespace perlin {
             std::vector<std::pair<int, SubChunkData>> parsed;
             size_t used = 0;
             const char* why = nullptr;
-            if (!ChunkCodec::ParseColumn(p, left, pkt.subChunkCount, dim.MinSubChunk(), dim.slots, parsed, used, &why)) {
+            if (!ChunkCodec::ParseColumn(p, left, pkt.subChunkCount, dim.MinSubChunk(), dim.slots, parsed,
+                                         used, &why)) {
                 LogHex("inline column", why ? why : "?", pkt.payload);
                 {
                     std::lock_guard<std::mutex> lk(reqMutex);
@@ -1739,13 +1811,19 @@ namespace perlin {
             left -= used;
             BlockPalette& blockPalette = BlockPalette::Instance();
             if (blockPalette.Sequential() && !parsed.empty()) {
-                const auto top = std::max_element(parsed.begin(), parsed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-                if (!top->second.storages.empty() && !top->second.storages[0].persistent && top->second.storages[0].palette.size() == 1) {
+                const auto top =
+                    std::max_element(parsed.begin(), parsed.end(),
+                                     [](const auto& a, const auto& b) { return a.first < b.first; });
+                if (!top->second.storages.empty() && !top->second.storages[0].persistent &&
+                    top->second.storages[0].palette.size() == 1) {
                     const int32_t seen = top->second.storages[0].palette[0];
                     if (!blockPalette.SequenceVerified() && blockPalette.SequenceLoaded()) {
                         if (!blockPalette.CalibrateSequence(seen) && blockPalette.SequentialAir() != seen) {
                             blockPalette.SetSequentialAir(seen);
-                            Log("block", "server uses sequential block ids but its air id {} does not match our table; treating it as air (table says '{}')", seen, blockPalette.Name(blockPalette.InternRuntime(seen)));
+                            Log("block",
+                                "server uses sequential block ids but its air id {} does not match our "
+                                "table; treating it as air (table says '{}')",
+                                seen, blockPalette.Name(blockPalette.InternRuntime(seen)));
                         }
                     } else if (blockPalette.SequentialAir() < 0) {
                         blockPalette.SetSequentialAir(seen);
@@ -1771,7 +1849,8 @@ namespace perlin {
             if (far) {
                 constexpr int kFarSlots = 3;
                 const int take = std::min(slots, kFarSlots);
-                QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk() + slots - take, take, true);
+                QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk() + slots - take, take,
+                                      true);
             } else {
                 QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(), slots);
             }
@@ -1797,7 +1876,8 @@ namespace perlin {
             const ui::Json* y = nbt.Find("y");
             const ui::Json* z = nbt.Find("z");
             if (x && y && z && x->IsNumber() && y->IsNumber() && z->IsNumber())
-                blockEntities.Set(static_cast<int>(x->number), static_cast<int>(y->number), static_cast<int>(z->number), nbt);
+                blockEntities.Set(static_cast<int>(x->number), static_cast<int>(y->number),
+                                  static_cast<int>(z->number), nbt);
             at += used;
         }
     }
@@ -1904,7 +1984,10 @@ namespace perlin {
             return;
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
         (void)dim;
-        struct DecodeJob { int cx, absY, cz; const std::vector<uint8_t>* body; };
+        struct DecodeJob {
+            int cx, absY, cz;
+            const std::vector<uint8_t>* body;
+        };
         std::vector<DecodeJob> decodeJobs;
         decodeJobs.reserve(pkt.entries.size());
         for (const SubChunkEntryEntry& e : pkt.entries) {
@@ -1917,7 +2000,8 @@ namespace perlin {
             {
                 static int shown = 0;
                 if (shown++ < 12)
-                    Log("chunk", "reply ({},{},{}) result={} payload={}B", cx, absY, cz, resultId, body.size());
+                    Log("chunk", "reply ({},{},{}) result={} payload={}B", cx, absY, cz, resultId,
+                        body.size());
             }
             if (result == SubChunkEntryEntryResult::SuccessAllAir) {
                 static const std::array<uint16_t, ChunkCodec::kCells> air{};
@@ -1927,8 +2011,8 @@ namespace perlin {
             }
             if (result != SubChunkEntryEntryResult::Success) {
                 CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz),
-                    result != SubChunkEntryEntryResult::YIndexOutOfBounds &&
-                    result != SubChunkEntryEntryResult::InvalidDimension);
+                                result != SubChunkEntryEntryResult::YIndexOutOfBounds &&
+                                    result != SubChunkEntryEntryResult::InvalidDimension);
                 static int logged = 0;
                 if (logged++ < 8)
                     Log("chunk", "SubChunk ({},{},{}) result={}", cx, absY, cz, resultId);
@@ -1969,7 +2053,8 @@ namespace perlin {
         if (sc.hasYIndex && sc.yIndex != absSubY) {
             static std::atomic<int> mismatches{0};
             if (mismatches++ < 16)
-                Log("chunk", "sub-chunk ({},{}) y mismatch: placed at {} but payload says {}", cx, cz, absSubY, static_cast<int>(sc.yIndex));
+                Log("chunk", "sub-chunk ({},{}) y mismatch: placed at {} but payload says {}", cx, cz,
+                    absSubY, static_cast<int>(sc.yIndex));
             absSubY = sc.yIndex;
         }
         const PaletteStorage& st = sc.storages[0];
@@ -1977,19 +2062,22 @@ namespace perlin {
         if (!ChunkCodec::ExpandIndices(st, idx)) {
             static std::atomic<int> logged{0};
             if (logged++ < 8)
-                Log("chunk", "sub-chunk ({},{},{}) storage did not expand (bpb={} palette={})", cx, absSubY, cz, st.bitsPerBlock, st.palette.size());
+                Log("chunk", "sub-chunk ({},{},{}) storage did not expand (bpb={} palette={})", cx, absSubY,
+                    cz, st.bitsPerBlock, st.palette.size());
             return false;
         }
         std::vector<uint16_t> local(st.palette.size());
         for (size_t i = 0; i < local.size(); i++) {
             local[i] = st.persistent ? BlockPalette::Instance().Intern(st.palette[i])
-                       : (st.palette[i] == 0 && !BlockPalette::Instance().Sequential()) ? uint16_t(0)
-                                                                                       : BlockPalette::Instance().InternRuntime(st.palette[i]);
+                       : (st.palette[i] == 0 && !BlockPalette::Instance().Sequential())
+                           ? uint16_t(0)
+                           : BlockPalette::Instance().InternRuntime(st.palette[i]);
             static std::atomic<int> unknownLogged{0};
             if (local[i] != 0 && unknownLogged < 20 && BlockPalette::Instance().NamesLoaded() &&
                 BlockPalette::Instance().Name(local[i]).empty()) {
                 unknownLogged++;
-                Log("chunk", "unknown block state hash {} in sub-chunk ({},{},{})", st.palette[i], cx, absSubY, cz);
+                Log("chunk", "unknown block state hash {} in sub-chunk ({},{},{})", st.palette[i], cx,
+                    absSubY, cz);
             }
         }
         std::array<uint16_t, ChunkCodec::kCells> cells;
@@ -2003,7 +2091,8 @@ namespace perlin {
             if (ChunkCodec::ExpandIndices(ls, lidx)) {
                 std::vector<uint16_t> llocal(ls.palette.size());
                 for (size_t i = 0; i < llocal.size(); i++)
-                    llocal[i] = ls.persistent ? BlockPalette::Instance().Intern(ls.palette[i]) : BlockPalette::Instance().InternRuntime(ls.palette[i]);
+                    llocal[i] = ls.persistent ? BlockPalette::Instance().Intern(ls.palette[i])
+                                              : BlockPalette::Instance().InternRuntime(ls.palette[i]);
                 bool any = false;
                 for (int i = 0; i < ChunkCodec::kCells; i++) {
                     liquid[(size_t)i] = llocal[lidx[(size_t)i]];
@@ -2018,7 +2107,8 @@ namespace perlin {
         {
             static std::atomic<int> shown{0};
             if (shown++ < 12)
-                Log("chunk", "applied ({},{},{}) bpb={} palette={} layers={}", cx, absSubY, cz, st.bitsPerBlock, st.palette.size(), sc.storages.size());
+                Log("chunk", "applied ({},{},{}) bpb={} palette={} layers={}", cx, absSubY, cz,
+                    st.bitsPerBlock, st.palette.size(), sc.storages.size());
         }
         return true;
     }
@@ -2057,7 +2147,8 @@ namespace perlin {
         for (const auto& [pos, info] : cols) {
             if (info.dim != dimensionId)
                 continue;
-            const bool far = std::max(std::abs(pos.x - viewCenterChunk[0]), std::abs(pos.z - viewCenterChunk[1])) > nearRadius;
+            const bool far = std::max(std::abs(pos.x - viewCenterChunk[0]),
+                                      std::abs(pos.z - viewCenterChunk[1])) > nearRadius;
             if (far) {
                 const int take = std::min(info.slots, 3);
                 QueueSubChunkRequests(info.dim, pos.x, pos.z, info.firstSubY + info.slots - take, take, true);
@@ -2088,7 +2179,7 @@ namespace perlin {
 
     bool BedrockSession::ColumnSettled(int cx, int cz) const {
         std::lock_guard<std::mutex> lk(const_cast<std::mutex&>(reqMutex));
-        if (!seenColumns.count({cx, cz}))
+        if (!seenColumns.contains({cx, cz}))
             return false;
         return colPending.find({cx, cz}) == colPending.end();
     }
@@ -2130,11 +2221,10 @@ namespace perlin {
         std::lock_guard<std::mutex> lk(timeMutex);
         if (timeTotal < 0)
             return false;
-        int64_t adv = dayCycleRunning && !clockPaused ? std::chrono::duration_cast<std::chrono::milliseconds>(
-                                            SimClock::Now() - timeAt)
-                                                .count() /
-                                            50
-                                      : 0;
+        int64_t adv =
+            dayCycleRunning && !clockPaused
+                ? std::chrono::duration_cast<std::chrono::milliseconds>(SimClock::Now() - timeAt).count() / 50
+                : 0;
         int64_t total = timeTotal + adv;
         outDay = total / 24000;
         outTicksOfDay = (int)(total % 24000);
@@ -2146,7 +2236,7 @@ namespace perlin {
         {
             std::lock_guard<std::mutex> lk(reqMutex);
             inflight.erase(key);
-            if (retry && requestedSlots.count(key) && ++retries[key] <= kMaxSubChunkRetries) {
+            if (retry && requestedSlots.contains(key) && ++retries[key] <= kMaxSubChunkRetries) {
                 reqQueue.push(key);
                 return;
             }
@@ -2182,9 +2272,10 @@ namespace perlin {
             for (int ring = 0; ring <= radius && missing.size() < kPerScan; ring++) {
                 for (int dx = -ring; dx <= ring && missing.size() < kPerScan; dx++) {
                     for (int dz = -ring; dz <= ring && missing.size() < kPerScan; dz++) {
-                        if (std::max(std::abs(dx), std::abs(dz)) != ring || dx * dx + dz * dz > radius * radius)
+                        if (std::max(std::abs(dx), std::abs(dz)) != ring ||
+                            dx * dx + dz * dz > radius * radius)
                             continue;
-                        if (!seenColumns.count({cx + dx, cz + dz}))
+                        if (!seenColumns.contains({cx + dx, cz + dz}))
                             missing.push_back({cx + dx, cz + dz});
                     }
                 }
@@ -2212,7 +2303,10 @@ namespace perlin {
         statFilled += missing.size();
         static int logged = 0;
         if (logged++ < 8)
-            Log("chunk", "client-side generation: requesting {} columns the server did not stream ({} so far, radius {})", missing.size(), statFilled, radius);
+            Log("chunk",
+                "client-side generation: requesting {} columns the server did not stream ({} so far, radius "
+                "{})",
+                missing.size(), statFilled, radius);
     }
 
     void BedrockSession::UpdateColumnLod() {
@@ -2237,7 +2331,8 @@ namespace perlin {
             candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
                                             [&](const ChunkPos& p) {
                                                 const auto found = netLevel.chunks.find(p);
-                                                return found != netLevel.chunks.end() && !found->second.lodOnly;
+                                                return found != netLevel.chunks.end() &&
+                                                       !found->second.lodOnly;
                                             }),
                              candidates.end());
             for (const auto& entry : netLevel.chunks) {
@@ -2252,7 +2347,7 @@ namespace perlin {
             std::lock_guard<std::mutex> lk(reqMutex);
             for (const ChunkPos& p : candidates)
                 if (const auto found = columns.find(p); found != columns.end())
-                    promote.push_back({p, found->second});
+                    promote.emplace_back(p, found->second);
         }
         for (const ChunkPos& p : demote) {
             netLevel.RemoveChunk(p.x, p.z);
@@ -2290,7 +2385,7 @@ namespace perlin {
                 }
                 auto key = it->first;
                 it = inflight.erase(it);
-                if (requestedSlots.count(key) && ++retries[key] <= kMaxSubChunkRetries) {
+                if (requestedSlots.contains(key) && ++retries[key] <= kMaxSubChunkRetries) {
                     reqQueue.push(key);
                 } else {
                     retries.erase(key);
@@ -2354,7 +2449,13 @@ namespace perlin {
         lastStatLog = now;
         if (statLevelChunks == 0 && statRequestsSent == 0)
             return;
-        Log("chunk", "stats: levelChunks={} requestsSent={} replies={} subChunksApplied={} failed={} results[0..6,other]={},{},{},{},{},{},{},{} queued={}+{} lodOnly={} inflight={} blocksKnown={}", statLevelChunks, statRequestsSent, statSubChunkReplies, statSubChunksApplied.load(), statSubChunksFailed, statResult[0], statResult[1], statResult[2], statResult[3], statResult[4], statResult[5], statResult[6], statResult[7], reqQueue.size(), reqQueueFar.size(), netLevel.lodOnlyCount.load(), inflight.size(), BlockPalette::Instance().Count());
+        Log("chunk",
+            "stats: levelChunks={} requestsSent={} replies={} subChunksApplied={} failed={} "
+            "results[0..6,other]={},{},{},{},{},{},{},{} queued={}+{} lodOnly={} inflight={} blocksKnown={}",
+            statLevelChunks, statRequestsSent, statSubChunkReplies, statSubChunksApplied.load(),
+            statSubChunksFailed, statResult[0], statResult[1], statResult[2], statResult[3], statResult[4],
+            statResult[5], statResult[6], statResult[7], reqQueue.size(), reqQueueFar.size(),
+            netLevel.lodOnlyCount.load(), inflight.size(), BlockPalette::Instance().Count());
     }
 
 }

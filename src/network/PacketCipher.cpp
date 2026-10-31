@@ -24,7 +24,8 @@ namespace perlin {
                 EVP_CIPHER_CTX_free(dec);
         }
 
-        static void Checksum(uint64_t counter, const uint8_t* data, size_t n, const uint8_t* key, uint8_t out[8]) {
+        static void Checksum(uint64_t counter, const uint8_t* data, size_t n, const uint8_t* key,
+                             uint8_t out[8]) {
             uint8_t c[8];
             for (int i = 0; i < 8; i++)
                 c[i] = uint8_t(counter >> (8 * i));
@@ -65,7 +66,8 @@ namespace perlin {
         return true;
     }
 
-    bool PacketCipher::InitFromHandshake(const ClientIdentity& identity, const std::string& token, std::string& error) {
+    bool PacketCipher::InitFromHandshake(const ClientIdentity& identity, const std::string& token,
+                                         std::string& error) {
         const size_t a = token.find('.');
         const size_t b = a == std::string::npos ? a : token.find('.', a + 1);
         if (b == std::string::npos) {
@@ -94,7 +96,8 @@ namespace perlin {
             return false;
         }
         uint8_t secret[64];
-        const int secretLen = ECDH_compute_key(secret, sizeof(secret), EC_KEY_get0_public_key(peer), identity.Key(), nullptr);
+        const int secretLen =
+            ECDH_compute_key(secret, sizeof(secret), EC_KEY_get0_public_key(peer), identity.Key(), nullptr);
         EC_KEY_free(peer);
         if (secretLen <= 0) {
             error = "ECDH failed";

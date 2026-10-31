@@ -19,7 +19,7 @@ endif()
 
 option(PERLIN_SERVER_NETHERNET "NetherNet listener (libdatachannel + http signalling); without it only loopback connections work" ON)
 option(PERLIN_SERVER_GPU "GPU terrain generation through the RHI (needs src/rhi)" OFF)
-option(PERLIN_SERVER_EXTERNAL_WASM "the host already links the wasm runtime (the client does): do not compile it again" OFF)
+option(PERLIN_SERVER_EMBED "also build perlin_server_embed: the core without a wasm runtime, linked into the client (which brings its own)" OFF)
 option(PERLIN_SERVER_BUILD_SHARED "build the perlin_server shared library" ON)
 option(PERLIN_SERVER_BUILD_EXE "build the perlin-server executable" ON)
 option(PERLIN_SERVER_BUILD_TESTS "build the server tests" ${PERLIN_SERVER_STANDALONE})
@@ -99,7 +99,7 @@ set(PS_SOURCES
 
 # wasm runtime: wasm3 through the client's own wrapper (WasmRuntimeWasm3.cpp), so plugins behave the same.
 # it is plain c with no dependencies, which keeps it safe to link into a shared library next to the client's WasmEdge
-if(NOT PERLIN_SERVER_EXTERNAL_WASM)
+if(TRUE)
     if(NOT TARGET wasm3_core)
         FetchContent_Declare(wasm3 GIT_REPOSITORY https://github.com/wasm3/wasm3.git GIT_TAG 28ecb9af6d2040e474a70f7cb7f43666740141fb)
         FetchContent_GetProperties(wasm3)
@@ -114,7 +114,7 @@ if(NOT PERLIN_SERVER_EXTERNAL_WASM)
         target_compile_options(wasm3_core PRIVATE -w)
         set_target_properties(wasm3_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11)
     endif()
-    list(APPEND PS_SOURCES "${PERLIN_ROOT}/src/client/mods/WasmRuntimeWasm3.cpp")
+    set(PS_WASM_SOURCES "${PERLIN_ROOT}/src/client/mods/WasmRuntimeWasm3.cpp")
     set(PS_WASM_LIB wasm3_core)
 endif()
 
@@ -184,43 +184,47 @@ else()
     list(APPEND PS_SOURCES src/gpu/GpuTerrainStub.cpp)
 endif()
 
-add_library(perlin_server_core STATIC ${PS_SOURCES})
-target_include_directories(perlin_server_core
-    PUBLIC include
-    PRIVATE src "${PERLIN_ROOT}/src")
-target_compile_features(perlin_server_core PUBLIC cxx_std_23)
-set_target_properties(perlin_server_core PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
-target_compile_definitions(perlin_server_core PRIVATE PERLIN_SERVER_BUILD_SHARED "PERLIN_SERVER_RESOURCE_DIR=\"${PERLIN_ROOT}/resources\"")
 find_package(OpenSSL REQUIRED)
-target_link_libraries(perlin_server_core PUBLIC perlin_protocol PRIVATE miniz OpenSSL::Crypto Threads::Threads)
-if(PS_WASM_LIB)
-    target_link_libraries(perlin_server_core PRIVATE ${PS_WASM_LIB})
+# every server source is compiled once, into perlin_server_objects; the libraries below only differ in the wasm runtime
+add_library(perlin_server_objects OBJECT ${PS_SOURCES})
+set(PS_LIBS perlin_server_core)
+add_library(perlin_server_core STATIC $<TARGET_OBJECTS:perlin_server_objects> ${PS_WASM_SOURCES})
+target_link_libraries(perlin_server_core PRIVATE ${PS_WASM_LIB})
+if(PERLIN_SERVER_EMBED)
+    # singleplayer inside the client: the client already links a wasm runtime (WasmEdge or wasm3) behind the same api
+    add_library(perlin_server_embed STATIC $<TARGET_OBJECTS:perlin_server_objects>)
+    list(APPEND PS_LIBS perlin_server_embed)
 endif()
-if(PERLIN_SERVER_NETHERNET)
-    # the client builds libdatachannel static (position independent) and shared; the static one keeps the library self contained
-    if(TARGET datachannel-static)
-        target_link_libraries(perlin_server_core PRIVATE datachannel-static OpenSSL::SSL)
-    else()
-        target_link_libraries(perlin_server_core PRIVATE datachannel)
+foreach(t perlin_server_objects ${PS_LIBS})
+    target_include_directories(${t} PUBLIC "${PERLIN_ROOT}/mods/sdk" include PRIVATE src "${PERLIN_ROOT}/src")
+    target_compile_features(${t} PUBLIC cxx_std_23)
+    set_target_properties(${t} PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+    target_compile_definitions(${t} PRIVATE PERLIN_SERVER_BUILD_SHARED "PERLIN_SERVER_RESOURCE_DIR=\"${PERLIN_ROOT}/resources\"")
+    target_link_libraries(${t} PUBLIC perlin_protocol miniz OpenSSL::Crypto Threads::Threads)
+    if(PERLIN_SERVER_NETHERNET)
+        # the client builds libdatachannel static (position independent) and shared; the static one keeps the library self contained
+        if(TARGET datachannel-static)
+            target_link_libraries(${t} PUBLIC datachannel-static OpenSSL::SSL)
+        else()
+            target_link_libraries(${t} PUBLIC datachannel)
+        endif()
+        target_include_directories(${t} PRIVATE "${httplib_SOURCE_DIR}")
+        target_compile_definitions(${t} PRIVATE CPPHTTPLIB_THREAD_POOL_COUNT=16)
     endif()
-    target_include_directories(perlin_server_core PRIVATE "${httplib_SOURCE_DIR}")
-    target_compile_definitions(perlin_server_core PRIVATE CPPHTTPLIB_THREAD_POOL_COUNT=16)
-endif()
-if(PERLIN_SERVER_GPU)
-    target_link_libraries(perlin_server_core PRIVATE perlin_rhi)
-    target_include_directories(perlin_server_core PRIVATE "${PERLIN_ROOT}/src")
-    target_compile_definitions(perlin_server_core PRIVATE PERLIN_SERVER_GPU=1)
-endif()
-if(WIN32)
-    target_compile_definitions(perlin_server_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
-    target_link_libraries(perlin_server_core PRIVATE ws2_32 crypt32 bcrypt iphlpapi)
-endif()
-if(MSVC)
-    target_compile_options(perlin_server_core PRIVATE /W4 /utf-8)
-else()
-    target_compile_options(perlin_server_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
-endif()
-
+    if(PERLIN_SERVER_GPU)
+        target_link_libraries(${t} PUBLIC perlin_rhi)
+        target_compile_definitions(${t} PRIVATE PERLIN_SERVER_GPU=1)
+    endif()
+    if(WIN32)
+        target_compile_definitions(${t} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+        target_link_libraries(${t} PUBLIC ws2_32 crypt32 bcrypt iphlpapi)
+    endif()
+    if(MSVC)
+        target_compile_options(${t} PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(${t} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    endif()
+endforeach()
 # float results must match java's strict ieee arithmetic bit for bit: no fused multiply-add
 if(NOT MSVC)
     set_source_files_properties(src/world/vanilla/Noise.cpp src/world/vanilla/DensityFunction.cpp src/world/vanilla/VanillaTerrain.cpp src/world/vanilla/VanillaSurface.cpp
@@ -241,13 +245,6 @@ if(PERLIN_SERVER_BUILD_SHARED)
         target_link_options(perlin_server PRIVATE -Wl,--whole-archive "$<TARGET_FILE:perlin_server_core>" -Wl,--no-whole-archive)
     endif()
     add_dependencies(perlin_server perlin_server_core)
-    # in the client's tree the library sits next to the executable, which is where singleplayer loads it from
-    # (a post-build step has to be declared in the directory that owns the target, so it is here and not in the root)
-    if(NOT PERLIN_SERVER_STANDALONE AND TARGET Perlin)
-        add_custom_command(TARGET perlin_server POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:perlin_server> $<TARGET_FILE_DIR:Perlin>
-            VERBATIM)
-    endif()
 endif()
 
 # release builds on Linux carry no symbol tables
@@ -272,7 +269,7 @@ if(PERLIN_SERVER_BUILD_TESTS)
 
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm"
         COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/examples/hello_server/build.sh" "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm"
-        DEPENDS examples/hello_server/hello_server.c sdk/perlin_server.h examples/hello_server/build.sh
+        DEPENDS examples/hello_server/hello_server.c ${PERLIN_ROOT}/mods/sdk/perlin.h ${PERLIN_ROOT}/mods/sdk/perlin/abi_table.h examples/hello_server/build.sh
         COMMENT "Building the example plugin" VERBATIM)
     add_custom_target(server_example_plugin DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm")
 
@@ -315,15 +312,12 @@ if(PERLIN_SERVER_BUILD_TESTS)
     add_dependencies(server_session_test server_example_plugin)
     add_test(NAME server_session_test COMMAND server_session_test "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm")
 
-    if(PERLIN_SERVER_BUILD_SHARED)
-        # the client-side bridge, built from the same source the client compiles, against the real shared library
-        add_executable(server_embed_test tests/server_embed_test.cpp client_bridge/EmbeddedServer.cpp src/net/Batch.cpp)
-        target_include_directories(server_embed_test PRIVATE src client_bridge include "${PERLIN_ROOT}/src")
-        target_compile_definitions(server_embed_test PRIVATE PERLIN_SERVER_STATIC)
-        target_link_libraries(server_embed_test PRIVATE perlin_protocol miniz OpenSSL::Crypto ${CMAKE_DL_LIBS} Threads::Threads)
-        add_dependencies(server_embed_test perlin_server)
-        add_test(NAME server_embed_test COMMAND server_embed_test "$<TARGET_FILE:perlin_server>")
-    endif()
+    # the client-side bridge, built from the same source the client compiles, against the linked-in server
+    add_executable(server_embed_test tests/server_embed_test.cpp client_bridge/EmbeddedServer.cpp)
+    target_include_directories(server_embed_test PRIVATE src client_bridge include "${PERLIN_ROOT}/src")
+    target_compile_definitions(server_embed_test PRIVATE PERLIN_SERVER_STATIC)
+    target_link_libraries(server_embed_test PRIVATE perlin_server_core Threads::Threads)
+    add_test(NAME server_embed_test COMMAND server_embed_test)
 
     if(PERLIN_SERVER_GPU)
         add_executable(server_gpu_test tests/server_gpu_test.cpp)

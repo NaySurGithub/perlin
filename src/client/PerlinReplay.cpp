@@ -30,7 +30,7 @@ namespace perlin {
         using Clock = std::chrono::steady_clock;
 
         struct CachedMeta {
-            fs::file_time_type mtime{};
+            fs::file_time_type mtime;
             uintmax_t size = 0;
             replay::Metadata meta;
             bool ok = false;
@@ -218,7 +218,7 @@ namespace perlin {
             fs::create_directories(replay::ReplayDirectory(), ec);
             std::string p = replay::ReplayDirectory();
             std::replace(p.begin(), p.end(), '\\', '/');
-            platform->OpenUrl("file:///" + (p.size() && p[0] == '/' ? p.substr(1) : p));
+            platform->OpenUrl("file:///" + (!p.empty() && p[0] == '/' ? p.substr(1) : p));
             return true;
         }
         if (hover == ui::kReplaySort) {
@@ -386,7 +386,8 @@ namespace perlin {
             return;
         }
         FinishReplayRecording("a replay was opened");
-        Log("replay", "opening {} ({} chunks, {}s)", path, replayCtl.Meta().chunks.size(), replayCtl.DurationMs() / 1000);
+        Log("replay", "opening {} ({} chunks, {}s)", path, replayCtl.Meta().chunks.size(),
+            replayCtl.DurationMs() / 1000);
         connectGeneration++;
         particleLevel = nullptr;
         sessionReady = false;
@@ -727,7 +728,7 @@ namespace perlin {
         if (kM)
             addMarker();
 
-        if (replayUi.status.size() && now > replayUi.statusUntil) {
+        if (!replayUi.status.empty() && now > replayUi.statusUntil) {
             replayUi.status.clear();
             replayUi.signature.clear();
         }

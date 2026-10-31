@@ -120,11 +120,10 @@ int main() {
     }
     {
         // independent wire fixture: 64-bit runtime ids and mode-gated teleport fields have no presence byte
-        const std::vector<uint8_t> wire{
-            0xa8,0xf8,0xd8,0xbd,0xfe,0xa8,0xca,0x6d,
-            0x00,0xc0,0x9c,0x44,0x71,0x3d,0xdb,0x42,0x00,0x00,0x63,0x44,
-            0x00,0x00,0x00,0x00,0x00,0x00,0xb4,0x42,0x00,0x00,0xb4,0x42,
-            0x02,0x00,0x00,0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x63};
+        const std::vector<uint8_t> wire{0xa8, 0xf8, 0xd8, 0xbd, 0xfe, 0xa8, 0xca, 0x6d, 0x00, 0xc0, 0x9c,
+                                        0x44, 0x71, 0x3d, 0xdb, 0x42, 0x00, 0x00, 0x63, 0x44, 0x00, 0x00,
+                                        0x00, 0x00, 0x00, 0x00, 0xb4, 0x42, 0x00, 0x00, 0xb4, 0x42, 0x02,
+                                        0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x63};
         MovePlayerPacket captured;
         CHECK(Decode(wire, captured) && captured.runtimeId == 61688408706530344ULL &&
               captured.position.x == 1254.0f && captured.teleport && captured.tick == 99);
@@ -132,7 +131,7 @@ int main() {
         TakeItemEntityPacket pickup;
         pickup.runtimeEntityId = 7;
         pickup.target = 61688408706530344ULL;
-        const std::vector<uint8_t> pickupWire{7,0xa8,0xf8,0xd8,0xbd,0xfe,0xa8,0xca,0x6d};
+        const std::vector<uint8_t> pickupWire{7, 0xa8, 0xf8, 0xd8, 0xbd, 0xfe, 0xa8, 0xca, 0x6d};
         CHECK(net::Encode(pickup) == pickupWire);
         TakeItemEntityPacket received;
         CHECK(Decode(pickupWire, received) && received.target == pickup.target);
@@ -141,7 +140,8 @@ int main() {
         p.teleport = MovePlayerPacketTeleport{MovePlayerPacketTeleportCause::Command, LegacyEntityType{}};
         p.tick = 99;
         MovePlayerPacket q;
-        CHECK(Decode(net::Encode(p), q) && q.teleport && q.teleport->cause == MovePlayerPacketTeleportCause::Command && q.tick == 99);
+        CHECK(Decode(net::Encode(p), q) && q.teleport &&
+              q.teleport->cause == MovePlayerPacketTeleportCause::Command && q.tick == 99);
 
         p.mode = MovePlayerPacketMode::Normal;
         p.teleport.reset();
@@ -189,7 +189,8 @@ int main() {
         air.windowId = static_cast<WindowID>(0);
         std::vector<uint8_t> body;
         CHECK(net::EncodeChecked(air, body));
-        CHECK((body == std::vector<uint8_t>{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
+        CHECK((body ==
+               std::vector<uint8_t>{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
 
         MobEquipmentPacket stick;
         stick.runtimeEntityId = 1;
@@ -200,9 +201,8 @@ int main() {
         stick.selectedSlot = 2;
         std::vector<uint8_t> encoded;
         CHECK(net::EncodeChecked(stick, encoded));
-        const std::vector<uint8_t> expected{0x01, 0x05, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
-                                            0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                            0x02, 0x02, 0x00};
+        const std::vector<uint8_t> expected{0x01, 0x05, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00,
+                                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x02, 0x00};
         CHECK(encoded == expected);
         MobEquipmentPacket back;
         CHECK(Decode(encoded, back) && back.item.networkId == 5 && back.item.count == 3 && back.slot == 2);
@@ -212,7 +212,8 @@ int main() {
         std::vector<uint8_t> withStack;
         CHECK(net::EncodeChecked(stick, withStack));
         MobEquipmentPacket backStack;
-        CHECK(Decode(withStack, backStack) && backStack.item.hasStackId && backStack.item.stackId && *backStack.item.stackId == 9);
+        CHECK(Decode(withStack, backStack) && backStack.item.hasStackId && backStack.item.stackId &&
+              *backStack.item.stackId == 9);
     }
     {
         std::string failed;

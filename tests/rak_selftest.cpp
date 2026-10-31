@@ -74,7 +74,8 @@ int main(int argc, char** argv) {
         if (!Wait(rak, got))
             break;
         bool ok = got.size() >= 5 && got[0] == 'N' &&
-                  (uint32_t(got[1]) << 24 | uint32_t(got[2]) << 16 | uint32_t(got[3]) << 8 | got[4]) == uint32_t(i) &&
+                  (uint32_t(got[1]) << 24 | uint32_t(got[2]) << 16 | uint32_t(got[3]) << 8 | got[4]) ==
+                      uint32_t(i) &&
                   got.size() == 5 + size_t(i % 900);
         if (ok) {
             const auto pat = Pattern(size_t(i % 900));

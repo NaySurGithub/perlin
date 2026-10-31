@@ -20,13 +20,15 @@
 
 namespace perlin::ui {
     namespace {
-        const char* const kScreens[] = {"small_chest_screen", "large_chest_screen", "ender_chest_screen", "barrel_screen", "shulker_box_screen"};
+        const char* const kScreens[] = {"small_chest_screen", "large_chest_screen", "ender_chest_screen",
+                                        "barrel_screen", "shulker_box_screen"};
 
         const HudItem* SlotItem(const InventoryView& v, const std::string& collection, int index) {
             if (index < 0)
                 return nullptr;
             if (collection == "container_items")
-                return index < std::min(v.chestRows * 9, 54) ? &v.chestItems[static_cast<size_t>(index)] : nullptr;
+                return index < std::min(v.chestRows * 9, 54) ? &v.chestItems[static_cast<size_t>(index)]
+                                                             : nullptr;
             if (collection == "inventory_items")
                 return index < 27 ? &v.slots[static_cast<size_t>(9 + index)] : nullptr;
             if (collection == "hotbar_items")
@@ -68,22 +70,34 @@ namespace perlin::ui {
                 return 0;
             }
 
-            bool CollectionValue(const std::string& collection, int index, const std::string& binding, Json& out) const override {
+            bool CollectionValue(const std::string& collection, int index, const std::string& binding,
+                                 Json& out) const override {
                 const HudItem* item = SlotItem(v, collection, index);
                 if (!item)
                     return false;
-                const auto set = [&](Json value) { out = std::move(value); return true; };
+                const auto set = [&](Json value) {
+                    out = std::move(value);
+                    return true;
+                };
                 const bool empty = item->Empty();
-                if (binding == "#item_id_aux" || binding == "#item_renderer_data") return set(Json(empty ? 0.0 : 1.0));
-                if (binding == "#inventory_stack_count") return set(Json(!empty && item->count > 1 ? std::to_string(item->count) : std::string()));
-                if (binding == "#stack_count_visible") return set(Json(!empty && item->count > 1));
-                if (binding == "#item_durability_visible") return set(Json(!empty && item->maxDamage > 0 && item->aux > 0));
-                if (binding == "#item_durability_total_amount") return set(Json(static_cast<double>(item->maxDamage)));
-                if (binding == "#item_durability_current_amount") return set(Json(static_cast<double>(std::max(0, item->maxDamage - item->aux))));
-                if (binding == "#item_storage_visible" || binding == "#inactive_item" || binding == "#slot_selected" ||
-                    binding == "#is_item_locked" || binding == "#item_lock_cell_image_visible")
+                if (binding == "#item_id_aux" || binding == "#item_renderer_data")
+                    return set(Json(empty ? 0.0 : 1.0));
+                if (binding == "#inventory_stack_count")
+                    return set(Json(!empty && item->count > 1 ? std::to_string(item->count) : std::string()));
+                if (binding == "#stack_count_visible")
+                    return set(Json(!empty && item->count > 1));
+                if (binding == "#item_durability_visible")
+                    return set(Json(!empty && item->maxDamage > 0 && item->aux > 0));
+                if (binding == "#item_durability_total_amount")
+                    return set(Json(static_cast<double>(item->maxDamage)));
+                if (binding == "#item_durability_current_amount")
+                    return set(Json(static_cast<double>(std::max(0, item->maxDamage - item->aux))));
+                if (binding == "#item_storage_visible" || binding == "#inactive_item" ||
+                    binding == "#slot_selected" || binding == "#is_item_locked" ||
+                    binding == "#item_lock_cell_image_visible")
                     return set(Json(false));
-                if (binding == "#item_storage_total_amount" || binding == "#item_storage_current_amount") return set(Json(0.0));
+                if (binding == "#item_storage_total_amount" || binding == "#item_storage_current_amount")
+                    return set(Json(0.0));
                 return false;
             }
 
@@ -138,7 +152,9 @@ div { display: block; position: absolute; }
         services.lineHeight = [](float s, bool ten) {
             return ten ? TenFont::Instance().LineHeight(s) : static_cast<float>(McFont::kLineHeight) * s;
         };
-        services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
+        services.textureSize = [](const std::string& tex, int& w, int& h) {
+            return UiAssets::Instance().ImageSize(tex, w, h);
+        };
         services.localize = [](const std::string& k) { return UiAssets::Instance().Localize(k); };
         emitter.SetTemplates(kChestTemplate, std::string());
         RegisterHudRenderers(emitter, hudState, services);
@@ -147,7 +163,9 @@ div { display: block; position: absolute; }
             if (item && !item->Empty())
                 w.Item(n.ax, n.ay, n.w, n.h, n.layer, item->Key(), n.alpha, item->enchanted);
         });
-        emitter.SetSlotNamer([](const LNode& n) { return n.type == "input_panel" ? SlotName(n.collection, n.index) : std::string(); });
+        emitter.SetSlotNamer([](const LNode& n) {
+            return n.type == "input_panel" ? SlotName(n.collection, n.index) : std::string();
+        });
     }
 
     ChestUi::~ChestUi() {
@@ -172,7 +190,8 @@ div { display: block; position: absolute; }
         std::string wanted;
         for (const std::string& d : packDirs)
             wanted += d + "|";
-        wanted += paths::DataDir() + "|" + UiAssets::Instance().VanillaRoot() + "|" + std::to_string(TexturePack::Instance().Generation());
+        wanted += paths::DataDir() + "|" + UiAssets::Instance().VanillaRoot() + "|" +
+                  std::to_string(TexturePack::Instance().Generation());
         if (state.load() == 1)
             return;
         if (state.load() != 0 && wanted == key)
@@ -208,7 +227,7 @@ div { display: block; position: absolute; }
                 if (auto tree = BuildTree(library, std::string("chest.") + screen, vars, report))
                     trees[screen] = std::move(tree);
             }
-            if (!trees.count("small_chest_screen") || !trees.count("large_chest_screen")) {
+            if (!trees.contains("small_chest_screen") || !trees.contains("large_chest_screen")) {
                 problem = "chest.small_chest_screen / chest.large_chest_screen could not be built";
                 state = 3;
                 return;
@@ -224,7 +243,8 @@ div { display: block; position: absolute; }
         return Ready();
     }
 
-    bool ChestUi::Build(const InventoryView& view, const std::string& screen, int guiW, int guiH, std::string& rml, float (&panel)[4]) {
+    bool ChestUi::Build(const InventoryView& view, const std::string& screen, int guiW, int guiH,
+                        std::string& rml, float (&panel)[4]) {
         if (state.load() != 2)
             return false;
         auto it = trees.find(screen);
@@ -233,7 +253,8 @@ div { display: block; position: absolute; }
         if (it == trees.end() || !it->second)
             return false;
         ChestData data(view);
-        const auto root = EvaluateTree(*it->second, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
+        const auto root =
+            EvaluateTree(*it->second, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
         if (!root)
             return false;
         current = &view;
@@ -261,7 +282,8 @@ div { display: block; position: absolute; }
         }
 
         if (dumped.insert(it->first).second) {
-            const std::filesystem::path out = std::filesystem::path(paths::DataDir()) / "ui_generated" / (it->first + ".rml");
+            const std::filesystem::path out =
+                std::filesystem::path(paths::DataDir()) / "ui_generated" / (it->first + ".rml");
             std::error_code ec;
             std::filesystem::create_directories(out.parent_path(), ec);
             std::ofstream f(out, std::ios::binary | std::ios::trunc);

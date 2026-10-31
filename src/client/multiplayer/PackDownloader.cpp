@@ -37,7 +37,8 @@ namespace perlin {
             return out;
         }
 
-        bool SplitUrl(const std::string& url, bool& tls, std::string& host, uint16_t& port, std::string& path) {
+        bool SplitUrl(const std::string& url, bool& tls, std::string& host, uint16_t& port,
+                      std::string& path) {
             size_t p = 0;
             if (url.starts_with("https://")) {
                 tls = true;
@@ -69,8 +70,9 @@ namespace perlin {
             b[i] = id.bytes[7 - i];
             b[8 + i] = id.bytes[15 - i];
         }
-        std::snprintf(buf, sizeof(buf), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", b[0],
-                      b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+        std::snprintf(
+            buf, sizeof(buf), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", b[0],
+            b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
         return buf;
     }
 
@@ -102,7 +104,8 @@ namespace perlin {
             std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
             if (!out)
                 return false;
-            out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            out.write(reinterpret_cast<const char*>(bytes.data()),
+                      static_cast<std::streamsize>(bytes.size()));
             if (!out)
                 return false;
         }
@@ -194,7 +197,7 @@ namespace perlin {
         a.size = info.size;
         expectedBytes += info.size;
         a.hash = info.hash;
-        a.fileName = fileFor.count(key) ? fileFor[key] : SafeName(key) + ".zip";
+        a.fileName = fileFor.contains(key) ? fileFor[key] : SafeName(key) + ".zip";
         a.data.reserve(static_cast<size_t>(std::min<uint64_t>(info.size, 512ull << 20)));
         Log("packs", "{}: {} bytes in {} chunks", info.packId, info.size, a.chunkCount);
         if (info.size > (512ull << 20)) {
@@ -231,7 +234,8 @@ namespace perlin {
 
     PackDownloader::Result PackDownloader::Tick() {
         // a chunk behind later ones that never shows up is asked for again
-        if (const auto cur = active.find(currentKey); cur != active.end() && !cur->second.early.empty() &&
+        if (const auto cur = active.find(currentKey);
+            cur != active.end() && !cur->second.early.empty() &&
             std::chrono::steady_clock::now() - cur->second.gapSince > std::chrono::seconds(3)) {
             Active& a = cur->second;
             a.gapSince = std::chrono::steady_clock::now();
@@ -242,7 +246,8 @@ namespace perlin {
             again.chunks.push_back(a.next);
             return again;
         }
-        if (!currentKey.empty() && !stallReported && std::chrono::steady_clock::now() - requestedAt > std::chrono::seconds(10)) {
+        if (!currentKey.empty() && !stallReported &&
+            std::chrono::steady_clock::now() - requestedAt > std::chrono::seconds(10)) {
             stallReported = true;
             Log("packs", "no chunk for 10 s, still waiting");
         }

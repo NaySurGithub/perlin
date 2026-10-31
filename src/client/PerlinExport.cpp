@@ -276,7 +276,9 @@ namespace perlin {
             replayCtl.Seek(j.startMs);
         j.active = true;
         j.writer = std::thread([this] { ExportWriterLoop(); });
-        Log("export", "{} {}x{} (render {}x{}) {} fps, {} frames -> {}", (req.screenshot ? "screenshot" : "video"), outW, outH, renderW, renderH, cfg.fps, j.total, j.outPath);
+        Log("export", "{} {}x{} (render {}x{}) {} fps, {} frames -> {}",
+            (req.screenshot ? "screenshot" : "video"), outW, outH, renderW, renderH, cfg.fps, j.total,
+            j.outPath);
         return true;
     }
 

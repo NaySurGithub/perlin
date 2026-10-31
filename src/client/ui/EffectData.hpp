@@ -16,7 +16,9 @@ namespace perlin::ui {
         int amplifier = 0;
         int ticks = 0;
         bool ambient = false;
-        bool operator==(const HudEffect& o) const { return id == o.id && amplifier == o.amplifier && ticks == o.ticks && ambient == o.ambient; }
+        bool operator==(const HudEffect& o) const {
+            return id == o.id && amplifier == o.amplifier && ticks == o.ticks && ambient == o.ambient;
+        }
     };
 
     bool GetEffectInfo(int id, EffectInfo& out);

@@ -123,8 +123,8 @@ int main(int argc, char** argv) {
             input.sprint = sprint != 0;
             attr.speed = 0.1f * (input.sprint ? 1.3f : 1.0f);
             input.sneak = sneak != 0;
-            const MoveVector mv = ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe), input.sneak,
-                                                   state.inWater);
+            const MoveVector mv = ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe),
+                                                   input.sneak, state.inWater);
             input.forward = mv.forward;
             input.strafe = mv.strafe;
             state.yaw = static_cast<float>(yaw);
@@ -133,7 +133,8 @@ int main(int argc, char** argv) {
             double px, py, pz, vx, vy, vz;
             int og, cx, cy, cz;
             if (!(in >> px >> py >> pz >> vx >> vy >> vz >> og >> cx >> cy >> cz)) {
-                std::fprintf(stderr, "Malformed trace expectation in %s step %d\n", scenario.c_str(), stepIndex);
+                std::fprintf(stderr, "Malformed trace expectation in %s step %d\n", scenario.c_str(),
+                             stepIndex);
                 return 1;
             }
             auto bad = [&](const char* what, double got, double want, double eps) {
@@ -143,13 +144,14 @@ int main(int argc, char** argv) {
                     scenarioBad = true;
                     if (!reported || verbose) {
                         reported = true;
-                        std::printf("FAIL %s step %d (%s): %s got %.9f want %.9f\n", scenario.c_str(), stepIndex, lastInput.c_str(), what, got, want);
+                        std::printf("FAIL %s step %d (%s): %s got %.9f want %.9f\n", scenario.c_str(),
+                                    stepIndex, lastInput.c_str(), what, got, want);
                     }
                 }
             };
-            static const char* const kSkip[] = {"bed_bounce", "soul_sand", "slime_walk", "sneak_north", "sneak_south",
-                                                "sneak_east", "sneak_west", "consumable_slowdown",
-                                                "water_ledge_exit"};
+            static const char* const kSkip[] = {"bed_bounce",  "soul_sand",           "slime_walk",
+                                                "sneak_north", "sneak_south",         "sneak_east",
+                                                "sneak_west",  "consumable_slowdown", "water_ledge_exit"};
             bool skip = false;
             for (const char* k : kSkip)
                 skip = skip || scenario.contains(k);
@@ -170,9 +172,11 @@ int main(int argc, char** argv) {
     if (scenarioBad)
         scenariosFailed++;
     if (!file.eof() || checked != 5400) {
-        std::fprintf(stderr, "Invalid or incomplete legacy trace fixture: %d checks (expected 5400)\n", checked);
+        std::fprintf(stderr, "Invalid or incomplete legacy trace fixture: %d checks (expected 5400)\n",
+                     checked);
         return 1;
     }
-    std::printf("bedsim traces: %d checks, %d failed, %d scenarios with failures\n", checked, failed, scenariosFailed);
+    std::printf("bedsim traces: %d checks, %d failed, %d scenarios with failures\n", checked, failed,
+                scenariosFailed);
     return failed == 0 ? 0 : 1;
 }

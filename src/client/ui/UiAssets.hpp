@@ -66,7 +66,8 @@ namespace perlin::ui {
         std::string FindByStem(const std::string& stem);
         void BuildStemIndex();
         void LoadLang();
-        bool FlatSprite(const std::string& shortName, int aux, ItemSprite& out, int64_t dyeColor = -1, const std::string& iconKey = {});
+        bool FlatSprite(const std::string& shortName, int aux, ItemSprite& out, int64_t dyeColor = -1,
+                        const std::string& iconKey = {});
         bool BakeModelIcon(const std::string& name, int32_t hash, int size, Texture& out);
 
         std::string root;

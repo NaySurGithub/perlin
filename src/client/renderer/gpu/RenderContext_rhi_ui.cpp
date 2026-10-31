@@ -14,31 +14,50 @@ namespace perlin {
     namespace {
         rhi::BlendFactor ToRhi(BlendFactor f) {
             switch (f) {
-            case BlendFactor::Zero: return rhi::BlendFactor::Zero;
-            case BlendFactor::One: return rhi::BlendFactor::One;
-            case BlendFactor::SrcColor: return rhi::BlendFactor::SrcColor;
-            case BlendFactor::InvSrcColor: return rhi::BlendFactor::InvSrcColor;
-            case BlendFactor::SrcAlpha: return rhi::BlendFactor::SrcAlpha;
-            case BlendFactor::InvSrcAlpha: return rhi::BlendFactor::InvSrcAlpha;
-            case BlendFactor::DstColor: return rhi::BlendFactor::DstColor;
-            case BlendFactor::InvDstColor: return rhi::BlendFactor::InvDstColor;
-            case BlendFactor::DstAlpha: return rhi::BlendFactor::DstAlpha;
-            case BlendFactor::InvDstAlpha: return rhi::BlendFactor::InvDstAlpha;
-            case BlendFactor::SrcAlphaSaturate: return rhi::BlendFactor::SrcAlphaSaturate;
+            case BlendFactor::Zero:
+                return rhi::BlendFactor::Zero;
+            case BlendFactor::One:
+                return rhi::BlendFactor::One;
+            case BlendFactor::SrcColor:
+                return rhi::BlendFactor::SrcColor;
+            case BlendFactor::InvSrcColor:
+                return rhi::BlendFactor::InvSrcColor;
+            case BlendFactor::SrcAlpha:
+                return rhi::BlendFactor::SrcAlpha;
+            case BlendFactor::InvSrcAlpha:
+                return rhi::BlendFactor::InvSrcAlpha;
+            case BlendFactor::DstColor:
+                return rhi::BlendFactor::DstColor;
+            case BlendFactor::InvDstColor:
+                return rhi::BlendFactor::InvDstColor;
+            case BlendFactor::DstAlpha:
+                return rhi::BlendFactor::DstAlpha;
+            case BlendFactor::InvDstAlpha:
+                return rhi::BlendFactor::InvDstAlpha;
+            case BlendFactor::SrcAlphaSaturate:
+                return rhi::BlendFactor::SrcAlphaSaturate;
             }
             return rhi::BlendFactor::One;
         }
 
         rhi::CompareOp ToRhi(DepthFunc f) {
             switch (f) {
-            case DepthFunc::Less: return rhi::CompareOp::Less;
-            case DepthFunc::Equal: return rhi::CompareOp::Equal;
-            case DepthFunc::Always: return rhi::CompareOp::Always;
-            case DepthFunc::Greater: return rhi::CompareOp::Greater;
-            case DepthFunc::GreaterEqual: return rhi::CompareOp::GreaterEqual;
-            case DepthFunc::NotEqual: return rhi::CompareOp::NotEqual;
-            case DepthFunc::Never: return rhi::CompareOp::Never;
-            case DepthFunc::LessEqual: break;
+            case DepthFunc::Less:
+                return rhi::CompareOp::Less;
+            case DepthFunc::Equal:
+                return rhi::CompareOp::Equal;
+            case DepthFunc::Always:
+                return rhi::CompareOp::Always;
+            case DepthFunc::Greater:
+                return rhi::CompareOp::Greater;
+            case DepthFunc::GreaterEqual:
+                return rhi::CompareOp::GreaterEqual;
+            case DepthFunc::NotEqual:
+                return rhi::CompareOp::NotEqual;
+            case DepthFunc::Never:
+                return rhi::CompareOp::Never;
+            case DepthFunc::LessEqual:
+                break;
             }
             return rhi::CompareOp::LessEqual;
         }
@@ -47,7 +66,8 @@ namespace perlin {
         constexpr uint32_t kUiPageIndices = 1u << 20;
     }
 
-    RenderContext_rhi::DrawState RenderContext_rhi::Base(Program program, bool depth, bool depthWrite, rhi::CompareOp op) const {
+    RenderContext_rhi::DrawState RenderContext_rhi::Base(Program program, bool depth, bool depthWrite,
+                                                         rhi::CompareOp op) const {
         DrawState s;
         s.program = program;
         s.layout = programLayouts[static_cast<size_t>(program)];
@@ -86,9 +106,11 @@ namespace perlin {
         if (!initialized || w <= 0 || h <= 0 || !rgba)
             return 0;
         TexRec rec;
-        const gpu::SamplerKind sampler = linear ? (repeat ? gpu::SamplerKind::LinearRepeat : gpu::SamplerKind::LinearClamp)
-                                                : (repeat ? gpu::SamplerKind::PointRepeat : gpu::SamplerKind::PointClamp);
-        if (!MakeTexture(rec, static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1, 1, rhi::Format::RGBA8Unorm, sampler, "ui texture"))
+        const gpu::SamplerKind sampler =
+            linear ? (repeat ? gpu::SamplerKind::LinearRepeat : gpu::SamplerKind::LinearClamp)
+                   : (repeat ? gpu::SamplerKind::PointRepeat : gpu::SamplerKind::PointClamp);
+        if (!MakeTexture(rec, static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1, 1,
+                         rhi::Format::RGBA8Unorm, sampler, "ui texture"))
             return 0;
         gpu.WriteTexture(rec.handle, 0, 0, 0, static_cast<uint32_t>(w), static_cast<uint32_t>(h), rgba);
         rec.backup.assign(rgba, rgba + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
@@ -144,7 +166,8 @@ namespace perlin {
         if (!mesh.used)
             return;
         if (!mesh.transient) {
-            if (mesh.page >= 0 && mesh.page < static_cast<int>(uiPages.size()) && uiPages[static_cast<size_t>(mesh.page)].live) {
+            if (mesh.page >= 0 && mesh.page < static_cast<int>(uiPages.size()) &&
+                uiPages[static_cast<size_t>(mesh.page)].live) {
                 uiPages[static_cast<size_t>(mesh.page)].vb.Free(mesh.vFirst, mesh.vCount);
                 uiPages[static_cast<size_t>(mesh.page)].ib.Free(mesh.iFirst, mesh.iCount);
             }
@@ -202,7 +225,8 @@ namespace perlin {
         return true;
     }
 
-    uint32_t RenderContext_rhi::UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount) {
+    uint32_t RenderContext_rhi::UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount,
+                                             const uint32_t* indices, uint32_t indexCount) {
         if (!initialized || vertexCount == 0 || indexCount == 0 || !vertices || !indices)
             return 0;
         UiMeshGpu mesh;
@@ -211,8 +235,10 @@ namespace perlin {
         UiPage& p = uiPages[static_cast<size_t>(mesh.page)];
         mesh.vCount = vertexCount;
         mesh.iCount = indexCount;
-        gpu.WriteBuffer(p.vb, static_cast<uint64_t>(mesh.vFirst) * sizeof(UiVertex), vertices, static_cast<uint64_t>(vertexCount) * sizeof(UiVertex));
-        gpu.WriteBuffer(p.ib, static_cast<uint64_t>(mesh.iFirst) * sizeof(uint32_t), indices, static_cast<uint64_t>(indexCount) * sizeof(uint32_t));
+        gpu.WriteBuffer(p.vb, static_cast<uint64_t>(mesh.vFirst) * sizeof(UiVertex), vertices,
+                        static_cast<uint64_t>(vertexCount) * sizeof(UiVertex));
+        gpu.WriteBuffer(p.ib, static_cast<uint64_t>(mesh.iFirst) * sizeof(uint32_t), indices,
+                        static_cast<uint64_t>(indexCount) * sizeof(uint32_t));
         const uint32_t id = StoreUiMesh(mesh);
         if (!id) {
             p.vb.Free(mesh.vFirst, vertexCount);
@@ -226,7 +252,8 @@ namespace perlin {
         return id;
     }
 
-    uint32_t RenderContext_rhi::UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount) {
+    uint32_t RenderContext_rhi::UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount,
+                                                  const uint32_t* indices, uint32_t indexCount) {
         if (!initialized || !frameOpen || vertexCount == 0 || indexCount == 0 || !vertices || !indices)
             return 0;
         UiMeshGpu mesh;
@@ -296,20 +323,22 @@ namespace perlin {
         const TexRec* texture = nullptr;
         if (draw.texture != 0 && draw.texture <= uiTextures.size() && uiTextures[draw.texture - 1].used)
             texture = &uiTextures[draw.texture - 1];
-        const bool glint = draw.glintTexture != 0 && draw.glintTexture <= uiTextures.size() && uiTextures[draw.glintTexture - 1].used;
-        const View view = layer == UiLayer::World ? View::Entity
-                        : layer == UiLayer::WorldLate ? View::Late
-                        : layer == UiLayer::Hand ? View::Hand
-                        : layer == UiLayer::Doll ? View::Doll
-                        : layer == UiLayer::Top ? View::Top
-                        : layer == UiLayer::Export ? View::ExportUi
-                                                   : View::Gui;
+        const bool glint = draw.glintTexture != 0 && draw.glintTexture <= uiTextures.size() &&
+                           uiTextures[draw.glintTexture - 1].used;
+        const View view = layer == UiLayer::World       ? View::Entity
+                          : layer == UiLayer::WorldLate ? View::Late
+                          : layer == UiLayer::Hand      ? View::Hand
+                          : layer == UiLayer::Doll      ? View::Doll
+                          : layer == UiLayer::Top       ? View::Top
+                          : layer == UiLayer::Export    ? View::ExportUi
+                                                        : View::Gui;
 
         // mobs and players write into the sun map; glint and blended passes would only double-draw them
-        if (layer == UiLayer::World && shadow.active && shadow.entities && !glint && draw.depth && draw.depthWrite && draw.blend != 2 &&
-            ProgramIndex(Program::EntityShadow) >= 0) {
+        if (layer == UiLayer::World && shadow.active && shadow.entities && !glint && draw.depth &&
+            draw.depthWrite && draw.blend != 2 && ProgramIndex(Program::EntityShadow) >= 0) {
             SetTransform(glm::make_mat4(draw.model));
-            BindTexture("s_uiTex", texture ? texture->handle : gpu.White2D(), texture ? texture->sampler : gpu::SamplerKind::LinearRepeat);
+            BindTexture("s_uiTex", texture ? texture->handle : gpu.White2D(),
+                        texture ? texture->sampler : gpu::SamplerKind::LinearRepeat);
             SetMatrix(shadow.rasterE);
             uni.Mat4("u_shadowMtx", shadow.sampleE);
             DrawState ss = Base(Program::EntityShadow, true, true, rhi::CompareOp::Less);
@@ -323,17 +352,23 @@ namespace perlin {
             return;
 
         SetTransform(glm::make_mat4(draw.model));
-        BindTexture("s_uiTex", texture ? texture->handle : gpu.White2D(), texture ? texture->sampler : gpu::SamplerKind::LinearRepeat);
+        BindTexture("s_uiTex", texture ? texture->handle : gpu.White2D(),
+                    texture ? texture->sampler : gpu::SamplerKind::LinearRepeat);
         if (glint)
-            BindTexture("s_uiGlint", uiTextures[draw.glintTexture - 1].handle, uiTextures[draw.glintTexture - 1].sampler);
+            BindTexture("s_uiGlint", uiTextures[draw.glintTexture - 1].handle,
+                        uiTextures[draw.glintTexture - 1].sampler);
 
         const bool world = layer == UiLayer::World || layer == UiLayer::WorldLate;
         const bool entityView = world || layer == UiLayer::Hand || layer == UiLayer::Doll;
-        const DrawMaterial domain = draw.material == DrawMaterial::Auto ? (entityView ? DrawMaterial::Entity : DrawMaterial::Auto) : draw.material;
+        const DrawMaterial domain = draw.material == DrawMaterial::Auto
+                                        ? (entityView ? DrawMaterial::Entity : DrawMaterial::Auto)
+                                        : draw.material;
         uni.Vec4("u_rdMaterial", world && domain != DrawMaterial::Nametag ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
-        uni.Vec4("u_uiParams", draw.alphaCutoff, glint ? 1.0f : 0.0f, draw.glintStrength, static_cast<float>(draw.emissive));
+        uni.Vec4("u_uiParams", draw.alphaCutoff, glint ? 1.0f : 0.0f, draw.glintStrength,
+                 static_cast<float>(draw.emissive));
         uni.Set("u_uiOverlay", draw.overlay, 4);
-        uni.Vec4("u_uiGlintA", draw.glintMatrix[0], draw.glintMatrix[1], draw.glintMatrix[2], draw.glintMatrix[3]);
+        uni.Vec4("u_uiGlintA", draw.glintMatrix[0], draw.glintMatrix[1], draw.glintMatrix[2],
+                 draw.glintMatrix[3]);
         uni.Vec4("u_uiGlintB", draw.glintOffset[0], draw.glintOffset[1], 0.0f, 0.0f);
 
         Program program = Program::Ui;
@@ -348,7 +383,9 @@ namespace perlin {
         else if (domain == DrawMaterial::Nametag)
             program = draw.texture ? Program::Ui : Program::Nametag;
         else if (domain == DrawMaterial::Entity)
-            program = draw.colorMask ? Program::EntityMask : draw.emissive == 1 ? Program::EntityEmissive : Program::Entity;
+            program = draw.colorMask       ? Program::EntityMask
+                      : draw.emissive == 1 ? Program::EntityEmissive
+                                           : Program::Entity;
 
         DrawState state = Base(program, draw.depth && !glint, draw.depthWrite, ToRhi(draw.depthFunc));
         state.layout = gpu::VertexLayout::Ui;
@@ -386,7 +423,9 @@ namespace perlin {
             state.srcColor = state.srcAlpha = rhi::BlendFactor::SrcAlpha;
             state.dstColor = state.dstAlpha = rhi::BlendFactor::One;
         }
-        state.cull = draw.cull == CullMode::Back ? rhi::CullMode::Back : draw.cull == CullMode::Front ? rhi::CullMode::Front : rhi::CullMode::None;
+        state.cull = draw.cull == CullMode::Back    ? rhi::CullMode::Back
+                     : draw.cull == CullMode::Front ? rhi::CullMode::Front
+                                                    : rhi::CullMode::None;
         state.alphaToCoverage = draw.alphaToCoverage;
 
         rhi::Rect rect;
@@ -411,7 +450,8 @@ namespace perlin {
         const float W = static_cast<float>(width), H = static_cast<float>(height);
         const auto nx = [&](float px) { return px / W * 2.0f - 1.0f; };
         const auto ny = [&](float py) { return 1.0f - py / H * 2.0f; };
-        const float x0 = nx(std::round(x)), x1 = nx(std::round(x + w)), y0 = ny(std::round(y)), y1 = ny(std::round(y + h));
+        const float x0 = nx(std::round(x)), x1 = nx(std::round(x + w)), y0 = ny(std::round(y)),
+                    y1 = ny(std::round(y + h));
         auto* v = reinterpret_cast<TextureVertex*>(tv.data);
         v[0] = {x0, y1, 0.0f, 0.0f, 0.0f};
         v[1] = {x1, y1, 0.0f, 1.0f, 0.0f};
@@ -421,7 +461,8 @@ namespace perlin {
         SetMatrix(identity);
         uni.Vec4("u_modulator", 1.0f, 1.0f, 1.0f, 1.0f);
         BindTexture("s_sky", crosshair.handle, gpu::SamplerKind::PointClamp);
-        DrawState state = Base(ProgramIndex(Program::SpriteUi) >= 0 ? Program::SpriteUi : Program::Celestial, false, false, rhi::CompareOp::LessEqual);
+        DrawState state = Base(ProgramIndex(Program::SpriteUi) >= 0 ? Program::SpriteUi : Program::Celestial,
+                               false, false, rhi::CompareOp::LessEqual);
         state.layout = gpu::VertexLayout::Texture;
         state.mask = rhi::ColorMask::RGB;
         ApplyMaterial(state, "ui_crosshair");

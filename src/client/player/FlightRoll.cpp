@@ -57,14 +57,16 @@ namespace perlin {
         pitch = std::clamp(pitch, -limit, limit);
         const double yaw = std::atan2(forward.z, forward.x);
         const glm::dvec3 f(std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch));
-        const glm::dvec3 u0(-std::cos(yaw) * std::sin(pitch), std::cos(pitch), -std::sin(yaw) * std::sin(pitch));
+        const glm::dvec3 u0(-std::cos(yaw) * std::sin(pitch), std::cos(pitch),
+                            -std::sin(yaw) * std::sin(pitch));
         const glm::dvec3 r0 = glm::normalize(glm::cross(f, u0));
         rollDegrees = static_cast<float>(std::atan2(glm::dot(up, r0), glm::dot(up, u0)) / kDeg);
         out.yaw = static_cast<float>(yaw / kDeg);
         out.pitch = static_cast<float>(pitch / kDeg);
     }
 
-    FlightRoll::Result FlightRoll::Step(float dtF, float mouseRight, float mouseUp, float yawKeys, float rollKeys, float pitchKeys) {
+    FlightRoll::Result FlightRoll::Step(float dtF, float mouseRight, float mouseUp, float yawKeys,
+                                        float rollKeys, float pitchKeys) {
         const double dt = std::clamp(static_cast<double>(dtF), 0.0, 0.1);
         double pitchIn = mouseUp / kTurnScale;
         double yawIn = 0.0;
@@ -76,7 +78,8 @@ namespace perlin {
         const double rollRad = rollDegrees * kDeg;
         const double pitchRad = std::asin(std::clamp(forward.y, -1.0, 1.0));
         const double bankYaw = std::sin(rollRad) * std::cos(pitchRad) * 10.0 * kBankingStrength * dt;
-        const double bankPitch = (1.0 - std::cos(rollRad)) * std::cos(pitchRad) * 10.0 * kBankingStrength * dt;
+        const double bankPitch =
+            (1.0 - std::cos(rollRad)) * std::cos(pitchRad) * 10.0 * kBankingStrength * dt;
 
         double dPitch = pitchIn * kSensitivityPitch;
         double dYaw = yawIn * kSensitivityYaw;
@@ -97,7 +100,9 @@ namespace perlin {
             const glm::dvec3 worldUp(0.0, 1.0, 0.0);
             const auto rotateAbout = [&](const glm::dvec3& axis, double angle) {
                 const double cs = std::cos(angle), sn = std::sin(angle);
-                const auto rot = [&](const glm::dvec3& v) { return v * cs + glm::cross(axis, v) * sn + axis * glm::dot(axis, v) * (1.0 - cs); };
+                const auto rot = [&](const glm::dvec3& v) {
+                    return v * cs + glm::cross(axis, v) * sn + axis * glm::dot(axis, v) * (1.0 - cs);
+                };
                 forward = rot(forward);
                 up = rot(up);
                 right = rot(right);

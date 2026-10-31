@@ -11,7 +11,9 @@ namespace perlin::ui {
         std::function<void(const std::string&)> gSetClipboard;
         constexpr size_t kUndoDepth = 100;
 
-        bool Continuation(char c) { return (static_cast<unsigned char>(c) & 0xC0) == 0x80; }
+        bool Continuation(char c) {
+            return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
+        }
 
         size_t Prev(const std::string& s, size_t i) {
             if (i == 0)
@@ -31,7 +33,9 @@ namespace perlin::ui {
             return i;
         }
 
-        bool Space(const std::string& s, size_t i) { return i < s.size() && (s[i] == ' ' || s[i] == '\n' || s[i] == '\t'); }
+        bool Space(const std::string& s, size_t i) {
+            return i < s.size() && (s[i] == ' ' || s[i] == '\n' || s[i] == '\t');
+        }
 
         size_t PrevWord(const std::string& s, size_t i) {
             while (i > 0 && Space(s, Prev(s, i)))
@@ -90,7 +94,8 @@ namespace perlin::ui {
         return edit;
     }
 
-    void TextEdit::SetClipboard(std::function<std::string()> get, std::function<void(const std::string&)> set) {
+    void TextEdit::SetClipboard(std::function<std::string()> get,
+                                std::function<void(const std::string&)> set) {
         gGetClipboard = std::move(get);
         gSetClipboard = std::move(set);
     }
@@ -154,7 +159,8 @@ namespace perlin::ui {
         anchor = caret;
     }
 
-    bool TextEdit::Apply(const InputManager::Typed& t, std::string& text, size_t& externalCaret, const TextLimits& limits) {
+    bool TextEdit::Apply(const InputManager::Typed& t, std::string& text, size_t& externalCaret,
+                         const TextLimits& limits) {
         Attach(text);
         if (const size_t at = std::min(externalCaret, text.size()); at != caret) {
             caret = anchor = at;
@@ -219,7 +225,8 @@ namespace perlin::ui {
             if (caret != anchor && !t.shift) {
                 caret = anchor = left ? std::min(caret, anchor) : std::max(caret, anchor);
             } else {
-                caret = left ? (t.ctrl ? PrevWord(text, caret) : Prev(text, caret)) : (t.ctrl ? NextWord(text, caret) : Next(text, caret));
+                caret = left ? (t.ctrl ? PrevWord(text, caret) : Prev(text, caret))
+                             : (t.ctrl ? NextWord(text, caret) : Next(text, caret));
                 if (!t.shift)
                     anchor = caret;
             }
@@ -282,7 +289,8 @@ namespace perlin::ui {
         std::string out = EscapeRml(value.substr(0, a));
         out += bar(a);
         if (b > a) {
-            out += "<span style=\"background-color:#3d6bffb4;color:#ffffff;\">" + EscapeRml(value.substr(a, b - a)) + "</span>";
+            out += "<span style=\"background-color:#3d6bffb4;color:#ffffff;\">" +
+                   EscapeRml(value.substr(a, b - a)) + "</span>";
             out += bar(b);
         }
         out += EscapeRml(value.substr(b));

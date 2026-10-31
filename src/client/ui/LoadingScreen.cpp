@@ -50,7 +50,8 @@ mcimg { display: block; position: absolute; }
 )PERLINRML";
     }
 
-    std::string BuildLoadingScreenRml(const std::string& templateText, const LoadingScreenText& t, int guiW, int guiH, double) {
+    std::string BuildLoadingScreenRml(const std::string& templateText, const LoadingScreenText& t, int guiW,
+                                      int guiH, double) {
         const int msgY = guiH / 2 - 24;
         const bool bar = t.progress >= 0.0f;
         const int barW = std::min(182, guiW - 40);
@@ -73,14 +74,19 @@ mcimg { display: block; position: absolute; }
         ReplaceAll(d, "bar_y", std::to_string(barY));
         ReplaceAll(d, "bar_w", std::to_string(barW));
         ReplaceAll(d, "bar_display", bar ? "block" : "none");
-        ReplaceAll(d, "fill_w", std::to_string(static_cast<int>(std::clamp(t.progress, 0.0f, 1.0f) * static_cast<float>(barW - 2))));
+        ReplaceAll(d, "fill_w",
+                   std::to_string(
+                       static_cast<int>(std::clamp(t.progress, 0.0f, 1.0f) * static_cast<float>(barW - 2))));
         ReplaceAll(d, "cancel", EscapeRml(t.cancel.empty() ? std::string("Cancel") : t.cancel));
         ReplaceAll(d, "message", FormatCodesToRml(t.message));
         ReplaceAll(d, "detail", FormatCodesToRml(t.detail));
         if (!t.warning.empty()) {
             const int w = std::min(guiW - 20, 330);
-            const std::string note = "<div style=\"left: " + std::to_string((guiW - w) / 2) + "px; top: " + std::to_string(btnY - 30) + "px; width: " + std::to_string(w) +
-                                     "px; height: 27px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffff55; z-index: 4;\">" +
+            const std::string note = "<div style=\"left: " + std::to_string((guiW - w) / 2) +
+                                     "px; top: " + std::to_string(btnY - 30) +
+                                     "px; width: " + std::to_string(w) +
+                                     "px; height: 27px; font-family: minecraft-shadow; font-size: 8px; "
+                                     "line-height: 9px; text-align: center; color: #ffff55; z-index: 4;\">" +
                                      EscapeRml(t.warning) + "</div>\n";
             const size_t at = d.rfind("</body>");
             if (at != std::string::npos)
@@ -119,24 +125,32 @@ div { display: block; position: absolute; }
         std::string d = ScreenTemplate("download_screen.rml", kDownloadHead);
         ReplaceAll(d, "w", N(guiW));
         ReplaceAll(d, "h", N(guiH));
-        d += "<div class=\"t c\" style=\"left:0px;top:" + N(y) + "px;width:" + N(guiW) + "px;\">" + EscapeRml(t.title) + "</div>\n";
-        d += "<div class=\"t c dim\" style=\"left:0px;top:" + N(y + 12) + "px;width:" + N(guiW) + "px;\">" + EscapeRml(t.subtitle) + "</div>\n";
+        d += "<div class=\"t c\" style=\"left:0px;top:" + N(y) + "px;width:" + N(guiW) + "px;\">" +
+             EscapeRml(t.title) + "</div>\n";
+        d += "<div class=\"t c dim\" style=\"left:0px;top:" + N(y + 12) + "px;width:" + N(guiW) + "px;\">" +
+             EscapeRml(t.subtitle) + "</div>\n";
         y += 30;
         for (const DownloadRow& r : t.rows) {
-            d += "<div class=\"t\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(barW) + "px;\">" + EscapeRml(r.label) + "</div>\n";
-            d += "<div class=\"t" + std::string(r.failed ? " bad" : " dim") + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(barW) +
-                 "px;text-align:right;\">" + EscapeRml(r.status) + "</div>\n";
+            d += "<div class=\"t\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(barW) +
+                 "px;\">" + EscapeRml(r.label) + "</div>\n";
+            d += "<div class=\"t" + std::string(r.failed ? " bad" : " dim") + "\" style=\"left:" + N(x) +
+                 "px;top:" + N(y) + "px;width:" + N(barW) + "px;text-align:right;\">" + EscapeRml(r.status) +
+                 "</div>\n";
             const int by = y + 12;
-            d += "<div style=\"left:" + N(x) + "px;top:" + N(by) + "px;width:" + N(barW) + "px;height:5px;background-color:#05060a;\"></div>\n";
+            d += "<div style=\"left:" + N(x) + "px;top:" + N(by) + "px;width:" + N(barW) +
+                 "px;height:5px;background-color:#05060a;\"></div>\n";
             const char* fill = r.failed ? "#c84a4a" : "#62d26a";
             if (r.progress >= 0.0f) {
-                const int w = static_cast<int>(std::clamp(r.progress, 0.0f, 1.0f) * static_cast<float>(barW - 2));
-                d += "<div style=\"left:" + N(x + 1) + "px;top:" + N(by + 1) + "px;width:" + N(w) + "px;height:3px;background-color:" + fill + ";\"></div>\n";
+                const int w =
+                    static_cast<int>(std::clamp(r.progress, 0.0f, 1.0f) * static_cast<float>(barW - 2));
+                d += "<div style=\"left:" + N(x + 1) + "px;top:" + N(by + 1) + "px;width:" + N(w) +
+                     "px;height:3px;background-color:" + fill + ";\"></div>\n";
             } else {
                 const int gw = std::max(12, barW / 5);
                 const double phase = std::fmod(time * 0.8, 1.0);
                 const int gx = x + 1 + static_cast<int>(phase * static_cast<double>(barW - 2 - gw));
-                d += "<div style=\"left:" + N(gx) + "px;top:" + N(by + 1) + "px;width:" + N(gw) + "px;height:3px;background-color:" + fill + ";\"></div>\n";
+                d += "<div style=\"left:" + N(gx) + "px;top:" + N(by + 1) + "px;width:" + N(gw) +
+                     "px;height:3px;background-color:" + fill + ";\"></div>\n";
             }
             y += 34;
         }
@@ -144,12 +158,16 @@ div { display: block; position: absolute; }
             const bool both = !t.retry.empty() && !t.skip.empty();
             const int bw = both ? 98 : 150;
             int bx = both ? guiW / 2 - 100 : guiW / 2 - bw / 2;
-            for (const auto& [id, label] : {std::pair<const char*, const std::string*>{kDownloadRetryId, &t.retry}, {kDownloadSkipId, &t.skip}}) {
+            for (const auto& [id, label] :
+                 {std::pair<const char*, const std::string*>{kDownloadRetryId, &t.retry},
+                  {kDownloadSkipId, &t.skip}}) {
                 if (label->empty())
                     continue;
-                d += "<div id=\"" + std::string(id) + "\" class=\"btn\" style=\"left:" + N(bx) + "px;top:" + N(y + 4) + "px;width:" + N(bw) +
-                     "px;\"><div class=\"face\" style=\"width:" + N(bw - 2) + "px;\"></div><div class=\"lbl\" style=\"width:" + N(bw) + "px;\">" +
-                     EscapeRml(*label) + "</div></div>\n";
+                d += "<div id=\"" + std::string(id) + "\" class=\"btn\" style=\"left:" + N(bx) +
+                     "px;top:" + N(y + 4) + "px;width:" + N(bw) +
+                     "px;\"><div class=\"face\" style=\"width:" + N(bw - 2) +
+                     "px;\"></div><div class=\"lbl\" style=\"width:" + N(bw) + "px;\">" + EscapeRml(*label) +
+                     "</div></div>\n";
                 bx += bw + 4;
             }
         }

@@ -67,8 +67,8 @@ namespace perlin::sysinfo {
 #elif defined(_WIN32)
         char buffer[256] = {};
         DWORD size = sizeof(buffer);
-        if (RegGetValueA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", "ProcessorNameString",
-                         RRF_RT_REG_SZ, nullptr, buffer, &size) == ERROR_SUCCESS)
+        if (RegGetValueA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                         "ProcessorNameString", RRF_RT_REG_SZ, nullptr, buffer, &size) == ERROR_SUCCESS)
             return Trim(buffer);
         return {};
 #elif defined(__APPLE__)
@@ -117,7 +117,8 @@ namespace perlin::sysinfo {
 #elif defined(__APPLE__)
         mach_task_basic_info info{};
         mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
-        return task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS
+        return task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info),
+                         &count) == KERN_SUCCESS
                    ? info.resident_size
                    : 0;
 #else
@@ -134,7 +135,8 @@ namespace perlin::sysinfo {
 #elif defined(__APPLE__)
         mach_task_basic_info info{};
         mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
-        return task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS
+        return task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info),
+                         &count) == KERN_SUCCESS
                    ? info.resident_size_max
                    : 0;
 #else
@@ -147,7 +149,8 @@ namespace perlin::sysinfo {
         return "Clang " + std::to_string(__clang_major__) + "." + std::to_string(__clang_minor__) + "." +
                std::to_string(__clang_patchlevel__);
 #elif defined(__GNUC__)
-        return "GCC " + std::to_string(__GNUC__) + "." + std::to_string(__GNUC_MINOR__) + "." + std::to_string(__GNUC_PATCHLEVEL__);
+        return "GCC " + std::to_string(__GNUC__) + "." + std::to_string(__GNUC_MINOR__) + "." +
+               std::to_string(__GNUC_PATCHLEVEL__);
 #elif defined(_MSC_VER)
         return "MSVC " + std::to_string(_MSC_VER / 100) + "." + std::to_string(_MSC_VER % 100);
 #else
@@ -157,16 +160,25 @@ namespace perlin::sysinfo {
 
     std::string VendorName(unsigned id) {
         switch (id) {
-        case 0x10DE: return "NVIDIA Corporation";
+        case 0x10DE:
+            return "NVIDIA Corporation";
         case 0x1002:
-        case 0x1022: return "Advanced Micro Devices, Inc.";
-        case 0x8086: return "Intel";
-        case 0x106B: return "Apple";
-        case 0x13B5: return "ARM";
-        case 0x5143: return "Qualcomm";
-        case 0x1414: return "Microsoft";
-        case 0x10005: return "Mesa";
-        default: return {};
+        case 0x1022:
+            return "Advanced Micro Devices, Inc.";
+        case 0x8086:
+            return "Intel";
+        case 0x106B:
+            return "Apple";
+        case 0x13B5:
+            return "ARM";
+        case 0x5143:
+            return "Qualcomm";
+        case 0x1414:
+            return "Microsoft";
+        case 0x10005:
+            return "Mesa";
+        default:
+            return {};
         }
     }
 
@@ -175,8 +187,9 @@ namespace perlin::sysinfo {
         char want[32];
         std::snprintf(want, sizeof(want), "VEN_%04X&DEV_%04X", vendorId, deviceId);
         HKEY key = nullptr;
-        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}", 0,
-                          KEY_READ, &key) != ERROR_SUCCESS)
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                          "SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}",
+                          0, KEY_READ, &key) != ERROR_SUCCESS)
             return {};
         std::string found;
         for (DWORD i = 0; found.empty(); i++) {
@@ -187,7 +200,8 @@ namespace perlin::sysinfo {
             char id[512] = {};
             DWORD size = sizeof(id);
             std::string sub = std::string(name);
-            if (RegGetValueA(key, sub.c_str(), "MatchingDeviceId", RRF_RT_REG_SZ, nullptr, id, &size) != ERROR_SUCCESS)
+            if (RegGetValueA(key, sub.c_str(), "MatchingDeviceId", RRF_RT_REG_SZ, nullptr, id, &size) !=
+                ERROR_SUCCESS)
                 continue;
             std::string upper = id;
             for (char& c : upper)
@@ -196,7 +210,8 @@ namespace perlin::sysinfo {
                 continue;
             char desc[256] = {};
             size = sizeof(desc);
-            if (RegGetValueA(key, sub.c_str(), "DriverDesc", RRF_RT_REG_SZ, nullptr, desc, &size) == ERROR_SUCCESS)
+            if (RegGetValueA(key, sub.c_str(), "DriverDesc", RRF_RT_REG_SZ, nullptr, desc, &size) ==
+                ERROR_SUCCESS)
                 found = Trim(desc);
         }
         RegCloseKey(key);
@@ -205,7 +220,8 @@ namespace perlin::sysinfo {
         char vendor[8], device[8];
         std::snprintf(vendor, sizeof(vendor), "%04x", vendorId);
         std::snprintf(device, sizeof(device), "%04x", deviceId);
-        for (const char* path : {"/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids", "/usr/share/pci.ids"}) {
+        for (const char* path :
+             {"/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids", "/usr/share/pci.ids"}) {
             std::ifstream f(path);
             if (!f.good())
                 continue;

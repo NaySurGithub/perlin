@@ -10,12 +10,12 @@ using namespace perlin;
 
 namespace {
     int failures = 0;
-#define CHECK(cond)                                                          \
-    do {                                                                     \
-        if (!(cond)) {                                                       \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);      \
-            failures++;                                                      \
-        }                                                                    \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                                      \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
     struct Call {
@@ -26,7 +26,11 @@ namespace {
     std::string localMessages;
     std::vector<std::string> unregistered;
     Status denyAll = Status::Ok;
-    std::map<std::string, std::string> hostSettings{{"visible", "true"}, {"unit", "KilometersPerHour"}, {"corner", "TopRight"}, {"warn_at", "8"}, {"smoothing", "4"}};
+    std::map<std::string, std::string> hostSettings{{"visible", "true"},
+                                                    {"unit", "KilometersPerHour"},
+                                                    {"corner", "TopRight"},
+                                                    {"warn_at", "8"},
+                                                    {"smoothing", "4"}};
 
     enum class Mode { Fast, Slow };
 }
@@ -38,10 +42,14 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
     abi::Reader r(bytes, inLen);
     abi::Writer w;
     switch (o) {
-    case Op::LocalMessage: localMessages += r.str() + "\n"; break;
+    case Op::LocalMessage:
+        localMessages += r.str() + "\n";
+        break;
     case Op::SettingList: {
         std::vector<abi::SettingEntry> list;
-        for (const auto& [id, value] : hostSettings) list.push_back({id, value});
+        list.reserve(hostSettings.size());
+        for (const auto& [id, value] : hostSettings)
+            list.push_back({id, value});
         w.write(list);
         break;
     }
@@ -102,20 +110,31 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
         w.write(b);
         break;
     }
-    case Op::PlayerLook: w.put(90.0f).put(-10.0f); break;
+    case Op::PlayerLook:
+        w.put(90.0f).put(-10.0f);
+        break;
     case Op::SettingGet: {
         const std::string id = r.str();
-        if (!hostSettings.count(id)) return static_cast<int32_t>(Status::NotFound);
+        if (!hostSettings.contains(id))
+            return static_cast<int32_t>(Status::NotFound);
         w.raw(hostSettings[id].data(), hostSettings[id].size());
         break;
     }
-    case Op::CommandUnregister: unregistered.push_back(r.str()); break;
-    case Op::CopyFile: case Op::MoveFile: case Op::DownloadFile: case Op::OpenUrl:
-        if (denyAll != Status::Ok) return static_cast<int32_t>(denyAll);
+    case Op::CommandUnregister:
+        unregistered.push_back(r.str());
         break;
-    default: break;
+    case Op::CopyFile:
+    case Op::MoveFile:
+    case Op::DownloadFile:
+    case Op::OpenUrl:
+        if (denyAll != Status::Ok)
+            return static_cast<int32_t>(denyAll);
+        break;
+    default:
+        break;
     }
-    if (w.Size() > outCap) return -(abi::kNeedMoreBase + static_cast<int32_t>(w.Size()));
+    if (w.Size() > outCap)
+        return -(abi::kNeedMoreBase + static_cast<int32_t>(w.Size()));
     std::memcpy(out, w.Data(), w.Size());
     return static_cast<int32_t>(w.Size());
 }
@@ -133,15 +152,24 @@ namespace {
     }
 }
 
-namespace { perlin::Context* ctx_for_test = nullptr; }
-
-PERLIN_PLUGIN(ctx) {
-    ctx_for_test = &ctx;
-    ctx.command<"tp">("teleport", [](int x, int y, int z) { teleported[0] = x; teleported[1] = y; teleported[2] = z; });
-    ctx.command<"mode">("set mode", [](std::optional<Mode> m) { seenMode = m; });
-    ctx.on_change(settings::unit, [](settings::Unit u) { seenUnit = u; });
-    ctx.on_press(settings::reset_peak, [] { pressed++; });
+namespace {
+    perlin::Context* ctx_for_test = nullptr;
 }
+
+struct SdkTestPlugin : perlin::Plugin {
+    void onEnable(perlin::Context& ctx) override {
+        ctx_for_test = &ctx;
+        ctx.command<"tp">("teleport", [](int x, int y, int z) {
+            teleported[0] = x;
+            teleported[1] = y;
+            teleported[2] = z;
+        });
+        ctx.command<"mode">("set mode", [](std::optional<Mode> m) { seenMode = m; });
+        ctx.on_change(settings::unit, [](settings::Unit u) { seenUnit = u; });
+        ctx.on_press(settings::reset_peak, [] { pressed++; });
+    }
+};
+PERLIN_REGISTER(SdkTestPlugin)
 
 int main() {
     perlin_event(static_cast<uint32_t>(abi::Event::Load), nullptr, 0);
@@ -156,11 +184,14 @@ int main() {
     CHECK(subs & (1u << static_cast<uint32_t>(abi::Event::Command)));
     CHECK(subs & (1u << static_cast<uint32_t>(abi::Event::SettingChanged)));
 
-    send_event(abi::Event::SettingChanged, abi::EventSettingChanged{"unit", "BlocksPerSecond", abi::SettingKind::Choice});
+    send_event(abi::Event::SettingChanged,
+               abi::EventSettingChanged{"unit", "BlocksPerSecond", abi::SettingKind::Choice});
     CHECK(settings::unit == settings::Unit::BlocksPerSecond && seenUnit == settings::Unit::BlocksPerSecond);
-    send_event(abi::Event::SettingChanged, abi::EventSettingChanged{"warn_at", "12.5", abi::SettingKind::Number});
+    send_event(abi::Event::SettingChanged,
+               abi::EventSettingChanged{"warn_at", "12.5", abi::SettingKind::Number});
     CHECK(settings::warn_at.get() == 12.5);
-    send_event(abi::Event::SettingChanged, abi::EventSettingChanged{"reset_peak", "pressed", abi::SettingKind::Button});
+    send_event(abi::Event::SettingChanged,
+               abi::EventSettingChanged{"reset_peak", "pressed", abi::SettingKind::Button});
     CHECK(pressed == 1);
     CHECK(settings::visible.set(false).has_value());
     CHECK(!settings::visible.get() && hostSettings["visible"] == "false");
@@ -192,7 +223,8 @@ int main() {
         abi::Reader r(calls[0].in.data(), calls[0].in.size());
         const auto from = r.read<abi::FileLocation>();
         const auto to = r.read<abi::FileLocation>();
-        CHECK(calls[0].op == Op::CopyFile && from.area == Area::Mod && to.area == Area::ResourcePacks && to.path == "pack.zip");
+        CHECK(calls[0].op == Op::CopyFile && from.area == Area::Mod && to.area == Area::ResourcePacks &&
+              to.path == "pack.zip");
     }
     denyAll = Status::Denied;
     const auto denied = fs::move(fs::in(Area::Mod, "a"), fs::in(Area::Screenshots, "a"));
@@ -201,7 +233,8 @@ int main() {
     denyAll = Status::Ok;
 
     bool dl = false;
-    auto id = net::download("https://example.com/p.zip", fs::in(Area::Mod, "p.zip"), [&](const net::Response& r) { dl = r.status == 200; });
+    auto id = net::download("https://example.com/p.zip", fs::in(Area::Mod, "p.zip"),
+                            [&](const net::Response& r) { dl = r.status == 200; });
     CHECK(id.has_value());
     abi::EventHttp http;
     http.id = *id;
@@ -220,7 +253,8 @@ int main() {
         CHECK(b != nullptr);
         if (b) {
             CHECK(b->pos == BlockPos(4, 70, -8) && b->face == Face::North && b->distance == 3.5);
-            CHECK(b->block.name == "minecraft:wheat" && b->block.state_int("growth") == 5 && b->block.state_bool("open_bit"));
+            CHECK(b->block.name == "minecraft:wheat" && b->block.state_int("growth") == 5 &&
+                  b->block.state_bool("open_bit"));
             CHECK(!b->block.state("missing") && b->block.state_int("missing", 9) == 9);
             CHECK(b->props.tool == Tool::Pickaxe && b->props.harvestLevel == 1 && b->display_name == "Stone");
             CHECK(b->entity().present && b->entity().frontText == "hello");
@@ -251,9 +285,11 @@ int main() {
         w.write(e);
         abi::Reader r(w.Data(), w.Size());
         const auto back = r.read<abi::Entity>();
-        CHECK(r.Ok() && back.attributes.size() == 1 && back.attributes[0].max == 20 && back.properties[0].second == 2.0f && back.propertyText[0].second == "calm");
+        CHECK(r.Ok() && back.attributes.size() == 1 && back.attributes[0].max == 20 &&
+              back.properties[0].second == 2.0f && back.propertyText[0].second == "calm");
     }
-    CHECK(std::format("{}", abi::Tool::Pickaxe) == "Pickaxe" && std::format("{}", abi::NameKind::Entity) == "Entity");
+    CHECK(std::format("{}", abi::Tool::Pickaxe) == "Pickaxe" &&
+          std::format("{}", abi::NameKind::Entity) == "Entity");
 
     std::printf(failures ? "sdk_test: %d failure(s)\n" : "sdk_test: ok\n", failures);
     return failures ? 1 : 0;

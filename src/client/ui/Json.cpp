@@ -55,9 +55,14 @@ namespace perlin::ui {
                 if (error.empty()) {
                     size_t line = 1, column = 1;
                     for (size_t i = 0; i < pos && i < text.size(); i++) {
-                        if (text[i] == '\n') { line++; column = 1; } else column++;
+                        if (text[i] == '\n') {
+                            line++;
+                            column = 1;
+                        } else
+                            column++;
                     }
-                    error = std::string(message) + " at line " + std::to_string(line) + " column " + std::to_string(column);
+                    error = std::string(message) + " at line " + std::to_string(line) + " column " +
+                            std::to_string(column);
                 }
                 return false;
             }
@@ -114,11 +119,21 @@ namespace perlin::ui {
                         break;
                     const char e = text[pos++];
                     switch (e) {
-                    case 'n': out += '\n'; break;
-                    case 't': out += '\t'; break;
-                    case 'r': out += '\r'; break;
-                    case 'b': out += '\b'; break;
-                    case 'f': out += '\f'; break;
+                    case 'n':
+                        out += '\n';
+                        break;
+                    case 't':
+                        out += '\t';
+                        break;
+                    case 'r':
+                        out += '\r';
+                        break;
+                    case 'b':
+                        out += '\b';
+                        break;
+                    case 'f':
+                        out += '\f';
+                        break;
                     case 'u': {
                         auto hex4 = [&](uint32_t& value) {
                             if (pos + 4 > text.size())
@@ -127,10 +142,14 @@ namespace perlin::ui {
                             for (int i = 0; i < 4; i++) {
                                 const char h = text[pos + i];
                                 value <<= 4;
-                                if (h >= '0' && h <= '9') value |= h - '0';
-                                else if (h >= 'a' && h <= 'f') value |= h - 'a' + 10;
-                                else if (h >= 'A' && h <= 'F') value |= h - 'A' + 10;
-                                else return false;
+                                if (h >= '0' && h <= '9')
+                                    value |= h - '0';
+                                else if (h >= 'a' && h <= 'f')
+                                    value |= h - 'a' + 10;
+                                else if (h >= 'A' && h <= 'F')
+                                    value |= h - 'A' + 10;
+                                else
+                                    return false;
                             }
                             pos += 4;
                             return true;
@@ -138,7 +157,8 @@ namespace perlin::ui {
                         uint32_t cp = 0;
                         if (!hex4(cp))
                             return Fail("bad \\u escape");
-                        if (cp >= 0xD800 && cp < 0xDC00 && pos + 1 < text.size() && text[pos] == '\\' && text[pos + 1] == 'u') {
+                        if (cp >= 0xD800 && cp < 0xDC00 && pos + 1 < text.size() && text[pos] == '\\' &&
+                            text[pos + 1] == 'u') {
                             pos += 2;
                             uint32_t low = 0;
                             if (!hex4(low))
@@ -148,7 +168,9 @@ namespace perlin::ui {
                         AppendUtf8(out, cp);
                         break;
                     }
-                    default: out += e; break;
+                    default:
+                        out += e;
+                        break;
                     }
                 }
                 return Fail("unterminated string");
@@ -220,14 +242,27 @@ namespace perlin::ui {
                     out.type = Json::Type::String;
                     return ParseString(out.string);
                 }
-                if (text.compare(pos, 4, "true") == 0) { pos += 4; out = Json(true); return true; }
-                if (text.compare(pos, 5, "false") == 0) { pos += 5; out = Json(false); return true; }
-                if (text.compare(pos, 4, "null") == 0) { pos += 4; out = Json(); return true; }
+                if (text.compare(pos, 4, "true") == 0) {
+                    pos += 4;
+                    out = Json(true);
+                    return true;
+                }
+                if (text.compare(pos, 5, "false") == 0) {
+                    pos += 5;
+                    out = Json(false);
+                    return true;
+                }
+                if (text.compare(pos, 4, "null") == 0) {
+                    pos += 4;
+                    out = Json();
+                    return true;
+                }
                 const size_t start = pos;
                 if (text[pos] == '-' || text[pos] == '+')
                     pos++;
-                while (pos < text.size() && (std::isdigit(static_cast<unsigned char>(text[pos])) || text[pos] == '.' ||
-                                             text[pos] == 'e' || text[pos] == 'E' || text[pos] == '-' || text[pos] == '+'))
+                while (pos < text.size() &&
+                       (std::isdigit(static_cast<unsigned char>(text[pos])) || text[pos] == '.' ||
+                        text[pos] == 'e' || text[pos] == 'E' || text[pos] == '-' || text[pos] == '+'))
                     pos++;
                 if (pos == start)
                     return Fail("unexpected character");
@@ -245,11 +280,21 @@ namespace perlin::ui {
             out += '"';
             for (const char c : s) {
                 switch (c) {
-                case '"': out += "\\\""; break;
-                case '\\': out += "\\\\"; break;
-                case '\n': out += "\\n"; break;
-                case '\t': out += "\\t"; break;
-                case '\r': out += "\\r"; break;
+                case '"':
+                    out += "\\\"";
+                    break;
+                case '\\':
+                    out += "\\\\";
+                    break;
+                case '\n':
+                    out += "\\n";
+                    break;
+                case '\t':
+                    out += "\\t";
+                    break;
+                case '\r':
+                    out += "\\r";
+                    break;
                 default:
                     if (static_cast<unsigned char>(c) < 0x20) {
                         char buffer[8];
@@ -271,8 +316,12 @@ namespace perlin::ui {
                 }
             };
             switch (j.type) {
-            case Json::Type::Null: out += "null"; break;
-            case Json::Type::Bool: out += j.boolean ? "true" : "false"; break;
+            case Json::Type::Null:
+                out += "null";
+                break;
+            case Json::Type::Bool:
+                out += j.boolean ? "true" : "false";
+                break;
             case Json::Type::Number: {
                 char buffer[64];
                 if (j.number == std::floor(j.number) && std::fabs(j.number) < 1e15)
@@ -282,27 +331,33 @@ namespace perlin::ui {
                 out += buffer;
                 break;
             }
-            case Json::Type::String: DumpString(out, j.string); break;
+            case Json::Type::String:
+                DumpString(out, j.string);
+                break;
             case Json::Type::Array:
                 out += '[';
                 for (size_t i = 0; i < j.array.size(); i++) {
-                    if (i) out += ',';
+                    if (i)
+                        out += ',';
                     newline(level + 1);
                     DumpValue(out, j.array[i], indent, level + 1);
                 }
-                if (!j.array.empty()) newline(level);
+                if (!j.array.empty())
+                    newline(level);
                 out += ']';
                 break;
             case Json::Type::Object:
                 out += '{';
                 for (size_t i = 0; i < j.object.size(); i++) {
-                    if (i) out += ',';
+                    if (i)
+                        out += ',';
                     newline(level + 1);
                     DumpString(out, j.object[i].first);
                     out += indent >= 0 ? ": " : ":";
                     DumpValue(out, j.object[i].second, indent, level + 1);
                 }
-                if (!j.object.empty()) newline(level);
+                if (!j.object.empty())
+                    newline(level);
                 out += '}';
                 break;
             }
@@ -352,8 +407,8 @@ namespace perlin::ui {
     }
 
     bool Json::Parse(std::string_view text, Json& out, std::string& error) {
-        if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
-            static_cast<unsigned char>(text[2]) == 0xBF)
+        if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF &&
+            static_cast<unsigned char>(text[1]) == 0xBB && static_cast<unsigned char>(text[2]) == 0xBF)
             text.remove_prefix(3);
         Parser parser;
         parser.text = text;

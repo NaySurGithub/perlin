@@ -14,33 +14,51 @@ namespace perlin::audio {
     }
 
     const char* CategoryName(Category c) {
-        static const char* kNames[] = {"master", "music", "record", "weather", "block", "hostile", "neutral", "player", "ambient", "voice"};
+        static const char* kNames[] = {"master",  "music",   "record", "weather", "block",
+                                       "hostile", "neutral", "player", "ambient", "voice"};
         return kNames[static_cast<int>(c)];
     }
 
     Category CategoryFor(const std::string& category, const std::string& name) {
-        if (category == "music") return Category::Music;
-        if (category == "record") return Category::Record;
-        if (category == "weather") return Category::Weather;
-        if (category == "block") return Category::Block;
-        if (category == "hostile") return Category::Hostile;
-        if (category == "neutral") return Category::Neutral;
-        if (category == "player") return Category::Player;
-        if (category == "ambient") return Category::Ambient;
-        if (category == "ui") return Category::Master;
-        if (name.starts_with("music.")) return Category::Music;
-        if (name.starts_with("record.")) return Category::Record;
-        if (name.starts_with("ambient.weather") || name.starts_with("weather.")) return Category::Weather;
-        if (name.starts_with("ambient.")) return Category::Ambient;
-        if (name.starts_with("mob.")) return Category::Neutral;
-        if (name.starts_with("step.") || name.starts_with("dig.") || name.starts_with("break.") || name.starts_with("place.") ||
-            name.starts_with("hit.") || name.starts_with("fall.") || name.starts_with("block."))
+        if (category == "music")
+            return Category::Music;
+        if (category == "record")
+            return Category::Record;
+        if (category == "weather")
+            return Category::Weather;
+        if (category == "block")
+            return Category::Block;
+        if (category == "hostile")
+            return Category::Hostile;
+        if (category == "neutral")
+            return Category::Neutral;
+        if (category == "player")
+            return Category::Player;
+        if (category == "ambient")
+            return Category::Ambient;
+        if (category == "ui")
+            return Category::Master;
+        if (name.starts_with("music."))
+            return Category::Music;
+        if (name.starts_with("record."))
+            return Category::Record;
+        if (name.starts_with("ambient.weather") || name.starts_with("weather."))
+            return Category::Weather;
+        if (name.starts_with("ambient."))
+            return Category::Ambient;
+        if (name.starts_with("mob."))
+            return Category::Neutral;
+        if (name.starts_with("step.") || name.starts_with("dig.") || name.starts_with("break.") ||
+            name.starts_with("place.") || name.starts_with("hit.") || name.starts_with("fall.") ||
+            name.starts_with("block."))
             return Category::Block;
         return Category::Player;
     }
 
     AudioEngine::AudioEngine() = default;
-    AudioEngine::~AudioEngine() { Close(); }
+    AudioEngine::~AudioEngine() {
+        Close();
+    }
 
     bool AudioEngine::Open(int sampleRate) {
         Close();
@@ -56,7 +74,8 @@ namespace perlin::audio {
         spec.format = SDL_AUDIO_F32;
         spec.channels = 2;
         spec.freq = sampleRate;
-        stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, &AudioEngine::Callback, this);
+        stream =
+            SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, &AudioEngine::Callback, this);
         if (!stream) {
             Log("audio", "cannot open the playback device: {}", SDL_GetError());
             return false;
@@ -111,8 +130,9 @@ namespace perlin::audio {
         std::lock_guard lock(mutex);
         if (voice.positional && glm::length(voice.position - listener) > static_cast<double>(voice.range))
             return 0;
-        const uint64_t nowMs = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        const uint64_t nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                         std::chrono::steady_clock::now().time_since_epoch())
+                                                         .count());
         if (voice.positional && !voice.loop && !voice.name.empty()) {
             // predict+echo dedup: server echo of place/break/hit ~1 frame later; same sound+spot in window = echo;
             // legit repeats (steps 250ms+, bridging 166ms+ in other cells) fall outside
@@ -163,7 +183,8 @@ namespace perlin::audio {
 
     bool AudioEngine::Playing(const std::string& name) const {
         std::lock_guard lock(mutex);
-        return std::any_of(voices.begin(), voices.end(), [&](const Voice& v) { return v.name == name && !v.stopping; });
+        return std::any_of(voices.begin(), voices.end(),
+                           [&](const Voice& v) { return v.name == name && !v.stopping; });
     }
 
     float AudioEngine::Attenuation(float distance, float range) {
@@ -200,7 +221,8 @@ namespace perlin::audio {
                 left = std::min(left, 1.0f);
                 rightGain = std::min(rightGain, 1.0f);
             }
-            const double step = static_cast<double>(pcm.rate) * static_cast<double>(v.pitch) / static_cast<double>(rate);
+            const double step =
+                static_cast<double>(pcm.rate) * static_cast<double>(v.pitch) / static_cast<double>(rate);
             const float fadeStep = 1.0f / (0.02f * static_cast<float>(rate));
             const int channels = pcm.channels;
             for (int i = 0; i < frames; i++) {
@@ -243,9 +265,10 @@ namespace perlin::audio {
                 v.cursor += step;
             }
         }
-        voices.erase(std::remove_if(voices.begin(), voices.end(),
-                                    [](const Voice& v) { return v.fade <= 0.0f || (v.stopping && v.fade <= 0.0f); }),
-                     voices.end());
+        voices.erase(
+            std::remove_if(voices.begin(), voices.end(),
+                           [](const Voice& v) { return v.fade <= 0.0f || (v.stopping && v.fade <= 0.0f); }),
+            voices.end());
         for (int i = 0; i < frames * 2; i++) {
             const float a = std::fabs(out[i]);
             if (a > 0.8f)

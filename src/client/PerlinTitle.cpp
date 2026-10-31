@@ -1,5 +1,6 @@
 #include "client/PerlinInternal.hpp"
 #include "util/Log.hpp"
+#include "client/update/Updater.hpp"
 
 namespace perlin {
     namespace {
@@ -517,7 +518,7 @@ namespace perlin {
             title.selected = -1;
             title.scroll = 0;
             LoadServers(title.servers, options.server);
-            title.version = std::string("Perlin ") + PERLIN_VERSION;
+            title.version = std::string("Perlin ") + PERLIN_VERSION + " (" + update::BuildLabel() + ")";
             if (titleScreen.returnToServers) {
                 titleScreen.returnToServers = false;
                 title.page = ui::TitlePage::Servers;
@@ -795,6 +796,7 @@ namespace perlin {
             titleScreen.lastPage != ui::TitlePage::Edit && titleScreen.lastPage != ui::TitlePage::Direct &&
             titleScreen.lastPage != ui::TitlePage::AddRealm) {
             std::vector<std::string> addresses;
+            addresses.reserve(title.servers.size());
             for (const ui::ServerEntry& e : title.servers)
                 addresses.push_back(e.address);
             PingServers(addresses);
@@ -946,6 +948,18 @@ namespace perlin {
             std::to_string(guiH) + "|" + std::to_string(static_cast<int>(title.page)) + "|" +
             std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" +
             std::to_string(title.focus) + (title.nativePanorama ? "|np" : "|sp") + "|" + title.logoSrc;
+        {
+            // the update line: progress while downloading, a button once there is something to do
+            using update::State;
+            const update::Status u = update::Current();
+            title.updateAction = u.state == State::Ready || u.state == State::Available;
+            title.updateText =
+                u.state == State::Downloading
+                    ? u.message + " " + std::to_string(static_cast<int>(u.progress * 100.0f)) + "%"
+                : title.updateAction || u.state == State::Failed ? u.message
+                                                                 : std::string();
+        }
+        signature += "|" + title.updateText + (title.updateAction ? "!" : "");
         signature += "|" + title.accountLabel + "|" + title.accountUser + "|" + title.accountHead;
         signature += "|" + std::to_string(title.accountScroll);
         if (title.page == ui::TitlePage::Accounts)
@@ -1050,6 +1064,9 @@ namespace perlin {
                     ApplyActiveAccount();
             } else if (hover == ui::kTitleSingle) {
                 JoinSingleplayer();
+            } else if (hover == ui::kTitleUpdate) {
+                if (update::Act())
+                    platform->isRunning = false;
             } else if (hover == ui::kTitleMulti) {
                 title.page = ui::TitlePage::Servers;
                 title.tab = ui::ServerTab::Lan;

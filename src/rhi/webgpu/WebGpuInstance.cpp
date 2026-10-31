@@ -24,29 +24,39 @@ WGPUDevice emscripten_webgpu_get_device(void);
 namespace rhi::webgpu {
     namespace {
         void OnUncapturedError(WGPUDevice const*, WGPUErrorType type, WGPUStringView message, void*, void*) {
-            std::fprintf(stderr, "[webgpu] validation error (%d): %s\n", static_cast<int>(type), Str(message).c_str());
+            std::fprintf(stderr, "[webgpu] validation error (%d): %s\n", static_cast<int>(type),
+                         Str(message).c_str());
         }
 
-        void OnDeviceLost(WGPUDevice const*, WGPUDeviceLostReason reason, WGPUStringView message, void*, void*) {
+        void OnDeviceLost(WGPUDevice const*, WGPUDeviceLostReason reason, WGPUStringView message, void*,
+                          void*) {
             // destroying the device on shutdown reports a loss too; only the unexpected ones matter
             if (reason != WGPUDeviceLostReason_Destroyed)
-                std::fprintf(stderr, "[webgpu] device lost (%d): %s\n", static_cast<int>(reason), Str(message).c_str());
+                std::fprintf(stderr, "[webgpu] device lost (%d): %s\n", static_cast<int>(reason),
+                             Str(message).c_str());
         }
 
         AdapterType ToAdapterType(WGPUAdapterType type) {
             switch (type) {
-            case WGPUAdapterType_DiscreteGPU: return AdapterType::Discrete;
-            case WGPUAdapterType_IntegratedGPU: return AdapterType::Integrated;
-            case WGPUAdapterType_CPU: return AdapterType::Cpu;
-            default: return AdapterType::Unknown;
+            case WGPUAdapterType_DiscreteGPU:
+                return AdapterType::Discrete;
+            case WGPUAdapterType_IntegratedGPU:
+                return AdapterType::Integrated;
+            case WGPUAdapterType_CPU:
+                return AdapterType::Cpu;
+            default:
+                return AdapterType::Unknown;
             }
         }
 
         WGPUPresentMode ToPresent(PresentMode mode) {
             switch (mode) {
-            case PresentMode::Immediate: return WGPUPresentMode_Immediate;
-            case PresentMode::Mailbox: return WGPUPresentMode_Mailbox;
-            default: return WGPUPresentMode_Fifo;
+            case PresentMode::Immediate:
+                return WGPUPresentMode_Immediate;
+            case PresentMode::Mailbox:
+                return WGPUPresentMode_Mailbox;
+            default:
+                return WGPUPresentMode_Fifo;
             }
         }
 
@@ -57,7 +67,8 @@ namespace rhi::webgpu {
             std::string message;
         };
 
-        void OnDevice(WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message, void* a, void*) {
+        void OnDevice(WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message, void* a,
+                      void*) {
             auto* s = static_cast<RequestState*>(a);
             s->ok = status == WGPURequestDeviceStatus_Success;
             s->device = device;
@@ -79,16 +90,17 @@ namespace rhi::webgpu {
         }
 
         constexpr WGPUFeatureName kWantedFeatures[] = {
-            WGPUFeatureName_DepthClipControl,       WGPUFeatureName_Depth32FloatStencil8, WGPUFeatureName_TextureCompressionBC,
-            WGPUFeatureName_IndirectFirstInstance,  WGPUFeatureName_RG11B10UfloatRenderable,
-            WGPUFeatureName_Float32Filterable,      WGPUFeatureName_Float32Blendable,
+            WGPUFeatureName_DepthClipControl,        WGPUFeatureName_Depth32FloatStencil8,
+            WGPUFeatureName_TextureCompressionBC,    WGPUFeatureName_IndirectFirstInstance,
+            WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_Float32Filterable,
+            WGPUFeatureName_Float32Blendable,
         };
 
         class WebGpuSwapchain final : public Swapchain {
         public:
             WebGpuSwapchain(WebGpuDevice& device, Owned<WGPUSurface> surface, const SwapchainDesc& desc)
-                : device(device), surface(std::move(surface)), width(desc.width), height(desc.height), present(desc.present),
-                  allowSampling(desc.allowSampling) {}
+                : device(device), surface(std::move(surface)), width(desc.width), height(desc.height),
+                  present(desc.present), allowSampling(desc.allowSampling) {}
 
             ~WebGpuSwapchain() override {
                 if (handle)
@@ -99,7 +111,9 @@ namespace rhi::webgpu {
 
             bool Init() {
                 WGPUSurfaceCapabilities caps{};
-                if (wgpuSurfaceGetCapabilities(surface.Get(), device.Adapter(), &caps) != WGPUStatus_Success || !caps.formatCount) {
+                if (wgpuSurfaceGetCapabilities(surface.Get(), device.Adapter(), &caps) !=
+                        WGPUStatus_Success ||
+                    !caps.formatCount) {
                     std::fprintf(stderr, "[webgpu] surface reports no capabilities\n");
                     return false;
                 }
@@ -142,8 +156,11 @@ namespace rhi::webgpu {
                 WGPUSurfaceTexture st{};
                 wgpuSurfaceGetCurrentTexture(surface.Get(), &st);
                 switch (st.status) {
-                case WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal: break;
-                case WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal: needsConfigure = true; break;
+                case WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal:
+                    break;
+                case WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal:
+                    needsConfigure = true;
+                    break;
                 case WGPUSurfaceGetCurrentTextureStatus_Outdated:
                 case WGPUSurfaceGetCurrentTextureStatus_Lost:
                     if (st.texture)
@@ -304,7 +321,8 @@ namespace rhi::webgpu {
                 WGPUInstanceExtras extras{};
                 extras.chain.sType = static_cast<WGPUSType>(WGPUSType_InstanceExtras);
                 extras.backends = WGPUInstanceBackend_Primary;
-                extras.flags = options.validation ? (WGPUInstanceFlag_Debug | WGPUInstanceFlag_Validation) : WGPUInstanceFlag_Default;
+                extras.flags = options.validation ? (WGPUInstanceFlag_Debug | WGPUInstanceFlag_Validation)
+                                                  : WGPUInstanceFlag_Default;
                 WGPUInstanceDescriptor id{};
                 id.nextInChain = &extras.chain;
                 instance = Owned<WGPUInstance>(wgpuCreateInstance(&id));
@@ -350,8 +368,9 @@ namespace rhi::webgpu {
                 if (!raw)
                     return nullptr;
                 wgpuInstanceAddRef(instance.Get());
-                auto device = std::make_unique<WebGpuDevice>(Owned<WGPUInstance>(instance.Get()), Owned<WGPUAdapter>(), Owned<WGPUDevice>(raw), opts,
-                                                             infos[0], false);
+                auto device =
+                    std::make_unique<WebGpuDevice>(Owned<WGPUInstance>(instance.Get()), Owned<WGPUAdapter>(),
+                                                   Owned<WGPUDevice>(raw), opts, infos[0], false);
 #else
                 WGPUAdapter adapter = adapters[opts.adapterIndex].Get();
                 std::vector<WGPUFeatureName> features;
@@ -382,8 +401,9 @@ namespace rhi::webgpu {
                 }
                 wgpuAdapterAddRef(adapter);
                 wgpuInstanceAddRef(instance.Get());
-                auto device = std::make_unique<WebGpuDevice>(Owned<WGPUInstance>(instance.Get()), Owned<WGPUAdapter>(adapter),
-                                                             Owned<WGPUDevice>(state.device), opts, infos[opts.adapterIndex], true);
+                auto device = std::make_unique<WebGpuDevice>(
+                    Owned<WGPUInstance>(instance.Get()), Owned<WGPUAdapter>(adapter),
+                    Owned<WGPUDevice>(state.device), opts, infos[opts.adapterIndex], true);
 #endif
                 if (!device->Init())
                     return nullptr;
@@ -419,5 +439,7 @@ namespace rhi::webgpu {
 }
 
 namespace rhi::backends {
-    std::unique_ptr<Instance> CreateWebGpuInstance(const InstanceOptions& options) { return webgpu::MakeInstance(options); }
+    std::unique_ptr<Instance> CreateWebGpuInstance(const InstanceOptions& options) {
+        return webgpu::MakeInstance(options);
+    }
 }

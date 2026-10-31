@@ -59,7 +59,9 @@ namespace rhi::d3d12 {
         bool Init(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t capacity);
         uint32_t Alloc();
         void Free(uint32_t index);
-        D3D12_CPU_DESCRIPTOR_HANDLE Handle(uint32_t index) const { return {cpuStart.ptr + static_cast<SIZE_T>(index) * increment}; }
+        D3D12_CPU_DESCRIPTOR_HANDLE Handle(uint32_t index) const {
+            return {cpuStart.ptr + static_cast<SIZE_T>(index) * increment};
+        }
 
     private:
         winrt::com_ptr<ID3D12DescriptorHeap> heap;
@@ -78,8 +80,12 @@ namespace rhi::d3d12 {
         // returns false when no range of that size is free
         bool Alloc(uint32_t count, uint32_t& offset);
         void Free(uint32_t offset, uint32_t count);
-        D3D12_CPU_DESCRIPTOR_HANDLE Cpu(uint32_t index) const { return {cpuStart.ptr + static_cast<SIZE_T>(index) * increment}; }
-        D3D12_GPU_DESCRIPTOR_HANDLE Gpu(uint32_t index) const { return {gpuStart.ptr + static_cast<UINT64>(index) * increment}; }
+        D3D12_CPU_DESCRIPTOR_HANDLE Cpu(uint32_t index) const {
+            return {cpuStart.ptr + static_cast<SIZE_T>(index) * increment};
+        }
+        D3D12_GPU_DESCRIPTOR_HANDLE Gpu(uint32_t index) const {
+            return {gpuStart.ptr + static_cast<UINT64>(index) * increment};
+        }
         ID3D12DescriptorHeap* Heap() const { return heap.get(); }
         uint32_t Used() const { return used; }
 
@@ -212,7 +218,8 @@ namespace rhi::d3d12 {
 
     class CmdList final : public CommandList {
     public:
-        CmdList(Device& device, QueueType queue, winrt::com_ptr<ID3D12CommandAllocator> allocator, winrt::com_ptr<ID3D12GraphicsCommandList> list)
+        CmdList(Device& device, QueueType queue, winrt::com_ptr<ID3D12CommandAllocator> allocator,
+                winrt::com_ptr<ID3D12GraphicsCommandList> list)
             : device(device), queue(queue), allocator(std::move(allocator)), list(std::move(list)) {}
 
         QueueType Queue() const override { return queue; }
@@ -221,35 +228,43 @@ namespace rhi::d3d12 {
         ID3D12GraphicsCommandList* Native() const { return list.get(); }
         ID3D12CommandAllocator* Allocator() const { return allocator.get(); }
 
-        void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) override;
+        void Barrier(std::span<const TextureBarrier> textures,
+                     std::span<const BufferBarrier> buffers) override;
         void UavBarrier(BufferHandle buffer) override;
         void UavBarrier(TextureHandle texture) override;
-        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) override;
-        void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) override;
-        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) override;
+        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                        uint64_t size) override;
+        void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
+        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
         void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) override;
         void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) override;
         void ResolveTexture(TextureHandle dst, TextureHandle src) override;
         void BeginRendering(const RenderingDesc& desc) override;
         void EndRendering() override;
         void SetPipeline(PipelineHandle pipeline) override;
-        void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) override;
+        void SetBindGroup(uint32_t set, BindGroupHandle group,
+                          std::span<const uint32_t> dynamicOffsets) override;
         void PushConstants(const void* data, uint32_t bytes, uint32_t offset) override;
         void SetViewport(const Viewport& viewport) override;
         void SetScissor(const Rect& rect) override;
         void SetVertexBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset) override;
         void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset) override;
         void SetStencilReference(uint32_t value) override;
-        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) override;
-        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset,
-                         uint32_t firstInstance) override;
-        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) override;
-        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset,
-                                      uint32_t maxDraws, uint32_t stride) override;
+        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                  uint32_t firstInstance) override;
+        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                         int32_t vertexOffset, uint32_t firstInstance) override;
+        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                 uint32_t stride) override;
+        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                      uint64_t countOffset, uint32_t maxDraws, uint32_t stride) override;
         void Dispatch(uint32_t x, uint32_t y, uint32_t z) override;
         void DispatchIndirect(BufferHandle args, uint64_t offset) override;
         void WriteTimestamp(QuerySetHandle set, uint32_t index) override;
-        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) override;
+        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                            uint64_t dstOffset) override;
         void BeginDebugLabel(const char* name, uint32_t rgba) override;
         void EndDebugLabel() override;
         void* NativeHandle() override { return list.get(); }
@@ -260,7 +275,8 @@ namespace rhi::d3d12 {
     private:
         void FlushBindings();
         void Fail(const std::string& message);
-        void Transition(ID3D12Resource* resource, UINT subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
+        void Transition(ID3D12Resource* resource, UINT subresource, D3D12_RESOURCE_STATES before,
+                        D3D12_RESOURCE_STATES after);
 
         Device& device;
         QueueType queue;
@@ -316,7 +332,8 @@ namespace rhi::d3d12 {
 
     class Device final : public rhi::Device {
     public:
-        Device(std::shared_ptr<InstanceState> inst, winrt::com_ptr<IDXGIAdapter1> adapter, const AdapterInfo& info, const DeviceOptions& options);
+        Device(std::shared_ptr<InstanceState> inst, winrt::com_ptr<IDXGIAdapter1> adapter,
+               const AdapterInfo& info, const DeviceOptions& options);
         ~Device() override;
         bool Init(std::string& error);
 
@@ -378,7 +395,8 @@ namespace rhi::d3d12 {
 
         TextureHandle WrapSwapchainImage(ID3D12Resource* resource, const TextureDesc& desc);
         void DestroyWrapped(TextureHandle h);
-        D3D12_CPU_DESCRIPTOR_HANDLE RenderView(TextureRec& tex, uint32_t mip, uint32_t layer, bool depth, bool readOnly = false);
+        D3D12_CPU_DESCRIPTOR_HANDLE RenderView(TextureRec& tex, uint32_t mip, uint32_t layer, bool depth,
+                                               bool readOnly = false);
         ID3D12CommandSignature* Signature(bool dispatch, uint32_t stride);
         void Retire(std::function<void()> fn);
         void ReportError(const std::string& message);
@@ -409,8 +427,8 @@ namespace rhi::d3d12 {
         HandlePool<FenceTag, FenceRec> fences;
 
         std::array<QueueInfo, kQueueCount> queues;
-        std::atomic<uint64_t> drawCount{0}, dispatchCount{0}, indirectCount{0}, barrierCount{0}, pipelineBindCount{0},
-            groupBindCount{0}, submitCount{0};
+        std::atomic<uint64_t> drawCount{0}, dispatchCount{0}, indirectCount{0}, barrierCount{0},
+            pipelineBindCount{0}, groupBindCount{0}, submitCount{0};
         std::atomic<int64_t> bufferBytes{0}, textureBytes{0};
         std::atomic<int32_t> liveBuffers{0}, liveTextures{0}, livePipelines{0}, liveGroups{0};
 

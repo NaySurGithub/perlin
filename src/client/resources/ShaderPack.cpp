@@ -23,7 +23,6 @@ namespace perlin {
     namespace {
         const char* const kBackends[] = {"dxbc", "glsl", "spirv", "essl", "metal"};
 
-
         bool IsBackend(const std::string& s) {
             for (const char* b : kBackends)
                 if (s == b)
@@ -100,7 +99,9 @@ namespace perlin {
     };
 
     ShaderPack::ShaderPack() : impl(std::make_unique<Impl>()) {}
-    ShaderPack::~ShaderPack() { impl->Reset(); }
+    ShaderPack::~ShaderPack() {
+        impl->Reset();
+    }
 
     ShaderPack& ShaderPack::Instance() {
         static ShaderPack pack;
@@ -124,7 +125,7 @@ namespace perlin {
 
     bool ShaderPack::HasBackend(const std::string& backend) const {
         std::lock_guard lock(impl->mutex);
-        return impl->backends.count(backend) > 0;
+        return impl->backends.contains(backend);
     }
 
     std::string ShaderPack::Description() const {
@@ -197,7 +198,8 @@ namespace perlin {
             const mz_uint count = mz_zip_reader_get_num_files(&impl->zip);
             for (mz_uint i = 0; i < count; i++) {
                 mz_zip_archive_file_stat st;
-                if (!mz_zip_reader_file_stat(&impl->zip, i, &st) || mz_zip_reader_is_file_a_directory(&impl->zip, i))
+                if (!mz_zip_reader_file_stat(&impl->zip, i, &st) ||
+                    mz_zip_reader_is_file_a_directory(&impl->zip, i))
                     continue;
                 std::string path = st.m_filename;
                 std::replace(path.begin(), path.end(), '\\', '/');
@@ -226,8 +228,8 @@ namespace perlin {
                 const std::string rel = path.substr(prefix.size());
                 impl->index.emplace(rel, idx);
                 const size_t slash = rel.find('/');
-                if (slash != std::string::npos && IsBackend(rel.substr(0, slash)) &&
-                    rel.size() > 4 && rel.compare(rel.size() - 4, 4, ".bin") == 0)
+                if (slash != std::string::npos && IsBackend(rel.substr(0, slash)) && rel.size() > 4 &&
+                    rel.compare(rel.size() - 4, 4, ".bin") == 0)
                     impl->backends.insert(rel.substr(0, slash));
             }
             if (const auto it = impl->index.find("pack.json"); it != impl->index.end()) {
@@ -242,7 +244,8 @@ namespace perlin {
         std::string title = JsonString(meta, "name");
         impl->label = title.empty() ? name : title;
         const std::string desc = JsonString(meta, "description");
-        std::cout << "[shaders] opened pack " << impl->label << (desc.empty() ? "" : " - " + desc) << " (backends:";
+        std::cout << "[shaders] opened pack " << impl->label << (desc.empty() ? "" : " - " + desc)
+                  << " (backends:";
         for (const std::string& b : impl->backends)
             std::cout << ' ' << b;
         std::cout << ")" << std::endl;
@@ -391,7 +394,8 @@ namespace perlin {
         return out;
     }
 
-    bool ShaderPack::Read(const std::string& backend, const std::string& shader, std::vector<char>& out) const {
+    bool ShaderPack::Read(const std::string& backend, const std::string& shader,
+                          std::vector<char>& out) const {
         std::lock_guard lock(impl->mutex);
         if (impl->bundled) {
             const uint8_t* data = nullptr;

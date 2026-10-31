@@ -47,7 +47,8 @@ namespace perlin {
     // -- targets ----------------------------------------------------------------------------------------------------
 
     namespace {
-        rhi::TextureHandle MakeTarget(gpu::Gpu& gpu, uint32_t w, uint32_t h, rhi::Format format, rhi::TextureUsage usage, const char* name) {
+        rhi::TextureHandle MakeTarget(gpu::Gpu& gpu, uint32_t w, uint32_t h, rhi::Format format,
+                                      rhi::TextureUsage usage, const char* name) {
             rhi::TextureDesc td;
             td.format = format;
             td.width = std::max(1u, w);
@@ -60,15 +61,16 @@ namespace perlin {
             return t;
         }
 
-        constexpr rhi::TextureUsage kColorRt = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopySrc | rhi::TextureUsage::CopyDst;
+        constexpr rhi::TextureUsage kColorRt = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled |
+                                               rhi::TextureUsage::CopySrc | rhi::TextureUsage::CopyDst;
     }
 
     bool RenderContext_rhi::JavaChainReady() const {
         if (!javaActive)
             return false;
-        for (Program p : {Program::JavaDeferred, Program::JavaComposite, Program::JavaComposite1, Program::JavaComposite3,
-                          Program::JavaComposite4, Program::JavaComposite5, Program::JavaComposite6, Program::JavaComposite7,
-                          Program::JavaFinal})
+        for (Program p : {Program::JavaDeferred, Program::JavaComposite, Program::JavaComposite1,
+                          Program::JavaComposite3, Program::JavaComposite4, Program::JavaComposite5,
+                          Program::JavaComposite6, Program::JavaComposite7, Program::JavaFinal})
             if (ProgramIndex(p) < 0)
                 return false;
         return true;
@@ -79,15 +81,15 @@ namespace perlin {
         if (post.javaC1 && post.javaChainW == w && post.javaChainH == h)
             return true;
         gpu.Dev().WaitIdle();
-        for (rhi::TextureHandle* t : {&post.javaC1, &post.javaC2, &post.javaC3, &post.javaC4, &post.javaC5, &post.javaC7,
-                                      &post.javaTempA, &post.javaTempB, &post.javaTempC}) {
+        for (rhi::TextureHandle* t : {&post.javaC1, &post.javaC2, &post.javaC3, &post.javaC4, &post.javaC5,
+                                      &post.javaC7, &post.javaTempA, &post.javaTempB, &post.javaTempC}) {
             if (*t)
                 gpu.DestroyTexture(*t);
             *t = {};
         }
-        postTextures.erase(std::remove_if(postTextures.begin(), postTextures.end(),
-                                          [](rhi::TextureHandle t) { return !t; }),
-                           postTextures.end());
+        postTextures.erase(
+            std::remove_if(postTextures.begin(), postTextures.end(), [](rhi::TextureHandle t) { return !t; }),
+            postTextures.end());
         const auto make = [&](const char* name) {
             rhi::TextureHandle t = MakeTarget(gpu, w, h, kPostColor, kColorRt, name);
             if (t)
@@ -106,8 +108,8 @@ namespace perlin {
         post.javaChainClear = true;
         post.javaChainW = w;
         post.javaChainH = h;
-        if (!post.javaC1 || !post.javaC2 || !post.javaC3 || !post.javaC4 || !post.javaC5 || !post.javaC7 || !post.javaTempA ||
-            !post.javaTempB || !post.javaTempC) {
+        if (!post.javaC1 || !post.javaC2 || !post.javaC3 || !post.javaC4 || !post.javaC5 || !post.javaC7 ||
+            !post.javaTempA || !post.javaTempB || !post.javaTempC) {
             Log("render", "could not create java chain targets");
             return false;
         }
@@ -216,10 +218,12 @@ namespace perlin {
     }
 
     void RenderContext_rhi::DestroyPostTargets() {
-        for (rhi::TextureHandle* t : {&post.worldColor, &post.worldDepth, &post.hist[0], &post.hist[1], &post.bloom[0], &post.bloom[1],
-                                      &post.bloom[2], &post.bloom[3], &post.up[0], &post.up[1], &post.up[2], &post.sceneColor,
-                                      &post.sceneDepth, &post.javaAux, &post.javaC1, &post.javaC2, &post.javaC3, &post.javaC4,
-                                      &post.javaC5, &post.javaC7, &post.javaTempA, &post.javaTempB, &post.javaTempC})
+        for (rhi::TextureHandle* t :
+             {&post.worldColor, &post.worldDepth, &post.hist[0],    &post.hist[1], &post.bloom[0],
+              &post.bloom[1],   &post.bloom[2],   &post.bloom[3],   &post.up[0],   &post.up[1],
+              &post.up[2],      &post.sceneColor, &post.sceneDepth, &post.javaAux, &post.javaC1,
+              &post.javaC2,     &post.javaC3,     &post.javaC4,     &post.javaC5,  &post.javaC7,
+              &post.javaTempA,  &post.javaTempB,  &post.javaTempC})
             if (*t) {
                 gpu.DestroyTexture(*t);
                 *t = {};
@@ -237,7 +241,9 @@ namespace perlin {
         gpu.Dev().WaitIdle();
         DestroyPostTargets();
         post.worldColor = MakeTarget(gpu, w, h, kPostColor, kColorRt, "world color");
-        post.worldDepth = MakeTarget(gpu, w, h, kPostDepth, rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopySrc,
+        post.worldDepth = MakeTarget(gpu, w, h, kPostDepth,
+                                     rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled |
+                                         rhi::TextureUsage::CopySrc,
                                      "world depth");
         post.worldW = w;
         post.worldH = h;
@@ -254,7 +260,9 @@ namespace perlin {
             return false;
         }
         postTextures = {post.worldColor, post.worldDepth, post.hist[0], post.hist[1]};
-        postTextures.erase(std::remove_if(postTextures.begin(), postTextures.end(), [](rhi::TextureHandle t) { return !t; }), postTextures.end());
+        postTextures.erase(
+            std::remove_if(postTextures.begin(), postTextures.end(), [](rhi::TextureHandle t) { return !t; }),
+            postTextures.end());
         return true;
     }
 
@@ -281,7 +289,8 @@ namespace perlin {
     }
 
     bool RenderContext_rhi::EnsureUpscaleTargets() {
-        if (post.up[0] && post.upW == static_cast<uint32_t>(width) && post.upH == static_cast<uint32_t>(height))
+        if (post.up[0] && post.upW == static_cast<uint32_t>(width) &&
+            post.upH == static_cast<uint32_t>(height))
             return true;
         for (rhi::TextureHandle& t : post.up)
             if (t) {
@@ -290,11 +299,14 @@ namespace perlin {
                 t = {};
             }
         postTextures.erase(std::remove_if(postTextures.begin(), postTextures.end(),
-                                          [&](rhi::TextureHandle t) { return t == post.up[0] || t == post.up[1] || t == post.up[2]; }),
+                                          [&](rhi::TextureHandle t) {
+                                              return t == post.up[0] || t == post.up[1] || t == post.up[2];
+                                          }),
                            postTextures.end());
-        for (int i = 0; i < 3; i++) {
-            post.up[i] = MakeTarget(gpu, static_cast<uint32_t>(width), static_cast<uint32_t>(height), kPostColor, kColorRt, "upscaled");
-            if (!post.up[i]) {
+        for (auto& i : post.up) {
+            i = MakeTarget(gpu, static_cast<uint32_t>(width), static_cast<uint32_t>(height), kPostColor,
+                           kColorRt, "upscaled");
+            if (!i) {
                 for (rhi::TextureHandle& t : post.up)
                     if (t) {
                         gpu.DestroyTexture(t);
@@ -303,7 +315,7 @@ namespace perlin {
                 Log("render", "could not create the upscaler targets; using plain bilinear");
                 return false;
             }
-            postTextures.push_back(post.up[i]);
+            postTextures.push_back(i);
         }
         post.upW = static_cast<uint32_t>(width);
         post.upH = static_cast<uint32_t>(height);
@@ -315,10 +327,14 @@ namespace perlin {
         const rhi::Format kPostColor = javaActive ? rhi::Format::RGBA16Float : rhi::Format::RGBA8Unorm;
         if (post.sceneColor && post.sceneColor && post.worldW)
             return true;
-        post.sceneColor = MakeTarget(gpu, post.worldW, post.worldH, kPostColor,
-                                     rhi::TextureUsage::Sampled | rhi::TextureUsage::CopyDst | rhi::TextureUsage::CopySrc, "scene color");
+        post.sceneColor =
+            MakeTarget(gpu, post.worldW, post.worldH, kPostColor,
+                       rhi::TextureUsage::Sampled | rhi::TextureUsage::CopyDst | rhi::TextureUsage::CopySrc,
+                       "scene color");
         post.sceneDepth = MakeTarget(gpu, post.worldW, post.worldH, kPostDepth,
-                                     rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopyDst, "scene depth");
+                                     rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled |
+                                         rhi::TextureUsage::CopyDst,
+                                     "scene depth");
         if (!post.sceneColor || !post.sceneDepth) {
             for (rhi::TextureHandle* t : {&post.sceneColor, &post.sceneDepth})
                 if (*t) {
@@ -346,14 +362,19 @@ namespace perlin {
 
         const float scale = noUpscale ? 1.0f : std::clamp(params.renderScale, 0.25f, 1.0f);
         plan.scaled = scale < 0.999f;
-        plan.w = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(width) * scale))) : width;
-        plan.h = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(height) * scale))) : height;
+        plan.w = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(width) * scale)))
+                             : width;
+        plan.h = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(height) * scale)))
+                             : height;
         plan.temporal = !noUpscale && params.upscaler == 3 && ProgramIndex(Program::Temporal) >= 0;
         plan.bloom = params.bloom > 0.001f && !noBloom && ProgramIndex(Program::Bloom) >= 0;
-        plan.blur = (params.motionBlur > 0.001f || params.menuBlur > 0.01f) && !noBlur && ProgramIndex(Program::Post) >= 0;
+        plan.blur = (params.motionBlur > 0.001f || params.menuBlur > 0.01f) && !noBlur &&
+                    ProgramIndex(Program::Post) >= 0;
         ShaderPack& pack = ShaderPack::Instance();
         plan.sceneCopy = packActive && pack.Flag("sceneCopy", false) && !noSsr && !PackRunning();
-        plan.active = !post.failed && (plan.blur || plan.sceneCopy || plan.bloom || plan.scaled || plan.temporal) && ProgramIndex(Program::Post) >= 0;
+        plan.active = !post.failed &&
+                      (plan.blur || plan.sceneCopy || plan.bloom || plan.scaled || plan.temporal) &&
+                      ProgramIndex(Program::Post) >= 0;
         // java MRT needs the offscreen chain even with every effect off
         if (javaActive && !post.failed && ProgramIndex(Program::Post) >= 0)
             plan.active = true;
@@ -396,7 +417,8 @@ namespace perlin {
             overlays();
             return;
         }
-        if (!EnsureWorldTargets(static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h), plan.temporal || plan.sceneCopy, true)) {
+        if (!EnsureWorldTargets(static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h),
+                                plan.temporal || plan.sceneCopy, true)) {
             direct();
             overlays();
             return;
@@ -408,7 +430,8 @@ namespace perlin {
         if (!plan.bloom && post.bloom[0]) {
             gpu.Dev().WaitIdle();
             for (rhi::TextureHandle& t : post.bloom) {
-                postTextures.erase(std::remove(postTextures.begin(), postTextures.end(), t), postTextures.end());
+                postTextures.erase(std::remove(postTextures.begin(), postTextures.end(), t),
+                                   postTextures.end());
                 gpu.DestroyTexture(t);
                 t = {};
             }
@@ -441,7 +464,8 @@ namespace perlin {
             vd.colorFormat1 = kPostColor;
         }
 
-        if (JavaChainReady() && !EnsureJavaChainTargets(static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h))) {
+        if (JavaChainReady() &&
+            !EnsureJavaChainTargets(static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h))) {
             direct();
             overlays();
             return;
@@ -450,11 +474,12 @@ namespace perlin {
         world.color = post.worldColor;
         world.depth = post.worldDepth;
         if (javaActive) {
-            if (!post.javaAux || post.worldW != static_cast<uint32_t>(plan.w) || post.worldH != static_cast<uint32_t>(plan.h)) {
+            if (!post.javaAux || post.worldW != static_cast<uint32_t>(plan.w) ||
+                post.worldH != static_cast<uint32_t>(plan.h)) {
                 if (post.javaAux)
                     gpu.DestroyTexture(post.javaAux);
-                post.javaAux = MakeTarget(gpu, static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h), kPostColor,
-                                          kColorRt, "java aux");
+                post.javaAux = MakeTarget(gpu, static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h),
+                                          kPostColor, kColorRt, "java aux");
                 if (!post.javaAux)
                     return;
                 postTextures.push_back(post.javaAux);
@@ -506,7 +531,8 @@ namespace perlin {
             post.sceneValid = false;
         }
 
-        if (JavaChainReady() && EnsureJavaChainTargets(static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h))) {
+        if (JavaChainReady() &&
+            EnsureJavaChainTargets(static_cast<uint32_t>(plan.w), static_cast<uint32_t>(plan.h))) {
             BuildJavaChainStages();
             overlays();
             return;
@@ -518,8 +544,9 @@ namespace perlin {
                 View view;
                 int target;
                 bool additive;
-            } kBloom[7] = {{View::Bloom0, 0, false}, {View::Bloom1, 1, false}, {View::Bloom2, 2, false}, {View::Bloom3, 3, false},
-                           {View::Bloom4, 2, true},  {View::Bloom5, 1, true},  {View::Bloom6, 0, true}};
+            } kBloom[7] = {{View::Bloom0, 0, false}, {View::Bloom1, 1, false}, {View::Bloom2, 2, false},
+                           {View::Bloom3, 3, false}, {View::Bloom4, 2, true},  {View::Bloom5, 1, true},
+                           {View::Bloom6, 0, true}};
             for (const auto& pass : kBloom) {
                 Stage s;
                 s.target.color = post.bloom[pass.target];
@@ -549,7 +576,8 @@ namespace perlin {
             vd.depthFormat = rhi::Format::Unknown;
         }
 
-        const bool spatial = !plan.temporal && plan.scaled && params.upscaler != 0 && !noUpscale && ProgramIndex(Program::Upscale) >= 0;
+        const bool spatial = !plan.temporal && plan.scaled && params.upscaler != 0 && !noUpscale &&
+                             ProgramIndex(Program::Upscale) >= 0;
         const bool upscaled = (plan.temporal || spatial) && EnsureUpscaleTargets();
         if (!upscaled) {
             plan.temporal = false;
@@ -596,7 +624,8 @@ namespace perlin {
 
     // -- recording --------------------------------------------------------------------------------------------------
 
-    void RenderContext_rhi::FullscreenPass(View view, Program program, rhi::Format colorFormat, uint32_t w, uint32_t h, bool additive) {
+    void RenderContext_rhi::FullscreenPass(View view, Program program, rhi::Format colorFormat, uint32_t w,
+                                           uint32_t h, bool additive) {
         ViewData& vd = views[static_cast<size_t>(view)];
         vd.x = vd.y = 0;
         vd.w = w;
@@ -618,14 +647,17 @@ namespace perlin {
     void RenderContext_rhi::RecordBloom(float strength) {
         const float threshold = 0.82f - 0.12f * std::clamp(strength, 0.0f, 1.0f);
         const float W = static_cast<float>(std::max(1, width)), H = static_cast<float>(std::max(1, height));
-        const auto pass = [&](View view, int target, rhi::TextureHandle source, float sourceScale, float mode, bool additive) {
+        const auto pass = [&](View view, int target, rhi::TextureHandle source, float sourceScale, float mode,
+                              bool additive) {
             uni.Vec4("u_post", 0.0f, kOrigin, 0.0f, 0.0f);
             uni.Vec4("u_bloomParams", mode, threshold, 0.18f, 0.0f);
             const bool fromWorld = source == post.worldColor && plan.scaled;
-            uni.Vec4("u_bloomTexel", fromWorld ? 1.0f / static_cast<float>(std::max(1, plan.w)) : sourceScale / W,
-                     fromWorld ? 1.0f / static_cast<float>(std::max(1, plan.h)) : sourceScale / H, 0.0f, 0.0f);
+            uni.Vec4(
+                "u_bloomTexel", fromWorld ? 1.0f / static_cast<float>(std::max(1, plan.w)) : sourceScale / W,
+                fromWorld ? 1.0f / static_cast<float>(std::max(1, plan.h)) : sourceScale / H, 0.0f, 0.0f);
             BindTexture("s_cur", source, gpu::SamplerKind::LinearClamp);
-            FullscreenPass(view, Program::Bloom, kPostColor, post.bloomW[target], post.bloomH[target], additive);
+            FullscreenPass(view, Program::Bloom, kPostColor, post.bloomW[target], post.bloomH[target],
+                           additive);
             ResetBindings();
         };
         pass(View::Bloom0, 0, post.worldColor, 1.0f, 0.0f, false);
@@ -637,15 +669,18 @@ namespace perlin {
         pass(View::Bloom6, 0, post.bloom[1], 4.0f, 2.0f, true);
     }
 
-    rhi::TextureHandle RenderContext_rhi::RecordUpscale(rhi::TextureHandle source, uint32_t sourceW, uint32_t sourceH) {
+    rhi::TextureHandle RenderContext_rhi::RecordUpscale(rhi::TextureHandle source, uint32_t sourceW,
+                                                        uint32_t sourceH) {
         const FrameParams& params = frame;
         const float sharp = std::clamp(params.upscaleSharpness, 0.0f, 1.0f);
         const bool sharpen = sharp > 0.001f && ProgramIndex(Program::Upscale) >= 0;
         const uint32_t W = static_cast<uint32_t>(width), H = static_cast<uint32_t>(height);
-        const auto spatialPass = [&](View view, rhi::TextureHandle from, float mode, uint32_t fromW, uint32_t fromH) {
+        const auto spatialPass = [&](View view, rhi::TextureHandle from, float mode, uint32_t fromW,
+                                     uint32_t fromH) {
             uni.Vec4("u_post", 0.0f, kOrigin, 0.0f, 0.0f);
             uni.Vec4("u_up", mode, sharp, 0.0f, 0.0f);
-            uni.Vec4("u_upSize", static_cast<float>(fromW), static_cast<float>(fromH), static_cast<float>(W), static_cast<float>(H));
+            uni.Vec4("u_upSize", static_cast<float>(fromW), static_cast<float>(fromH), static_cast<float>(W),
+                     static_cast<float>(H));
             BindTexture("s_cur", from, gpu::SamplerKind::LinearClamp);
             FullscreenPass(view, Program::Upscale, kPostColor, W, H, false);
             ResetBindings();
@@ -673,7 +708,8 @@ namespace perlin {
         StoreMatrix(prevVp, prevVpF);
         uni.Vec4("u_post", 0.0f, kOrigin, 0.0f, 0.0f);
         uni.Vec4("u_taa", alpha, useHistory ? 1.0f : 0.0f, ySign, 0.0f);
-        uni.Vec4("u_taaSize", static_cast<float>(sourceW), static_cast<float>(sourceH), static_cast<float>(W), static_cast<float>(H));
+        uni.Vec4("u_taaSize", static_cast<float>(sourceW), static_cast<float>(sourceH), static_cast<float>(W),
+                 static_cast<float>(H));
         uni.Vec4("u_taaJit", plan.jitterUv[0], plan.jitterUv[1], 0.0f, 0.0f);
         uni.Mat4("u_taaInvVp", invVp);
         uni.Mat4("u_taaPrevVp", prevVpF);
@@ -714,12 +750,14 @@ namespace perlin {
             weight = 0.0f;
         const int write = 1 - post.read;
 
-        const auto fullscreen = [&](View view, rhi::TextureHandle cur, rhi::TextureHandle hist, float w, float dir, uint32_t outW, uint32_t outH,
-                                    rhi::Format fmt) {
+        const auto fullscreen = [&](View view, rhi::TextureHandle cur, rhi::TextureHandle hist, float w,
+                                    float dir, uint32_t outW, uint32_t outH, rhi::Format fmt) {
             uni.Vec4("u_post", w, kOrigin, menuPx, dir);
             const bool underwater = view == View::BlurOut && packActive && params.cameraMedium == 1;
-            uni.Vec4("u_postFx", underwater ? 1.0f : 0.0f, std::fmod(params.timeSeconds, 3600.0f), 0.0f, 0.0f);
-            uni.Vec4("u_bloom", plan.bloom && view == View::BlurOut ? params.bloom * 0.55f : 0.0f, 0.0f, 0.0f, 0.0f);
+            uni.Vec4("u_postFx", underwater ? 1.0f : 0.0f, std::fmod(params.timeSeconds, 3600.0f), 0.0f,
+                     0.0f);
+            uni.Vec4("u_bloom", plan.bloom && view == View::BlurOut ? params.bloom * 0.55f : 0.0f, 0.0f, 0.0f,
+                     0.0f);
             BindTexture("s_cur", cur, gpu::SamplerKind::LinearClamp);
             BindTexture("s_hist", hist, gpu::SamplerKind::LinearClamp);
             if (plan.bloom)
@@ -730,12 +768,14 @@ namespace perlin {
 
         rhi::TextureHandle shown = post.worldColor;
         if (plan.blur) {
-            fullscreen(View::Blur, post.worldColor, post.hist[post.read], weight, 0.0f, worldW, worldH, kPostColor);
+            fullscreen(View::Blur, post.worldColor, post.hist[post.read], weight, 0.0f, worldW, worldH,
+                       kPostColor);
             shown = post.hist[write];
         }
-        const bool filtered = !stages.empty() && std::any_of(stages.begin(), stages.end(), [](const Stage& s) {
-            return !s.views.empty() && s.views.front() == View::Up0;
-        });
+        const bool filtered =
+            !stages.empty() && std::any_of(stages.begin(), stages.end(), [](const Stage& s) {
+                return !s.views.empty() && s.views.front() == View::Up0;
+            });
         if (filtered)
             shown = RecordUpscale(shown, worldW, worldH);
         // blur: horizontal pass above, vertical here; without it this is a plain composite with the bloom
@@ -750,7 +790,8 @@ namespace perlin {
 
     // -- execution --------------------------------------------------------------------------------------------------
 
-    void RenderContext_rhi::ReadyForSampling(rhi::CommandList& list, rhi::TextureHandle except0, rhi::TextureHandle except1) {
+    void RenderContext_rhi::ReadyForSampling(rhi::CommandList& list, rhi::TextureHandle except0,
+                                             rhi::TextureHandle except1) {
         const auto ready = [&](rhi::TextureHandle t) {
             if (t && t != except0 && t != except1 && gpu.StateOf(t) != rhi::State::Undefined)
                 gpu.Transition(list, t, rhi::State::ShaderRead);
@@ -826,7 +867,8 @@ namespace perlin {
             ViewData& vd = views[static_cast<size_t>(v)];
             if (vd.draws.empty())
                 continue;
-            list.SetViewport({static_cast<float>(vd.x), static_cast<float>(vd.y), static_cast<float>(vd.w), static_cast<float>(vd.h), 0.0f, 1.0f});
+            list.SetViewport({static_cast<float>(vd.x), static_cast<float>(vd.y), static_cast<float>(vd.w),
+                              static_cast<float>(vd.h), 0.0f, 1.0f});
             list.SetScissor({static_cast<int32_t>(vd.x), static_cast<int32_t>(vd.y), vd.w, vd.h});
             Replay(list, vd.draws);
         }

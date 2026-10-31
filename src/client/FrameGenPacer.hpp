@@ -26,9 +26,9 @@ namespace perlin {
 
     private:
         int total = 1, next = 0;
-        Clock::time_point anchor{}, lastReal{};
+        Clock::time_point anchor, lastReal;
         double cycleMs = 16.0, workMs = 16.0, preMs = 4.0, waitedMs = 0.0;
         int autoTotal = 1, autoWant = 1;
-        Clock::time_point autoSince{};
+        Clock::time_point autoSince;
     };
 }

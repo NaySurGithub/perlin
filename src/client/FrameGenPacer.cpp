@@ -6,9 +6,12 @@
 
 namespace perlin {
     namespace {
-        double Ms(FrameGenPacer::Clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); }
+        double Ms(FrameGenPacer::Clock::duration d) {
+            return std::chrono::duration<double, std::milli>(d).count();
+        }
         FrameGenPacer::Clock::duration FromMs(double ms) {
-            return std::chrono::duration_cast<FrameGenPacer::Clock::duration>(std::chrono::duration<double, std::milli>(ms));
+            return std::chrono::duration_cast<FrameGenPacer::Clock::duration>(
+                std::chrono::duration<double, std::milli>(ms));
         }
     }
 
@@ -67,7 +70,9 @@ namespace perlin {
 
     int FrameGenPacer::AutoTotal(double targetHz, Clock::time_point now) {
         const double baseFps = 1000.0 / std::max(0.5, workMs);
-        const int want = baseFps < 15.0 || targetHz <= 0.0 ? 1 : std::clamp(static_cast<int>(std::ceil(targetHz / baseFps - 0.2)), 1, 4);
+        const int want = baseFps < 15.0 || targetHz <= 0.0
+                             ? 1
+                             : std::clamp(static_cast<int>(std::ceil(targetHz / baseFps - 0.2)), 1, 4);
         if (want == autoTotal) {
             autoWant = want;
             return autoTotal;

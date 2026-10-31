@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.28)
 
-if(APPLE)
+# iOS: configure with -DCMAKE_SYSTEM_NAME=iOS (see packaging/ios/README.md); PERLIN_IOS is usable before project().
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(PERLIN_IOS ON)
+    set(PERLIN_IOS_DEPLOYMENT_TARGET "15.0" CACHE STRING "Oldest iOS / iPadOS version Perlin runs on")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${PERLIN_IOS_DEPLOYMENT_TARGET}" CACHE STRING "" FORCE)
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "" FORCE)
+    endif()
+    set(CMAKE_DISABLE_FIND_PACKAGE_fmt ON CACHE BOOL "" FORCE)
+elseif(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "" FORCE)
     # Never pick up Homebrew's dynamic fmt: it would be linked as /opt/homebrew/.../libfmt.12.dylib and missing on other Macs.
     set(CMAKE_DISABLE_FIND_PACKAGE_fmt ON CACHE BOOL "" FORCE)
@@ -26,6 +35,8 @@ if(CMAKE_HOST_WIN32 AND PERLIN_USE_CLANG_CL AND NOT CMAKE_GENERATOR MATCHES "Vis
 endif()
 
 project(Perlin VERSION 1.0.0 LANGUAGES C CXX)
+# version shown by the OS (app bundles); nightly CI passes 1.0.<run number> so sideload stores see each build as newer
+set(PERLIN_BUNDLE_VERSION "${PROJECT_VERSION}" CACHE STRING "CFBundleShortVersionString / CFBundleVersion")
 
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set(PERLIN_CLANG_CL_BUILD ON)
@@ -81,7 +92,7 @@ if(WIN32 AND NOT OPENSSL_ROOT_DIR)
     endforeach()
 endif()
 
-if(APPLE AND NOT OPENSSL_ROOT_DIR)
+if(APPLE AND NOT PERLIN_IOS AND NOT OPENSSL_ROOT_DIR)
     # Homebrew's OpenSSL is built for the runner's macOS (15), so linking it at target 12.0 warns and can crash on
     # older systems. CI passes -DOPENSSL_ROOT_DIR to a copy built with -mmacosx-version-min=12.0; this is only a local fallback.
     message(WARNING "OPENSSL_ROOT_DIR not set: falling back to Homebrew OpenSSL (built for a newer macOS than ${CMAKE_OSX_DEPLOYMENT_TARGET})")
@@ -104,7 +115,7 @@ endif()
 if(WIN32)
     set(OPENSSL_MSVC_STATIC_RT ON)
 endif()
-if((EMSCRIPTEN OR ANDROID) AND OPENSSL_ROOT_DIR)
+if((EMSCRIPTEN OR ANDROID OR PERLIN_IOS) AND OPENSSL_ROOT_DIR)
     list(APPEND CMAKE_FIND_ROOT_PATH "${OPENSSL_ROOT_DIR}")
 endif()
 if(PERLIN_BUILD_APP)
@@ -121,15 +132,18 @@ CPMAddPackage("gh:stephenberry/glaze@7.1.1")
 CPMAddPackage("gh:cameron314/concurrentqueue@1.0.4")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb GIT_TAG master DOWNLOAD_ONLY YES)
-if(EMSCRIPTEN)
+# wasm3 where WasmEdge cannot go: the web, and iOS (no writable+executable memory for apps)
+if(EMSCRIPTEN OR PERLIN_IOS)
 CPMAddPackage(NAME wasm3 GITHUB_REPOSITORY wasm3/wasm3 GIT_TAG 28ecb9af6d2040e474a70f7cb7f43666740141fb DOWNLOAD_ONLY YES)
 set(WASM3_CORE_SOURCES m3_bind.c m3_code.c m3_compile.c m3_core.c m3_env.c m3_exec.c m3_function.c m3_info.c m3_module.c m3_parse.c m3_validate.c)
 list(TRANSFORM WASM3_CORE_SOURCES PREPEND "${wasm3_SOURCE_DIR}/source/")
 add_library(wasm3_core STATIC ${WASM3_CORE_SOURCES})
 target_include_directories(wasm3_core PUBLIC "${wasm3_SOURCE_DIR}/source")
 target_compile_definitions(wasm3_core PRIVATE d_m3HasTracer=0)
-if(NOT MSVC)
+if(EMSCRIPTEN)
     target_compile_options(wasm3_core PRIVATE -w -mtail-call)
+elseif(NOT MSVC)
+    target_compile_options(wasm3_core PRIVATE -w)
 endif()
 set_target_properties(wasm3_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11)
 set(PERLIN_WASM_ENGINE wasm3_core)
@@ -428,7 +442,7 @@ list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/javashaders/") # built int
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/mods/")
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/(src|tests)/")
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmEdgeStop\\.cpp$")
-if(EMSCRIPTEN)
+if(EMSCRIPTEN OR PERLIN_IOS)
     list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmRuntime\\.cpp$")
 else()
     list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmRuntimeWasm3\\.cpp$")
@@ -448,6 +462,33 @@ elseif(WIN32)
     file(WRITE "${PERLIN_ICON_RC}" "101 ICON \"${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/perlin.ico\"\n")
     set_source_files_properties("${PERLIN_ICON_RC}" PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/perlin.ico")
     add_executable(Perlin WIN32 ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} "${PERLIN_ICON_RC}")
+elseif(PERLIN_IOS)
+    add_executable(Perlin MACOSX_BUNDLE ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE})
+    set_target_properties(Perlin PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/ios/Info.plist.in"
+        MACOSX_BUNDLE_BUNDLE_NAME "Perlin"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "io.perlin.client"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PERLIN_BUNDLE_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PERLIN_BUNDLE_VERSION}")
+    # iOS bundles are flat: icons, the CA bundle and the asset manifest sit beside the executable
+    file(GLOB PERLIN_IOS_ICONS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/ios/AppIcon*.png")
+    set(PERLIN_IOS_BUNDLE_FILES ${PERLIN_IOS_ICONS})
+    # iOS has no trust store OpenSSL can read: ship Mozilla's roots as cacert.pem (the build Mac's copy by default)
+    set(PERLIN_IOS_CA_BUNDLE "/etc/ssl/cert.pem" CACHE FILEPATH "PEM bundle of trusted root certificates shipped in the app")
+    if(EXISTS "${PERLIN_IOS_CA_BUNDLE}")
+        configure_file("${PERLIN_IOS_CA_BUNDLE}" "${CMAKE_CURRENT_BINARY_DIR}/ios/cacert.pem" COPYONLY)
+        list(APPEND PERLIN_IOS_BUNDLE_FILES "${CMAKE_CURRENT_BINARY_DIR}/ios/cacert.pem")
+    else()
+        message(WARNING "PERLIN_IOS_CA_BUNDLE not found: HTTPS (sign-in, downloads) will fail certificate checks")
+    endif()
+    # optional bedrock-samples file list (tools/web/gen_manifest.py): one bulk download instead of a tree walk
+    set(PERLIN_ASSET_MANIFEST "" CACHE FILEPATH "assets-manifest.json to ship in the app")
+    if(PERLIN_ASSET_MANIFEST AND EXISTS "${PERLIN_ASSET_MANIFEST}")
+        list(APPEND PERLIN_IOS_BUNDLE_FILES "${PERLIN_ASSET_MANIFEST}")
+    endif()
+    add_custom_command(TARGET Perlin POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${PERLIN_IOS_BUNDLE_FILES} "$<TARGET_BUNDLE_DIR:Perlin>"
+        VERBATIM)
 elseif(APPLE)
     set(PERLIN_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Perlin.icns")
     set_source_files_properties("${PERLIN_ICNS}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
@@ -457,13 +498,40 @@ elseif(APPLE)
         MACOSX_BUNDLE_BUNDLE_NAME "Perlin"
         MACOSX_BUNDLE_GUI_IDENTIFIER "io.perlin.client"
         MACOSX_BUNDLE_ICON_FILE "Perlin.icns"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PERLIN_BUNDLE_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PERLIN_BUNDLE_VERSION}")
 else()
     add_executable(Perlin ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE})
 endif()
 
 target_compile_features(Perlin PRIVATE cxx_std_23)
+
+# auto update (src/client/update): CI bakes in the commit and repository of nightly builds; local builds leave them
+# empty and never update. Only Updater.cpp sees them, so a new commit recompiles one file.
+set(PERLIN_BUILD_COMMIT "" CACHE STRING "git commit this build is made from (nightly builds)")
+set(PERLIN_UPDATE_REPO "" CACHE STRING "owner/repo whose 'nightly' release the updater follows")
+if(ANDROID)
+    set(_perlin_asset "Perlin.apk")
+elseif(PERLIN_IOS)
+    set(_perlin_asset "Perlin.ipa")
+elseif(EMSCRIPTEN)
+    set(_perlin_asset "")
+elseif(WIN32)
+    set(_perlin_asset "Perlin-windows-x64.zip")
+elseif(APPLE)
+    if(CMAKE_OSX_ARCHITECTURES MATCHES "arm64" OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"))
+        set(_perlin_asset "Perlin-macos-arm64.zip")
+    else()
+        set(_perlin_asset "Perlin-macos-x64.zip")
+    endif()
+else()
+    set(_perlin_asset "Perlin-linux-x64.zip")
+endif()
+set(PERLIN_UPDATE_ASSET "${_perlin_asset}" CACHE STRING "release asset this platform installs")
+set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/client/update/Updater.cpp" APPEND PROPERTY COMPILE_DEFINITIONS
+    "PERLIN_BUILD_COMMIT=\"${PERLIN_BUILD_COMMIT}\"" "PERLIN_UPDATE_REPO=\"${PERLIN_UPDATE_REPO}\""
+    "PERLIN_UPDATE_ASSET=\"${PERLIN_UPDATE_ASSET}\"")
+
 # Every packet decoded to JSON for the runtime packet log; one big switch, so compiled quietly.
 target_sources(Perlin PRIVATE ${PERLIN_PROTOCOL_JSON})
 if(MSVC)
@@ -533,7 +601,7 @@ if(EMSCRIPTEN)
         -sASSERTIONS=0
         -sENVIRONMENT=web,worker
         -sTEXTDECODER=1
-        "-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_perlin_nn_on_message,_perlin_nn_on_closed"
+        "-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_perlin_nn_on_message,_perlin_nn_on_closed,_perlin_web_file_picked,_perlin_web_version"
         "-sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap,UTF8ToString,stringToUTF8,lengthBytesUTF8"
         "--js-library=${PERLIN_WEB_DIR}/library_nethernet.js"
         "--shell-file=${PERLIN_WEB_DIR}/shell.html")
@@ -546,6 +614,14 @@ if(EMSCRIPTEN)
         COMMAND "${CMAKE_COMMAND}" -E copy_directory "${PERLIN_WEB_DIR}/static" "$<TARGET_FILE_DIR:Perlin>")
 elseif(WIN32)
     target_link_libraries(Perlin PRIVATE ws2_32 crypt32 dbghelp advapi32 user32 gdi32 bcrypt iphlpapi)
+elseif(PERLIN_IOS)
+    # the document picker is objective-c++; compiled as c++ with the dialect forced, like the metal backend
+    set(PERLIN_IOS_OBJC "${CMAKE_CURRENT_SOURCE_DIR}/src/client/platform/ios/DocumentPicker.mm")
+    target_sources(Perlin PRIVATE "${PERLIN_IOS_OBJC}")
+    set_source_files_properties("${PERLIN_IOS_OBJC}" PROPERTIES LANGUAGE CXX COMPILE_OPTIONS "-x;objective-c++;-fobjc-arc")
+    target_link_libraries(Perlin PRIVATE "-framework Security" "-framework CoreFoundation" "-framework Foundation"
+        "-framework UIKit" "-framework QuartzCore" "-framework Metal" "-framework GameController" "-framework AVFoundation"
+        "-framework UniformTypeIdentifiers")
 elseif(APPLE)
     target_link_libraries(Perlin PRIVATE "-framework Security" "-framework CoreFoundation")
     target_compile_definitions(Perlin PRIVATE CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
@@ -571,6 +647,8 @@ endif()
 # Keep these rules even when PERLIN_FAST_MATH relaxes rendering calculations.
 foreach(PERLIN_PHYSICS_SOURCE IN ITEMS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/PlayerPhysics.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/VehiclePhysics.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/LocalPlayer.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/PlayerFov.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/client/resources/BlockOffsetDefinition.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/client/resources/BlockBoxDefinition.cpp")
@@ -632,7 +710,7 @@ else()
 endif()
 
 include(CheckIPOSupported)
-if(EMSCRIPTEN OR ANDROID)
+if(EMSCRIPTEN OR ANDROID OR PERLIN_IOS)
     set(PERLIN_IPO OFF)
 else()
     check_ipo_supported(RESULT PERLIN_IPO OUTPUT PERLIN_IPO_LOG)
@@ -664,7 +742,7 @@ if(WIN32 AND NOT PERLIN_WINDOWS_FFMPEG)
     set(PERLIN_BUNDLE_FFMPEG OFF CACHE BOOL "" FORCE)
 endif()
 set(PERLIN_LIBAV_FOUND OFF)
-if(PERLIN_LIBAV AND NOT EMSCRIPTEN AND NOT ANDROID)
+if(PERLIN_LIBAV AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT PERLIN_IOS)
     set(FFMPEG_ROOT "" CACHE PATH "Prefix containing include/libavcodec and lib/ with static FFmpeg libraries")
     if(FFMPEG_ROOT AND EXISTS "${FFMPEG_ROOT}/include/libavcodec/avcodec.h")
         file(GLOB _av_libs "${FFMPEG_ROOT}/lib/*.lib" "${FFMPEG_ROOT}/lib/*.a")
@@ -737,7 +815,7 @@ if(WIN32 AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT PERLIN_LIBAV_FOUND)
     endif()
 endif()
 option(PERLIN_BUILD_TESTS "Build unit tests" OFF)
-if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
+if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT PERLIN_IOS)
     enable_testing()
     add_executable(skin_lifetime_selftest tests/skin_lifetime_selftest.cpp src/client/entity/EntityTracker.cpp)
     target_include_directories(skin_lifetime_selftest PRIVATE src "${glm_SOURCE_DIR}")
@@ -1348,23 +1426,27 @@ foreach(PERLIN_LOCAL_TARGET IN LISTS PERLIN_LOCAL_TARGETS)
     endif()
 endforeach()
 
-# perlin server: dedicated exe, shared library for singleplayer, plugins; see server/README.md
-# on by default: the title screen's Singleplayer button loads perlin_server from beside the executable.
-# not built for the web or android (no processes or shared libraries to load there); the button then says so
-option(PERLIN_BUILD_SERVER "Build the Perlin server and singleplayer (dedicated executable and perlin_server library)" ON)
-if(PERLIN_BUILD_SERVER AND NOT EMSCRIPTEN AND NOT ANDROID)
+# perlin server: the dedicated executable (desktop) and singleplayer, which is the same server linked into the client
+# on every platform (desktop, android, iOS and the web): no library to ship or load. See server/README.md
+option(PERLIN_BUILD_SERVER "Build the Perlin server: singleplayer in the client and the dedicated executable" ON)
+if(PERLIN_BUILD_SERVER)
+    set(PERLIN_SERVER_EMBED ON CACHE BOOL "" FORCE)
+    # the client links the server statically; the loadable library is only for third-party hosts (standalone builds)
+    set(PERLIN_SERVER_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    if(EMSCRIPTEN OR ANDROID OR PERLIN_IOS)
+        set(PERLIN_SERVER_BUILD_EXE OFF CACHE BOOL "" FORCE)
+        set(PERLIN_SERVER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    endif()
+    if(EMSCRIPTEN)
+        # no webrtc stack in the browser build: a local world needs only the in-process loopback connection
+        set(PERLIN_SERVER_NETHERNET OFF CACHE BOOL "" FORCE)
+    endif()
     add_subdirectory(server)
-    # singleplayer: the client loads perlin_server beside the executable and joins it in process
-    if(TARGET Perlin AND TARGET perlin_server)
+    if(TARGET Perlin AND TARGET perlin_server_embed)
         target_sources(Perlin PRIVATE server/client_bridge/EmbeddedServer.cpp)
         target_include_directories(Perlin PRIVATE server/client_bridge server/include)
         target_compile_definitions(Perlin PRIVATE PERLIN_SINGLEPLAYER=1 PERLIN_SERVER_STATIC)
-        add_dependencies(Perlin perlin_server)
-        target_link_libraries(Perlin PRIVATE ${CMAKE_DL_LIBS})
-        # next to the executable in the package (on macOS the copy above already sits inside the app bundle)
-        if(NOT APPLE)
-            install(TARGETS perlin_server RUNTIME DESTINATION . LIBRARY DESTINATION .)
-        endif()
+        target_link_libraries(Perlin PRIVATE perlin_server_embed)
     endif()
     # the dedicated server ships beside the client with the block tables it reads
     if(TARGET perlin-server)

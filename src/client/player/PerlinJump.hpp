@@ -35,8 +35,7 @@ namespace perlin::physics::bds {
         TriggerJumpRequest trigger;
     };
 
-    template<class Query>
-    JumpResult GroundJump(const JumpParameters& input, Query&& query) {
+    template <class Query> JumpResult GroundJump(const JumpParameters& input, Query&& query) {
         BlockPosition position{FloorBlockCoordinate(input.position.x),
                                detail::FloorInsideCoordinate(input.bodyMinimumY),
                                FloorBlockCoordinate(input.position.z)};
@@ -44,7 +43,8 @@ namespace perlin::physics::bds {
         TriggerJumpRequest trigger;
         if (properties & ReducedJumpSurfaceProperty) {
             trigger = {true, position};
-        } else if (static_cast<float>(position[1]) >= input.bodyMinimumY || (properties & ProbeBelowForJumpProperty)) {
+        } else if (static_cast<float>(position[1]) >= input.bodyMinimumY ||
+                   (properties & ProbeBelowForJumpProperty)) {
             position[1] = std::bit_cast<int32_t>(static_cast<uint32_t>(position[1]) - 1);
             if (query(position) & ReducedJumpSurfaceProperty)
                 trigger = {true, position};
@@ -52,16 +52,25 @@ namespace perlin::physics::bds {
         const float multiplier = trigger.reducedSurface ? 0.6f : 1.0f;
         float height;
         if (input.alternate) {
-            const float base = input.effectAmplifier
-                ? detail::SseAdd(detail::SseMultiply(static_cast<float>(*input.effectAmplifier), 0.1f), 0.52f)
-                : 0.42f;
-            const float extra = detail::SseMultiply(static_cast<float>(input.syncedJumpLevel.value_or(0)), 0.1f);
-            height = detail::SseMultiply(detail::SseAdd(extra, base), multiplier);
+            // 0x14ad33160: effect and synced level each rounded on their own before the sum
+            const float effect =
+                input.effectAmplifier
+                    ? detail::SseMultiply(detail::SseAdd(static_cast<float>(*input.effectAmplifier), 1.0f),
+                                          0.1f)
+                    : 0.0f;
+            const float base =
+                input.syncedJumpLevel
+                    ? detail::SseAdd(detail::SseMultiply(static_cast<float>(*input.syncedJumpLevel), 0.1f),
+                                     0.42f)
+                    : 0.42f;
+            height = detail::SseMultiply(detail::SseAdd(effect, base), multiplier);
         } else {
             const float base = input.forceLowHeight ? 0.2f : input.customHeight.value_or(0.42f);
-            const float effect = input.effectAmplifier
-                ? detail::SseMultiply(detail::SseAdd(static_cast<float>(*input.effectAmplifier), 1.0f), 0.1f)
-                : 0.0f;
+            const float effect =
+                input.effectAmplifier
+                    ? detail::SseMultiply(detail::SseAdd(static_cast<float>(*input.effectAmplifier), 1.0f),
+                                          0.1f)
+                    : 0.0f;
             height = detail::SseMultiply(detail::SseAdd(effect, base), multiplier);
         }
         auto velocity = input.velocity;

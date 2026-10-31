@@ -5,7 +5,7 @@ Server software that lives inside the Perlin tree but builds on its own. One cod
 | Target | What it is |
 | --- | --- |
 | `perlin-server` | Dedicated server, like Bedrock Dedicated Server. Reads `server.properties` (the same keys as BDS), `allowlist.json` and `permissions.json`, loads plugins, takes console commands on stdin. |
-| `perlin_server` (`.dll` / `.so` / `.dylib`) | The same server behind a small C API (`include/perlin/server.h`) for singleplayer inside the client. |
+| `perlin_server_embed` (static) | The same server behind a small C API (`include/perlin/server.h`), linked into the client on every platform for singleplayer. `perlin_server` (`.dll` / `.so` / `.dylib`, standalone builds only) exposes that API to other hosts. |
 | `perlin_server_core` | Static library both of the above are made from. |
 
 ```
@@ -14,7 +14,7 @@ cmake -S server -B build-server && cmake --build build-server -j
 ctest --test-dir build-server
 ```
 
-From the root tree the server is built by default (`PERLIN_BUILD_SERVER`, on for desktop, off for web and Android): the client build also produces `perlin_server` beside the executable, which is what the Singleplayer button loads, and `perlin-server`; `cmake --install` puts both in the package (the library goes inside the app bundle on macOS), with the block tables in `resources/`. Needs a C++23 compiler, Python 3 (the Bedrock packet codecs are generated from `protocol/` by the client's own `tools/protogen`, so the server speaks exactly what the client decodes), and network access for the first configure (libdatachannel, cpp-httplib, miniz, wasm3 through FetchContent). Options: `PERLIN_SERVER_NETHERNET` (default ON), `PERLIN_SERVER_GPU` (OFF, see below), `PERLIN_SERVER_BUILD_SHARED`, `PERLIN_SERVER_BUILD_EXE`.
+From the root tree the server is built by default (`PERLIN_BUILD_SERVER`) on every platform the client runs on: Windows, Linux, macOS, Android, iOS and the web. Its sources compile once into an object library; `perlin_server_embed` (no wasm runtime of its own: it uses the client's WasmEdge or wasm3 behind the same wrapper) is linked straight into the client, so singleplayer needs no file next to the game and no library loading, and `perlin_server_core` (with wasm3) backs `perlin-server` on desktop. `cmake --install` puts `perlin-server` in the package with the block tables in `resources/`. The web build leaves out the NetherNet listener (no WebRTC stack in the page); singleplayer only needs the in-process loopback connection. Needs a C++23 compiler, Python 3 (the Bedrock packet codecs are generated from `protocol/` by the client's own `tools/protogen`, so the server speaks exactly what the client decodes), and network access for the first configure (libdatachannel, cpp-httplib, miniz, wasm3 through FetchContent). Options: `PERLIN_SERVER_NETHERNET` (default ON), `PERLIN_SERVER_GPU` (OFF, see below), `PERLIN_SERVER_BUILD_SHARED`, `PERLIN_SERVER_BUILD_EXE`.
 
 ## Configuration
 
@@ -69,7 +69,7 @@ Checked with locally generated keys against a custom root, including a forged se
 
 ## Plugins
 
-Same shape as client plugins: a `.wasm` in `plugins/` (optional `name.json` with `name`, `version`, `author`, `description`), the same wrapper the client uses, on wasm3 (the client itself runs plugins on WasmEdge on desktop; both load the same modules), one import `perlin.call(op, in, in_len, out, out_cap)` and the exports `perlin_alloc`, `perlin_free`, `perlin_subscriptions`, `perlin_event`. The contract is `sdk/perlin_server.h`: events (enable, disable, tick, join, quit, chat, command, block change, block break, block place) and ops (log, broadcast, message, kick, register command, players, teleport, set/get block, give item, server info).
+Same shape as client plugins: a `.wasm` in `plugins/` (optional `name.json` with `name`, `version`, `author`, `description`), the same wrapper the client uses, on wasm3 (the client itself runs plugins on WasmEdge on desktop; both load the same modules), one import `perlin.call(op, in, in_len, out, out_cap)` and the exports `perlin_alloc`, `perlin_free`, `perlin_subscriptions`, `perlin_event`. The contract is the shared ABI table, `mods/sdk/perlin/abi_table.h` (C names in `mods/sdk/perlin.h`), the same one client plugins use: events (enable, disable, tick, join, quit, chat, command, block change, block break, block place) and ops (log, broadcast, message, kick, register command, players, teleport, set/get block, give item, server info).
 
 `examples/hello_server` is a complete plugin in freestanding C: welcome message, a chat filter that cancels a message, and a `/hello` command. `examples/hello_server/build.sh` needs only clang with the wasm32 target and `wasm-ld`.
 
@@ -77,9 +77,9 @@ A plugin that traps is disabled and logged; the server keeps running.
 
 ## Singleplayer in the client
 
-The title screen has a **Singleplayer** button. Hovering it shows a note that singleplayer is in very early development and not playable yet. Clicking it starts the server inside the client (`client_bridge/EmbeddedServer` loads `perlin_server` from the folder of the executable, loopback only, you are the operator), then joins it through `BedrockSession` over an in-process transport. The client writes its own `block_states.json` and `block_destroy.tsv` into `<data dir>/singleplayer/` for the server to read.
+The title screen has a **Singleplayer** button. Hovering it shows a note that singleplayer is in very early development and not playable yet. Clicking it starts the server inside the client (`client_bridge/EmbeddedServer` calls the linked-in C API, loopback only, you are the operator), then joins it through `BedrockSession` over an in-process transport. The client writes its own `block_states.json` and `block_destroy.tsv` into `<data dir>/singleplayer/` for the server to read.
 
-It is part of the normal build; configure with `-DPERLIN_BUILD_SERVER=OFF` to leave it out, and the button then explains that this build has no singleplayer. The bridge and the shared library are tested end to end (`server_embed_test`); the button itself and the full client join were **not run**, only compiled.
+It is part of the normal build; configure with `-DPERLIN_BUILD_SERVER=OFF` to leave it out, and the button then explains that this build has no singleplayer. The bridge and the linked-in server are tested end to end (`server_embed_test`); the button itself and the full client join were **not run**, only compiled.
 
 ## Terrain backends and the GPU
 
@@ -136,4 +136,4 @@ The kernel is float32 for values and float64 for coordinates (as Java), every fl
 
 ## Tests
 
-`ctest --test-dir build-server` runs: units (JSON, block hashes checked against every state in the client's `block_states.json`, chunk encoding decoded with the client's own `ChunkCodec`, batches, fragments, config, the inventory rules, login verification, the plugin host with the real example plugin); a scripted two-player session over loopback (handshake, 49 chunks, chat, commands, plugin, movement, creative menu, place, break, pick, survival rules, leave); the C API; the client's embedding bridge against the real shared library; and a real WebRTC client against the NetherNet listener (probe, SDP offer, data channels, login, chunk delivery, and the `xbox_auth` cases). With `PERLIN_SERVER_GPU=ON` there is also `server_gpu_test`; it needs a Vulkan device (for software Vulkan, `VK_ICD_FILENAMES` can point at a SwiftShader or lavapipe ICD) and skips itself without one. `PS_TEST_BACKEND=gpu` runs the whole session test on the GPU backend.
+`ctest --test-dir build-server` runs: units (JSON, block hashes checked against every state in the client's `block_states.json`, chunk encoding decoded with the client's own `ChunkCodec`, batches, fragments, config, the inventory rules, login verification, the plugin host with the real example plugin); a scripted two-player session over loopback (handshake, 49 chunks, chat, commands, plugin, movement, creative menu, place, break, pick, survival rules, leave); the C API; the client's embedding bridge against the linked-in server; and a real WebRTC client against the NetherNet listener (probe, SDP offer, data channels, login, chunk delivery, and the `xbox_auth` cases). With `PERLIN_SERVER_GPU=ON` there is also `server_gpu_test`; it needs a Vulkan device (for software Vulkan, `VK_ICD_FILENAMES` can point at a SwiftShader or lavapipe ICD) and skips itself without one. `PS_TEST_BACKEND=gpu` runs the whole session test on the GPU backend.

@@ -21,7 +21,8 @@ namespace perlin::ui {
         };
 
         bool ReadText(const char* name, std::string& out) {
-            std::ifstream in(std::filesystem::path(clientassets::Directory(paths::DataDir())) / name, std::ios::binary);
+            std::ifstream in(std::filesystem::path(clientassets::Directory(paths::DataDir())) / name,
+                             std::ios::binary);
             if (!in)
                 return false;
             std::stringstream ss;
@@ -173,7 +174,8 @@ body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px;
             if (top + y + h < 0)
                 skipped += h;
             else if (top + y <= guiH)
-                lines += "<div class=\"l " + l.cls + "\">" + (l.text.empty() ? std::string("&nbsp;") : EscapeRml(l.text)) + "</div>";
+                lines += "<div class=\"l " + l.cls + "\">" +
+                         (l.text.empty() ? std::string("&nbsp;") : EscapeRml(l.text)) + "</div>";
             y += h;
         }
         std::string d = kTemplate;

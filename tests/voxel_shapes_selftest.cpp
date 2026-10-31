@@ -25,8 +25,8 @@ int main() {
         const double center = (x + 0.5) / 32.0;
         bool contained = false;
         for (const auto& box : boxes)
-            contained |= box.x0 < center && box.x1 > center && box.y0 < 0.5 && box.y1 > 0.5 &&
-                         box.z0 < 0.5 && box.z1 > 0.5;
+            contained |= box.x0 < center && box.x1 > center && box.y0 < 0.5 && box.y1 > 0.5 && box.z0 < 0.5 &&
+                         box.z1 > 0.5;
         if (contained != (x % 2 == 0))
             return 1;
     }

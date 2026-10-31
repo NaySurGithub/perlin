@@ -58,18 +58,22 @@ int main(int argc, char** argv) {
         const auto minimum = std::bit_cast<int32_t>(low), maximum = std::bit_cast<int32_t>(high);
         if (minimum < INT16_MIN || minimum > INT16_MAX || maximum < INT16_MIN || maximum > INT16_MAX)
             return 1;
-        CollectTerrainCells(bounds, {static_cast<int16_t>(minimum), static_cast<int16_t>(maximum)},
-                            [&](int32_t x, int32_t z) {
-            columns.push_back({std::bit_cast<uint32_t>(x), std::bit_cast<uint32_t>(z)});
-            return mode == 0 || (mode == 2 && !(((x >> 4) + (z >> 4)) & 1));
-        }, [&](int32_t x, int32_t y, int32_t z) {
-            cells.push_back({std::bit_cast<uint32_t>(x), std::bit_cast<uint32_t>(y), std::bit_cast<uint32_t>(z)});
-        }, [&](const CollisionBox& box) {
-            std::array<uint32_t, 6> words{};
-            for (int i = 0; i < 6; ++i)
-                words[i] = std::bit_cast<uint32_t>(box[i]);
-            boundaries.push_back(words);
-        });
+        CollectTerrainCells(
+            bounds, {static_cast<int16_t>(minimum), static_cast<int16_t>(maximum)},
+            [&](int32_t x, int32_t z) {
+                columns.push_back({std::bit_cast<uint32_t>(x), std::bit_cast<uint32_t>(z)});
+                return mode == 0 || (mode == 2 && !(((x >> 4) + (z >> 4)) & 1));
+            },
+            [&](int32_t x, int32_t y, int32_t z) {
+                cells.push_back(
+                    {std::bit_cast<uint32_t>(x), std::bit_cast<uint32_t>(y), std::bit_cast<uint32_t>(z)});
+            },
+            [&](const CollisionBox& box) {
+                std::array<uint32_t, 6> words{};
+                for (int i = 0; i < 6; ++i)
+                    words[i] = std::bit_cast<uint32_t>(box[i]);
+                boundaries.push_back(words);
+            });
         if (columns != expectedColumns || cells != expectedCells || boundaries != expectedBoundaries) {
             if (failures < 20)
                 std::fprintf(stderr, "Terrain-query case %d differs from BDS\n", cases);

@@ -29,13 +29,16 @@ namespace perlin {
         bool LoadServerStatesText(const std::string& text, const std::string& source);
         bool NamesLoaded() const { return namesLoaded; }
         std::vector<std::pair<int32_t, std::string>> OneStatePerName() const;
-        int32_t FindHash(const std::string& fullName, const std::string& key, const std::string& valueText) const;
+        int32_t FindHash(const std::string& fullName, const std::string& key,
+                         const std::string& valueText) const;
         size_t StateCount() const { return nameByHash.size(); }
 
         uint16_t Intern(int32_t networkId);
         void SetSequential(bool on);
         bool Sequential() const { return sequential.load(std::memory_order_acquire); }
-        void SetSequentialAir(int32_t runtimeId) { sequentialAir.store(runtimeId, std::memory_order_release); }
+        void SetSequentialAir(int32_t runtimeId) {
+            sequentialAir.store(runtimeId, std::memory_order_release);
+        }
         int32_t SequentialAir() const { return sequentialAir.load(std::memory_order_acquire); }
         void AppendSequence(int32_t hash);
         void TruncateSequence();
@@ -47,11 +50,15 @@ namespace perlin {
         };
         void InsertCustomRuns(std::vector<CustomRun> runs);
         bool CalibrateSequence(int32_t serverAirId);
-        bool SequenceVerified() const { std::lock_guard<std::mutex> lk(mutex); return layoutVerified; }
+        bool SequenceVerified() const {
+            std::lock_guard<std::mutex> lk(mutex);
+            return layoutVerified;
+        }
         uint16_t InternRuntime(int32_t runtimeId);
         int32_t RuntimeId(uint16_t local) const;
         bool LearnName(int32_t networkId, const std::string& name);
-        void LearnState(int32_t networkId, const std::string& name, std::vector<std::pair<std::string, StateValue>> states);
+        void LearnState(int32_t networkId, const std::string& name,
+                        std::vector<std::pair<std::string, StateValue>> states);
         int32_t NetworkId(uint16_t local) const;
         std::string Name(uint16_t local) const;
         std::vector<std::pair<std::string, StateValue>> States(uint16_t local) const;
@@ -91,7 +98,7 @@ namespace perlin {
         std::vector<uint64_t> baseKeys, sequenceKeys;
         std::vector<int32_t> netByLocal;
         std::vector<CustomRun> customRuns;
-        std::unordered_set<std::string> keptDataDriven;  // data-driven table blocks the server declared
+        std::unordered_set<std::string> keptDataDriven; // data-driven table blocks the server declared
         bool layoutVerified = false;
         bool layoutAppended = false;
         void BuildLayoutLocked(bool appended);

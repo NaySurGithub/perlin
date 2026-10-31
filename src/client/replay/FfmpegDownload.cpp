@@ -110,7 +110,8 @@ namespace perlin::replay::ffmpeg {
                     break;
                 }
                 if (!res || res->status != 200) {
-                    setStatus(res ? "Download failed (HTTP " + std::to_string(res->status) + ")" : "Download failed (no connection)");
+                    setStatus(res ? "Download failed (HTTP " + std::to_string(res->status) + ")"
+                                  : "Download failed (no connection)");
                     break;
                 }
             }
@@ -126,7 +127,8 @@ namespace perlin::replay::ffmpeg {
                 if (!mz_zip_reader_file_stat(&za, i, &st) || st.m_is_directory)
                     continue;
                 const std::string name = st.m_filename;
-                const bool wanted = name.size() > 15 && (name.compare(name.size() - 15, 15, "/bin/ffmpeg.exe") == 0);
+                const bool wanted =
+                    name.size() > 15 && (name.compare(name.size() - 15, 15, "/bin/ffmpeg.exe") == 0);
                 if (!wanted)
                     continue;
                 const fs::path target = dir / "ffmpeg.exe";
@@ -148,7 +150,8 @@ namespace perlin::replay::ffmpeg {
             setStatus("ffmpeg installed");
         } while (false);
 #else
-        setStatus("Automatic download is only available on Windows. Install ffmpeg with your package manager.");
+        setStatus(
+            "Automatic download is only available on Windows. Install ffmpeg with your package manager.");
 #endif
         succeeded = ok;
         running = false;

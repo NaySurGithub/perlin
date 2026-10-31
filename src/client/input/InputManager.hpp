@@ -24,7 +24,8 @@ namespace perlin {
 
         bool IsDown(Action action) const;
         void SetControlActions(std::bitset<kActionCount> actions, uint64_t untilTick) {
-            controlPressed |= actions & ~(controlTick < controlUntil ? controlActions : std::bitset<kActionCount>{});
+            controlPressed |=
+                actions & ~(controlTick < controlUntil ? controlActions : std::bitset<kActionCount>{});
             controlActions = actions;
             controlUntil = untilTick;
             controlled = true;
@@ -61,7 +62,9 @@ namespace perlin {
             return v;
         }
 
-        void Hold(Action action, std::chrono::steady_clock::time_point until) { holds[static_cast<size_t>(action)] = until; }
+        void Hold(Action action, std::chrono::steady_clock::time_point until) {
+            holds[static_cast<size_t>(action)] = until;
+        }
         void SetBlocked(bool b) { blocked = b; }
         void SetServerLocks(uint32_t value) { locks = value; }
         bool Blocked() const { return blocked; }
@@ -84,7 +87,7 @@ namespace perlin {
         float scroll = 0;
         float lastMouseX = 0, lastMouseY = 0;
         bool haveMouse = false;
-        std::chrono::steady_clock::time_point lastPoll{};
+        std::chrono::steady_clock::time_point lastPoll;
         bool blocked = false;
         bool grabMouse = false, grabKeyboard = false, failsafe = false;
         std::vector<PluginInput> pluginEvents;

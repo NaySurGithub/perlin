@@ -8,7 +8,9 @@
 
 using namespace perlin;
 
-static void install_addons(waila::Registry& registry) { (void)registry; }
+static void install_addons(waila::Registry& registry) {
+    (void)registry;
+}
 
 namespace {
     constexpr int64_t kRefreshMs = 50;
@@ -17,9 +19,12 @@ namespace {
 
     waila::Theme theme_for(settings::Theme theme) {
         switch (theme) {
-        case settings::Theme::Waila: return waila::Theme::waila();
-        case settings::Theme::Create: return waila::Theme::create();
-        default: return waila::Theme::dark();
+        case settings::Theme::Waila:
+            return waila::Theme::waila();
+        case settings::Theme::Create:
+            return waila::Theme::create();
+        default:
+            return waila::Theme::dark();
         }
     }
 
@@ -63,12 +68,14 @@ namespace {
             base.details = game::input_down("key.keyboard.left.shift");
             base.now_ms = now;
 
-            game::Target target = settings::show_blocks || settings::show_entities ? game::target() : game::Target{};
+            game::Target target =
+                settings::show_blocks || settings::show_entities ? game::target() : game::Target{};
             if (std::holds_alternative<game::BlockTarget>(target) && !settings::show_blocks)
                 target = {};
             if (std::holds_alternative<game::EntityTarget>(target) && !settings::show_entities)
                 target = {};
-            if (std::holds_alternative<std::monostate>(target) && settings::show_fluids && settings::show_blocks)
+            if (std::holds_alternative<std::monostate>(target) && settings::show_fluids &&
+                settings::show_blocks)
                 target = fluid_under_crosshair(*player);
 
             waila::Tooltip next;
@@ -100,7 +107,8 @@ namespace {
         }
 
         static game::Target fluid_under_crosshair(const PlayerState& player) {
-            const auto hit = game::raycast(game::eye_position(player), game::look_direction(player), {.max_distance = 5.0, .include_liquids = true});
+            const auto hit = game::raycast(game::eye_position(player), game::look_direction(player),
+                                           {.max_distance = 5.0, .include_liquids = true});
             if (!hit || !hit->hit || hit->block != "liquid")
                 return {};
             game::BlockTarget t;
@@ -113,7 +121,8 @@ namespace {
             t.block = std::move(*info);
             if (auto p = game::block_props(t.block.name))
                 t.props = std::move(*p);
-            t.display_name = t.props.displayName.empty() ? game::display_name(NameKind::Block, t.block.name) : t.props.displayName;
+            t.display_name = t.props.displayName.empty() ? game::display_name(NameKind::Block, t.block.name)
+                                                         : t.props.displayName;
             return t;
         }
 
@@ -139,13 +148,16 @@ namespace {
 
             float breaking = 0.0f;
             if (present && block && settings::breaking_progress)
-                if (const auto state = game::break_state(); state && state->active && state->x == block->x && state->y == block->y && state->z == block->z)
+                if (const auto state = game::break_state(); state && state->active && state->x == block->x &&
+                                                            state->y == block->y && state->z == block->z)
                     breaking = state->progress;
 
             const float scale = static_cast<float>(std::clamp(settings::scale.get(), 0.25, 4.0));
             const float w = laid.width * scale, h = laid.height * scale;
-            const float x = std::round(static_cast<float>(settings::anchor_x.get()) * (static_cast<float>(g.width()) - w));
-            const float y = std::round(kMargin + static_cast<float>(settings::anchor_y.get()) * (static_cast<float>(g.height()) - h - 2.0f * kMargin));
+            const float x = std::round(static_cast<float>(settings::anchor_x.get()) *
+                                       (static_cast<float>(g.width()) - w));
+            const float y = std::round(kMargin + static_cast<float>(settings::anchor_y.get()) *
+                                                     (static_cast<float>(g.height()) - h - 2.0f * kMargin));
             waila::paint(g, laid, x, y, scale, alpha, static_cast<float>(settings::opacity.get()), breaking);
         }
     };

@@ -24,7 +24,22 @@ namespace perlin::server {
     class Server;
     class Session;
 
-    enum class ArgKind { Literal, Enum, Int, Float, String, Text, Targets, Target, Profiles, Pos, BlockPos, Item, Block, Biome };
+    enum class ArgKind {
+        Literal,
+        Enum,
+        Int,
+        Float,
+        String,
+        Text,
+        Targets,
+        Target,
+        Profiles,
+        Pos,
+        BlockPos,
+        Item,
+        Block,
+        Biome
+    };
 
     struct ParamSpec {
         std::string name;
@@ -83,15 +98,18 @@ namespace perlin::server {
         std::string error;
         std::string context;
     };
-    MatchResult MatchCommand(Server& server, Session* source, const std::string& name, const std::vector<OverloadSpec>& overloads, const std::string& args);
+    MatchResult MatchCommand(Server& server, Session* source, const std::string& name,
+                             const std::vector<OverloadSpec>& overloads, const std::string& args);
 
     // "/give <targets> <item> [<count>]"
     std::string UsageLine(const std::string& name, const OverloadSpec& overload);
 
     // the selector grammar on its own, for the tests: @s @p @a @r @e with [name=, distance=, x=, y=, z=, limit=, sort=, gamemode=, type=]; false with `error` set
-    bool ResolveSelector(Server& server, Session* source, const std::string& text, std::vector<Session*>& out, std::string& error);
+    bool ResolveSelector(Server& server, Session* source, const std::string& text, std::vector<Session*>& out,
+                         std::string& error);
 
     struct CommandDef;
     // the AvailableCommands packet for what `isOperator` may run
-    void FillAvailableCommands(perlin::proto2225::AvailableCommandsPacket& out, const std::map<std::string, CommandDef>& commands, bool isOperator);
+    void FillAvailableCommands(perlin::proto2225::AvailableCommandsPacket& out,
+                               const std::map<std::string, CommandDef>& commands, bool isOperator);
 }

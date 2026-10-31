@@ -76,7 +76,9 @@ namespace perlin::server::vanilla {
                 const Seed128 h = SeedFromHashOf(name).Xor(lo, hi);
                 return Xoroshiro(h);
             }
-            Xoroshiro FromSeed(int64_t seed) const { return Xoroshiro(static_cast<uint64_t>(seed) ^ lo, static_cast<uint64_t>(seed) ^ hi); }
+            Xoroshiro FromSeed(int64_t seed) const {
+                return Xoroshiro(static_cast<uint64_t>(seed) ^ lo, static_cast<uint64_t>(seed) ^ hi);
+            }
         };
         Factory ForkPositional() {
             Factory f;

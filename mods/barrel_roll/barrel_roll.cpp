@@ -20,15 +20,25 @@ namespace {
         double x = 0, y = 0, z = 0;
     };
 
-    Vec operator+(Vec a, Vec b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-    Vec operator*(Vec a, double s) { return {a.x * s, a.y * s, a.z * s}; }
-    double dot(Vec a, Vec b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-    Vec cross(Vec a, Vec b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+    Vec operator+(Vec a, Vec b) {
+        return {a.x + b.x, a.y + b.y, a.z + b.z};
+    }
+    Vec operator*(Vec a, double s) {
+        return {a.x * s, a.y * s, a.z * s};
+    }
+    double dot(Vec a, Vec b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+    Vec cross(Vec a, Vec b) {
+        return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    }
     Vec unit(Vec a) {
         const double l = std::sqrt(dot(a, a));
         return l > 1e-12 ? a * (1.0 / l) : Vec{0, 0, -1};
     }
-    Vec toward(Vec v, Vec t, double angle) { return v * std::cos(angle) + t * std::sin(angle); }
+    Vec toward(Vec v, Vec t, double angle) {
+        return v * std::cos(angle) + t * std::sin(angle);
+    }
     Vec rotate_about(Vec v, Vec axis, double angle) {
         const double c = std::cos(angle), s = std::sin(angle);
         return v * c + cross(axis, v) * s + axis * (dot(axis, v) * (1.0 - c));
@@ -62,7 +72,8 @@ namespace {
         double roll_deg = 0;
         double mx = 0, my = 0;
         Smoother pitch_s, yaw_s, roll_s;
-        bool pitch_up = false, pitch_down = false, yaw_left = false, yaw_right = false, roll_left = false, roll_right = false;
+        bool pitch_up = false, pitch_down = false, yaw_left = false, yaw_right = false, roll_left = false,
+             roll_right = false;
         bool enabled_by_key = true;
 
         void begin(Vec dir) {
@@ -109,7 +120,8 @@ namespace {
     }
 
     void run(const abi::EventLook& ev) {
-        const bool allowed = settings::mod_enabled && flight.enabled_by_key && !(settings::disable_when_submerged && ev.underwater);
+        const bool allowed = settings::mod_enabled && flight.enabled_by_key &&
+                             !(settings::disable_when_submerged && ev.underwater);
         const bool gliding = ev.gliding && allowed;
         const bool jump = (ev.keys & kJump) != 0;
         const double dt = std::clamp(static_cast<double>(ev.dt), 0.0, 0.1);

@@ -17,7 +17,10 @@ namespace perlin::ui {
         static constexpr int kMaxInput = 256;
 
         void AddMessage(const std::string& text, uint64_t tick);
-        void Clear() { lines.clear(); scroll = 0; }
+        void Clear() {
+            lines.clear();
+            scroll = 0;
+        }
         std::vector<std::string> RecentLines(size_t count) const {
             std::vector<std::string> out;
             const size_t from = lines.size() > count ? lines.size() - count : 0;
@@ -25,7 +28,10 @@ namespace perlin::ui {
                 out.push_back(lines[i].text);
             return out;
         }
-        void SetCommands(std::vector<CommandInfo> list) { commands = std::move(list); Recompute(); }
+        void SetCommands(std::vector<CommandInfo> list) {
+            commands = std::move(list);
+            Recompute();
+        }
         void SetPlayers(std::vector<std::string> names) { players = std::move(names); }
         struct Coordinate {
             size_t begin = 0, end = 0;

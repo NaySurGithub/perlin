@@ -12,7 +12,13 @@
 
 using namespace perlin;
 static int failures = 0;
-#define CHECK(c) do { if (!(c)) { std::printf("FAIL line %d: %s\n", __LINE__, #c); ++failures; } } while (false)
+#define CHECK(c)                                                                                             \
+    do {                                                                                                     \
+        if (!(c)) {                                                                                          \
+            std::printf("FAIL line %d: %s\n", __LINE__, #c);                                                 \
+            ++failures;                                                                                      \
+        }                                                                                                    \
+    } while (false)
 
 int main() {
     Input input;
@@ -57,7 +63,8 @@ int main() {
     CHECK(token.size() == 32);
     auto result = client.Get("/state");
     CHECK(result && result->status == 401);
-    result = client.Post("/command", {{"X-Perlin-Token", std::string(token.size(), '0')}}, R"({"op":"shutdown"})", "application/json");
+    result = client.Post("/command", {{"X-Perlin-Token", std::string(token.size(), '0')}},
+                         R"({"op":"shutdown"})", "application/json");
     CHECK(result && result->status == 401);
     result = client.Get("/state?token=" + token);
     CHECK(result && result->status == 401);
@@ -66,7 +73,8 @@ int main() {
           !result->body.contains("__PERLIN_TOKEN__"));
     CHECK(server.TakeCommands().empty());
     client.set_default_headers({{"X-Perlin-Token", token}});
-    result = client.Post("/command", R"({"op":"input","actions":["forward","jump"],"ticks":20})", "application/json");
+    result = client.Post("/command", R"({"op":"input","actions":["forward","jump"],"ticks":20})",
+                         "application/json");
     CHECK(result && result->status == 202);
     auto commands = server.TakeCommands();
     CHECK(commands.size() == 1 && commands[0].id == 1 && commands[0].ticks == 20);
@@ -76,7 +84,8 @@ int main() {
     CHECK(result && result->status == 400);
     result = client.Post("/command", R"({"op":"shutdown"})", "text/plain");
     CHECK(result && result->status == 415);
-    result = client.Post("/command", {{"Origin", "https://unrelated.example"}}, R"({"op":"shutdown"})", "application/json");
+    result = client.Post("/command", {{"Origin", "https://unrelated.example"}}, R"({"op":"shutdown"})",
+                         "application/json");
     CHECK(result && result->status == 403);
     CHECK(server.TakeCommands().empty());
     result = client.Post("/command", R"({"op":"character","key":128578})", "application/json");
@@ -88,7 +97,9 @@ int main() {
     result = client.Post("/command", R"({"op":"key","key":128578})", "application/json");
     CHECK(result && result->status == 400);
     ControlSnapshot snapshot;
-    snapshot.tick = 41; snapshot.corrections = 3; snapshot.position = {1, 2, 3};
+    snapshot.tick = 41;
+    snapshot.corrections = 3;
+    snapshot.position = {1, 2, 3};
     ControlActor actor;
     actor.runtimeId = "9007199254740993";
     actor.uniqueId = "-9223372036854775807";
@@ -105,17 +116,19 @@ int main() {
           state->actors[0].uniqueId == actor.uniqueId && state->actors[0].vehicleUid == actor.vehicleUid &&
           state->actors[0].position[2] == 6);
     CHECK(result && result->body.contains("\"9007199254740993\""));
-    const uint8_t bgra[16] = {0,0,255,255, 0,0,255,255, 0,0,255,255, 0,0,255,255};
+    const uint8_t bgra[16] = {0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255};
     server.Frame(2, 2, 8, bgra, false);
     for (int i = 0; i < 200; ++i) {
         result = client.Get("/frame");
-        if (!result || result->status != 202) break;
+        if (!result || result->status != 202)
+            break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     CHECK(result && result->status == 200);
     int w = 0, h = 0, n = 0;
     auto* pixels = result ? stbi_load_from_memory(reinterpret_cast<const unsigned char*>(result->body.data()),
-                                                  static_cast<int>(result->body.size()), &w, &h, &n, 3) : nullptr;
+                                                  static_cast<int>(result->body.size()), &w, &h, &n, 3)
+                          : nullptr;
     CHECK(pixels && w == 2 && h == 2 && pixels[0] > 200 && pixels[1] < 50 && pixels[2] < 50);
     stbi_image_free(pixels);
     CHECK(server.TakeFrameRequest());

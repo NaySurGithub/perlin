@@ -7,11 +7,12 @@
 namespace perlin {
     using targeting::RayBox;
 
-    glm::vec3 EntityClickOffset(const glm::dvec3& eye, const glm::dvec3& dir, const glm::dvec3& feet, double halfWidth, double height,
-                                const glm::dvec3& fallback) {
+    glm::vec3 EntityClickOffset(const glm::dvec3& eye, const glm::dvec3& dir, const glm::dvec3& feet,
+                                double halfWidth, double height, const glm::dvec3& fallback) {
         constexpr double kInset = 0.002;
         const glm::dvec3 lo(feet.x - halfWidth + kInset, feet.y + kInset, feet.z - halfWidth + kInset);
-        const glm::dvec3 hi(feet.x + halfWidth - kInset, feet.y + height - kInset, feet.z + halfWidth - kInset);
+        const glm::dvec3 hi(feet.x + halfWidth - kInset, feet.y + height - kInset,
+                            feet.z + halfWidth - kInset);
         glm::dvec3 point = fallback;
         double t;
         int face;
@@ -22,9 +23,10 @@ namespace perlin {
         return glm::vec3(point - feet);
     }
 
-    AimHit Raycast(const Level& level, const BlockLibrary* blocks, const std::vector<entity::Entity>& entities,
-                   const std::function<glm::vec2(const entity::Entity&)>& bounds, const glm::dvec3& eye, const glm::dvec3& dirIn,
-                   double reach, double entityReach) {
+    AimHit Raycast(const Level& level, const BlockLibrary* blocks,
+                   const std::vector<entity::Entity>& entities,
+                   const std::function<glm::vec2(const entity::Entity&)>& bounds, const glm::dvec3& eye,
+                   const glm::dvec3& dirIn, double reach, double entityReach) {
         AimHit best;
         best.distance = reach;
         const double len = glm::length(dirIn);
@@ -33,7 +35,8 @@ namespace perlin {
         const glm::dvec3 dir = dirIn / len;
 
         const LevelCollision world(level, blocks);
-        glm::ivec3 cell(static_cast<int>(std::floor(eye.x)), static_cast<int>(std::floor(eye.y)), static_cast<int>(std::floor(eye.z)));
+        glm::ivec3 cell(static_cast<int>(std::floor(eye.x)), static_cast<int>(std::floor(eye.y)),
+                        static_cast<int>(std::floor(eye.z)));
         glm::ivec3 step(dir.x > 0 ? 1 : -1, dir.y > 0 ? 1 : -1, dir.z > 0 ? 1 : -1);
         glm::dvec3 tMax, tDelta;
         for (int a = 0; a < 3; a++) {
@@ -70,14 +73,18 @@ namespace perlin {
                     test(base + glm::dvec3(x.x0, x.y0, x.z0), base + glm::dvec3(x.x1, x.y1, x.z1));
                 if (bestT <= reach) {
                     best.kind = AimHit::Kind::Block;
-                    best.bx = cell.x; best.by = cell.y; best.bz = cell.z;
+                    best.bx = cell.x;
+                    best.by = cell.y;
+                    best.bz = cell.z;
                     best.face = bestFace;
                     best.distance = bestT;
                     best.point = eye + dir * bestT;
-                    best.boxLo = lo; best.boxHi = hi;
+                    best.boxLo = lo;
+                    best.boxHi = hi;
                     best.shape.clear();
                     for (const physics::Box& x : boxes)
-                        best.shape.emplace_back(base + glm::dvec3(x.x0, x.y0, x.z0), base + glm::dvec3(x.x1, x.y1, x.z1));
+                        best.shape.emplace_back(base + glm::dvec3(x.x0, x.y0, x.z0),
+                                                base + glm::dvec3(x.x1, x.y1, x.z1));
                     break;
                 }
             }
@@ -105,9 +112,11 @@ namespace perlin {
             int f;
             const double blockDist = best.kind == AimHit::Kind::Block ? best.distance : best.distance;
             const double cap = entityReach >= 0.0 ? entityReach : reach;
-            const double limit = best.kind == AimHit::Kind::Entity ? std::min(best.distance, cap) : std::min(blockDist, cap);
+            const double limit =
+                best.kind == AimHit::Kind::Entity ? std::min(best.distance, cap) : std::min(blockDist, cap);
             if (RayBox(eye, dir, lo, hi, limit, t, f) &&
-                (best.kind == AimHit::Kind::Entity ? t < best.distance : targeting::EntityBeforeLimit(t, limit))) {
+                (best.kind == AimHit::Kind::Entity ? t < best.distance
+                                                   : targeting::EntityBeforeLimit(t, limit))) {
                 best.kind = AimHit::Kind::Entity;
                 best.entity = e.runtimeId;
                 best.distance = t;

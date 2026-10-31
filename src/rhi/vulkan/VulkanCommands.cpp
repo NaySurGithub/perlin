@@ -6,7 +6,9 @@
 #include <cstring>
 
 namespace rhi::vk {
-    void CmdList::Fail(const std::string& message) { device.ReportError(message); }
+    void CmdList::Fail(const std::string& message) {
+        device.ReportError(message);
+    }
 
     void CmdList::Begin() {
         pipeline = {};
@@ -145,11 +147,14 @@ namespace rhi::vk {
 
     void CmdList::UavBarrier(BufferHandle) {
         VkMemoryBarrier2 mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
-        constexpr auto kShaders = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        constexpr auto kShaders = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                                  VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         mb.srcStageMask = queue == QueueType::Graphics ? kShaders : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         mb.dstStageMask = mb.srcStageMask | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
         mb.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-        mb.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        mb.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT |
+                           VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
         VkDependencyInfo di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
         di.memoryBarrierCount = 1;
         di.pMemoryBarriers = &mb;
@@ -162,8 +167,11 @@ namespace rhi::vk {
         if (!tex)
             return;
         VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        constexpr auto kShaders = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        b.srcStageMask = b.dstStageMask = queue == QueueType::Graphics ? kShaders : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        constexpr auto kShaders = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                                  VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        b.srcStageMask = b.dstStageMask =
+            queue == QueueType::Graphics ? kShaders : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         b.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
         b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
         b.oldLayout = b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -177,7 +185,8 @@ namespace rhi::vk {
         device.barrierCount++;
     }
 
-    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) {
+    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                             uint64_t size) {
         BufferRec* d = device.buffers.Get(dst);
         BufferRec* s = device.buffers.Get(src);
         if (!d || !s) {
@@ -192,7 +201,8 @@ namespace rhi::vk {
         device.fn.vkCmdCopyBuffer(cmd, s->buffer, d->buffer, 1, &region);
     }
 
-    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         TextureRec* t = device.textures.Get(dst);
         BufferRec* b = device.buffers.Get(src);
         if (!t || !b) {
@@ -205,12 +215,15 @@ namespace rhi::vk {
         for (const BufferTextureCopy& r : regions) {
             if (device.useValidator) {
                 device.validator.ExpectBuffer(src, State::CopySrc, "CopyBufferToTexture src");
-                device.validator.ExpectTexture(dst, {r.mip, 1, r.layer, 1}, State::CopyDst, "CopyBufferToTexture dst");
+                device.validator.ExpectTexture(dst, {r.mip, 1, r.layer, 1}, State::CopyDst,
+                                               "CopyBufferToTexture dst");
             }
             VkBufferImageCopy c{};
             c.bufferOffset = r.bufferOffset;
             c.bufferRowLength = r.bufferRowPitch ? r.bufferRowPitch / fi.bytesPerBlock * fi.blockWidth : 0;
-            c.imageSubresource = {static_cast<VkImageAspectFlags>(fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), r.mip, r.layer, 1};
+            c.imageSubresource = {static_cast<VkImageAspectFlags>(fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                                                           : VK_IMAGE_ASPECT_COLOR_BIT),
+                                  r.mip, r.layer, 1};
             c.imageOffset = {static_cast<int32_t>(r.x), static_cast<int32_t>(r.y), static_cast<int32_t>(r.z)};
             c.imageExtent = {r.width, r.height, r.depth};
             copies.push_back(c);
@@ -219,7 +232,8 @@ namespace rhi::vk {
                                          static_cast<uint32_t>(copies.size()), copies.data());
     }
 
-    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         TextureRec* t = device.textures.Get(src);
         BufferRec* b = device.buffers.Get(dst);
         if (!t || !b) {
@@ -232,12 +246,15 @@ namespace rhi::vk {
         for (const BufferTextureCopy& r : regions) {
             if (device.useValidator) {
                 device.validator.ExpectBuffer(dst, State::CopyDst, "CopyTextureToBuffer dst");
-                device.validator.ExpectTexture(src, {r.mip, 1, r.layer, 1}, State::CopySrc, "CopyTextureToBuffer src");
+                device.validator.ExpectTexture(src, {r.mip, 1, r.layer, 1}, State::CopySrc,
+                                               "CopyTextureToBuffer src");
             }
             VkBufferImageCopy c{};
             c.bufferOffset = r.bufferOffset;
             c.bufferRowLength = r.bufferRowPitch ? r.bufferRowPitch / fi.bytesPerBlock * fi.blockWidth : 0;
-            c.imageSubresource = {static_cast<VkImageAspectFlags>(fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), r.mip, r.layer, 1};
+            c.imageSubresource = {static_cast<VkImageAspectFlags>(fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                                                           : VK_IMAGE_ASPECT_COLOR_BIT),
+                                  r.mip, r.layer, 1};
             c.imageOffset = {static_cast<int32_t>(r.x), static_cast<int32_t>(r.y), static_cast<int32_t>(r.z)};
             c.imageExtent = {r.width, r.height, r.depth};
             copies.push_back(c);
@@ -257,8 +274,10 @@ namespace rhi::vk {
         copies.reserve(regions.size());
         for (const TextureCopy& r : regions) {
             if (device.useValidator) {
-                device.validator.ExpectTexture(src, {r.srcMip, 1, r.srcLayer, 1}, State::CopySrc, "CopyTexture src");
-                device.validator.ExpectTexture(dst, {r.dstMip, 1, r.dstLayer, 1}, State::CopyDst, "CopyTexture dst");
+                device.validator.ExpectTexture(src, {r.srcMip, 1, r.srcLayer, 1}, State::CopySrc,
+                                               "CopyTexture src");
+                device.validator.ExpectTexture(dst, {r.dstMip, 1, r.dstLayer, 1}, State::CopyDst,
+                                               "CopyTexture dst");
             }
             VkImageCopy c{};
             c.srcSubresource = {s->aspect, r.srcMip, r.srcLayer, 1};
@@ -268,8 +287,9 @@ namespace rhi::vk {
             c.extent = {r.width, r.height, 1};
             copies.push_back(c);
         }
-        device.fn.vkCmdCopyImage(cmd, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, d->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                 static_cast<uint32_t>(copies.size()), copies.data());
+        device.fn.vkCmdCopyImage(cmd, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, d->image,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(copies.size()),
+                                 copies.data());
     }
 
     void CmdList::FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) {
@@ -298,7 +318,8 @@ namespace rhi::vk {
         region.srcSubresource = {s->aspect, 0, 0, 1};
         region.dstSubresource = {d->aspect, 0, 0, 1};
         region.extent = {s->desc.width, s->desc.height, 1};
-        device.fn.vkCmdResolveImage(cmd, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, d->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        device.fn.vkCmdResolveImage(cmd, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, d->image,
+                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     }
 
     void CmdList::BeginRendering(const RenderingDesc& desc) {
@@ -314,9 +335,13 @@ namespace rhi::vk {
         depthFormat = Format::Unknown;
 
         auto loadOp = [](LoadOp op) {
-            return op == LoadOp::Load ? VK_ATTACHMENT_LOAD_OP_LOAD : op == LoadOp::Clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            return op == LoadOp::Load    ? VK_ATTACHMENT_LOAD_OP_LOAD
+                   : op == LoadOp::Clear ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                         : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         };
-        auto storeOp = [](StoreOp op) { return op == StoreOp::Store ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE; };
+        auto storeOp = [](StoreOp op) {
+            return op == StoreOp::Store ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        };
 
         for (uint32_t i = 0; i < desc.colorCount; i++) {
             const ColorAttachment& a = desc.colors[i];
@@ -328,7 +353,8 @@ namespace rhi::vk {
             if (!Has(t->desc.usage, TextureUsage::ColorTarget))
                 Fail("BeginRendering: '" + t->name + "' lacks ColorTarget usage");
             if (device.useValidator)
-                device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, State::ColorTarget, "BeginRendering colour");
+                device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, State::ColorTarget,
+                                               "BeginRendering colour");
             VkRenderingAttachmentInfo& c = colors[i];
             c.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             c.imageView = device.AttachmentView(a.texture, a.mip, a.layer);
@@ -357,11 +383,13 @@ namespace rhi::vk {
                 if (!Has(t->desc.usage, TextureUsage::DepthTarget))
                     Fail("BeginRendering: '" + t->name + "' lacks DepthTarget usage");
                 if (device.useValidator)
-                    device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, a.readOnly ? State::DepthRead : State::DepthWrite,
+                    device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1},
+                                                   a.readOnly ? State::DepthRead : State::DepthWrite,
                                                    "BeginRendering depth");
                 VkImageView view = device.AttachmentView(a.texture, a.mip, a.layer);
                 depth.imageView = view;
-                depth.imageLayout = a.readOnly ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                depth.imageLayout = a.readOnly ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+                                               : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                 depth.loadOp = a.readOnly ? VK_ATTACHMENT_LOAD_OP_LOAD : loadOp(a.load);
                 depth.storeOp = a.readOnly ? VK_ATTACHMENT_STORE_OP_STORE : storeOp(a.store);
                 depth.clearValue.depthStencil = {a.clearDepth, a.clearStencil};
@@ -417,7 +445,8 @@ namespace rhi::vk {
             return;
         }
         if (p->compute == inRendering)
-            Fail(p->compute ? "compute pipeline set inside a rendering pass" : "graphics pipeline set outside a rendering pass");
+            Fail(p->compute ? "compute pipeline set inside a rendering pass"
+                            : "graphics pipeline set outside a rendering pass");
         if (!havePipeline || pipeline.layout != p->layout) {
             for (uint32_t i = 0; i < kMaxBindGroups; i++)
                 if (groups[i])
@@ -438,7 +467,8 @@ namespace rhi::vk {
             return;
         }
         if (offsets.size() != g->dynamicCount)
-            Fail("SetBindGroup: expected " + std::to_string(g->dynamicCount) + " dynamic offsets, got " + std::to_string(offsets.size()));
+            Fail("SetBindGroup: expected " + std::to_string(g->dynamicCount) + " dynamic offsets, got " +
+                 std::to_string(offsets.size()));
         if (device.useValidator)
             device.validator.ExpectAll(g->bound, "SetBindGroup");
         groups[set] = group;
@@ -547,17 +577,20 @@ namespace rhi::vk {
                     Fail("draw with a destroyed or missing bind group at set " + std::to_string(i));
                     continue;
                 }
-                device.fn.vkCmdBindDescriptorSets(cmd, pipeline.bindPoint, pipeline.layout, i, 1, &g->set, dynamicCounts[i], dynamicOffsets[i].data());
+                device.fn.vkCmdBindDescriptorSets(cmd, pipeline.bindPoint, pipeline.layout, i, 1, &g->set,
+                                                  dynamicCounts[i], dynamicOffsets[i].data());
             }
             dirtySets = 0;
         }
         if (pushDirty && pipeline.pushBytes) {
-            device.fn.vkCmdPushConstants(cmd, pipeline.layout, pipeline.pushStages, 0, pipeline.pushBytes, push.data());
+            device.fn.vkCmdPushConstants(cmd, pipeline.layout, pipeline.pushStages, 0, pipeline.pushBytes,
+                                         push.data());
             pushDirty = false;
         }
     }
 
-    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
+    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                       uint32_t firstInstance) {
         if (!havePipeline || !inRendering) {
             Fail("Draw without a pipeline or outside a rendering pass");
             return;
@@ -567,7 +600,8 @@ namespace rhi::vk {
         device.drawCount++;
     }
 
-    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                              int32_t vertexOffset, uint32_t firstInstance) {
         if (!havePipeline || !inRendering || !haveIndex) {
             Fail("DrawIndexed without a pipeline, index buffer or rendering pass");
             return;
@@ -577,7 +611,8 @@ namespace rhi::vk {
         device.drawCount++;
     }
 
-    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) {
+    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                      uint32_t stride) {
         BufferRec* a = device.buffers.Get(args);
         if (!a || !havePipeline || !inRendering || !haveIndex) {
             Fail("DrawIndexedIndirect: missing buffer, pipeline, index buffer or rendering pass");
@@ -590,14 +625,15 @@ namespace rhi::vk {
             device.fn.vkCmdDrawIndexedIndirect(cmd, a->buffer, offset, maxDraws, stride);
         } else {
             for (uint32_t i = 0; i < maxDraws; i++)
-                device.fn.vkCmdDrawIndexedIndirect(cmd, a->buffer, offset + static_cast<uint64_t>(i) * stride, 1, stride);
+                device.fn.vkCmdDrawIndexedIndirect(cmd, a->buffer, offset + static_cast<uint64_t>(i) * stride,
+                                                   1, stride);
         }
         device.drawCount += maxDraws;
         device.indirectCount++;
     }
 
-    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset, uint32_t maxDraws,
-                                           uint32_t stride) {
+    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                           uint64_t countOffset, uint32_t maxDraws, uint32_t stride) {
         BufferRec* a = device.buffers.Get(args);
         BufferRec* c = device.buffers.Get(countBuffer);
         if (!a || !c || !havePipeline || !inRendering || !haveIndex) {
@@ -610,10 +646,12 @@ namespace rhi::vk {
         }
         if (device.useValidator) {
             device.validator.ExpectBuffer(args, State::IndirectArgument, "DrawIndexedIndirectCount args");
-            device.validator.ExpectBuffer(countBuffer, State::IndirectArgument, "DrawIndexedIndirectCount count");
+            device.validator.ExpectBuffer(countBuffer, State::IndirectArgument,
+                                          "DrawIndexedIndirectCount count");
         }
         FlushBindings();
-        device.fn.vkCmdDrawIndexedIndirectCount(cmd, a->buffer, offset, c->buffer, countOffset, maxDraws, stride);
+        device.fn.vkCmdDrawIndexedIndirectCount(cmd, a->buffer, offset, c->buffer, countOffset, maxDraws,
+                                                stride);
         device.indirectCount++;
     }
 
@@ -649,14 +687,16 @@ namespace rhi::vk {
         device.fn.vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, q->pool, index);
     }
 
-    void CmdList::ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) {
+    void CmdList::ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                                 uint64_t dstOffset) {
         QueryRec* q = device.queries.Get(set);
         BufferRec* b = device.buffers.Get(dst);
         if (!q || !b || first + count > q->count) {
             Fail("ResolveQueries: bad query set or buffer");
             return;
         }
-        device.fn.vkCmdCopyQueryPoolResults(cmd, q->pool, first, count, b->buffer, dstOffset, sizeof(uint64_t),
+        device.fn.vkCmdCopyQueryPoolResults(cmd, q->pool, first, count, b->buffer, dstOffset,
+                                            sizeof(uint64_t),
                                             VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
         // the next frame writes these slots again and a query must be reset before reuse
         VkMemoryBarrier2 mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};

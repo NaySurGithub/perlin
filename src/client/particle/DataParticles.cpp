@@ -41,7 +41,6 @@ namespace perlin::particle {
                 out[i] = Ex(&j->array[static_cast<size_t>(i)]);
         }
 
-
         std::string StripVariable(const std::string& name) {
             for (const char* prefix : {"variable.", "v."})
                 if (name.starts_with(prefix))
@@ -56,7 +55,9 @@ namespace perlin::particle {
             if (h.size() != 6 && h.size() != 8)
                 return false;
             try {
-                const auto byte = [&](size_t i) { return static_cast<float>(std::stoi(h.substr(i, 2), nullptr, 16)) / 255.0f; };
+                const auto byte = [&](size_t i) {
+                    return static_cast<float>(std::stoi(h.substr(i, 2), nullptr, 16)) / 255.0f;
+                };
                 if (h.size() == 8)
                     out = {byte(2), byte(4), byte(6), byte(0)};
                 else
@@ -68,7 +69,9 @@ namespace perlin::particle {
         }
 
         uint32_t Pack(const glm::vec4& c) {
-            const auto b = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+            const auto b = [](float v) {
+                return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
+            };
             return (b(c.a) << 24) | (b(c.b) << 16) | (b(c.g) << 8) | b(c.r);
         }
     }
@@ -106,7 +109,8 @@ namespace perlin::particle {
         if (!fs::exists(root, ec))
             return;
         std::vector<fs::path> files;
-        for (const auto& e : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec))
+        for (const auto& e :
+             fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec))
             if (e.is_regular_file() && e.path().extension() == ".json")
                 files.push_back(e.path());
         std::sort(files.begin(), files.end());
@@ -275,7 +279,8 @@ namespace perlin::particle {
                 d.facing = f->StringOr(d.facing);
             if (const Json* dj = c->Find("direction")) {
                 if (const Json* m = dj->Find("mode"))
-                    d.dirFacing = m->StringOr("") == "custom" ? 2 : (m->StringOr("") == "derive_from_velocity" ? 1 : 0);
+                    d.dirFacing =
+                        m->StringOr("") == "custom" ? 2 : (m->StringOr("") == "derive_from_velocity" ? 1 : 0);
                 if (const Json* m = dj->Find("min_speed_threshold"))
                     d.minSpeed = static_cast<float>(m->NumberOr(0.01));
             }
@@ -317,18 +322,22 @@ namespace perlin::particle {
                                 if (value.IsString() && ParseHex(value.string, rgba)) {
                                     try {
                                         d.gradient.stops.emplace_back(std::stof(stop), rgba);
-                                    } catch (...) {
-                                    }
+                                    } catch (...) {}
                                 }
                             }
                         } else if (g->IsArray()) {
                             for (size_t i = 0; i < g->array.size(); i++) {
                                 glm::vec4 rgba;
                                 if (g->array[i].IsString() && ParseHex(g->array[i].string, rgba))
-                                    d.gradient.stops.emplace_back(g->array.size() > 1 ? static_cast<float>(i) / static_cast<float>(g->array.size() - 1) : 0.0f, rgba);
+                                    d.gradient.stops.emplace_back(
+                                        g->array.size() > 1
+                                            ? static_cast<float>(i) / static_cast<float>(g->array.size() - 1)
+                                            : 0.0f,
+                                        rgba);
                             }
                         }
-                        std::sort(d.gradient.stops.begin(), d.gradient.stops.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                        std::sort(d.gradient.stops.begin(), d.gradient.stops.end(),
+                                  [](const auto& a, const auto& b) { return a.first < b.first; });
                         d.hasGradient = !d.gradient.stops.empty();
                     }
                 }
@@ -361,7 +370,8 @@ namespace perlin::particle {
             scope.variables["particle_age"] = molang::Value::Num(p->age);
             scope.variables["particle_lifetime"] = molang::Value::Num(p->lifetime);
             for (int i = 0; i < 4; i++)
-                scope.variables["particle_random_" + std::to_string(i + 1)] = molang::Value::Num(p->random[i]);
+                scope.variables["particle_random_" + std::to_string(i + 1)] =
+                    molang::Value::Num(p->random[i]);
         }
         for (const Curve& c : e.def->curves) {
             const double range = c.range ? c.range->Number(scope) : 1.0;
@@ -372,21 +382,26 @@ namespace perlin::particle {
                 const double span = std::clamp(t, 0.0, 1.0) * (n - 3);
                 const int seg = std::min(static_cast<int>(span), n - 4);
                 const double f = span - seg;
-                const double p0 = c.nodes[static_cast<size_t>(seg)]->Number(scope), p1 = c.nodes[static_cast<size_t>(seg + 1)]->Number(scope),
-                             p2 = c.nodes[static_cast<size_t>(seg + 2)]->Number(scope), p3 = c.nodes[static_cast<size_t>(seg + 3)]->Number(scope);
-                value = 0.5 * ((2 * p1) + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f + (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f);
+                const double p0 = c.nodes[static_cast<size_t>(seg)]->Number(scope),
+                             p1 = c.nodes[static_cast<size_t>(seg + 1)]->Number(scope),
+                             p2 = c.nodes[static_cast<size_t>(seg + 2)]->Number(scope),
+                             p3 = c.nodes[static_cast<size_t>(seg + 3)]->Number(scope);
+                value = 0.5 * ((2 * p1) + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f +
+                               (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f);
             } else {
                 const double span = std::clamp(t, 0.0, 1.0) * (n - 1);
                 const int seg = std::min(static_cast<int>(span), n - 2);
                 const double f = span - seg;
-                const double a = c.nodes[static_cast<size_t>(seg)]->Number(scope), b = c.nodes[static_cast<size_t>(seg + 1)]->Number(scope);
+                const double a = c.nodes[static_cast<size_t>(seg)]->Number(scope),
+                             b = c.nodes[static_cast<size_t>(seg + 1)]->Number(scope);
                 value = a + (b - a) * f;
             }
             scope.variables[c.name] = molang::Value::Num(value);
         }
     }
 
-    bool DataParticles::Spawn(const std::string& identifier, const glm::dvec3& at, const std::string& molangVariables) {
+    bool DataParticles::Spawn(const std::string& identifier, const glm::dvec3& at,
+                              const std::string& molangVariables) {
         const auto it = defs.find(identifier);
         if (it == defs.end())
             return false;
@@ -396,8 +411,8 @@ namespace perlin::particle {
         live.id = nextEmitter++;
         live.e.def = &it->second;
         live.e.origin = at;
-        for (int i = 0; i < 4; i++)
-            live.e.random[i] = static_cast<float>(Rand());
+        for (float& i : live.e.random)
+            i = static_cast<float>(Rand());
         if (!molangVariables.empty()) {
             Json vars;
             std::string error;
@@ -442,8 +457,8 @@ namespace perlin::particle {
         p.def = &d;
         p.emitterId = live.id;
         p.origin = e.origin;
-        for (int i = 0; i < 4; i++)
-            p.random[i] = static_cast<float>(Rand());
+        for (float& i : p.random)
+            i = static_cast<float>(Rand());
         molang::Scope scope;
         Prepare(scope, e, &p);
         glm::dvec3 offset(Num(d.offset[0], scope, 0), Num(d.offset[1], scope, 0), Num(d.offset[2], scope, 0));
@@ -459,14 +474,16 @@ namespace perlin::particle {
             const double r = Num(d.radius, scope, 1.0);
             local = unit() * r * std::cbrt(Rand());
         } else if (d.shape == 2) {
-            local = glm::dvec3((Rand() * 2 - 1) * Num(d.halfDim[0], scope, 0), (Rand() * 2 - 1) * Num(d.halfDim[1], scope, 0),
+            local = glm::dvec3((Rand() * 2 - 1) * Num(d.halfDim[0], scope, 0),
+                               (Rand() * 2 - 1) * Num(d.halfDim[1], scope, 0),
                                (Rand() * 2 - 1) * Num(d.halfDim[2], scope, 0));
         } else if (d.shape == 3) {
             glm::dvec3 n(Num(d.normal[0], scope, 0), Num(d.normal[1], scope, 1), Num(d.normal[2], scope, 0));
             if (glm::dot(n, n) < 1e-9)
                 n = {0, 1, 0};
             n = glm::normalize(n);
-            glm::dvec3 a = std::fabs(n.y) < 0.99 ? glm::normalize(glm::cross(n, glm::dvec3(0, 1, 0))) : glm::dvec3(1, 0, 0);
+            glm::dvec3 a = std::fabs(n.y) < 0.99 ? glm::normalize(glm::cross(n, glm::dvec3(0, 1, 0)))
+                                                 : glm::dvec3(1, 0, 0);
             const glm::dvec3 b = glm::cross(n, a);
             const double r = Num(d.radius, scope, 1.0) * std::sqrt(Rand());
             const double ang = Rand() * 6.283185307179586;
@@ -568,9 +585,11 @@ namespace perlin::particle {
                 if (d.particleExpire && d.particleExpire->Number(scope) != 0.0)
                     dead = true;
                 if (d.parametric) {
-                    p.pos = p.origin + glm::dvec3(Num(d.relPos[0], scope, 0), Num(d.relPos[1], scope, 0), Num(d.relPos[2], scope, 0));
+                    p.pos = p.origin + glm::dvec3(Num(d.relPos[0], scope, 0), Num(d.relPos[1], scope, 0),
+                                                  Num(d.relPos[2], scope, 0));
                 } else if (d.dynamic) {
-                    glm::dvec3 acc(Num(d.accel[0], scope, 0), Num(d.accel[1], scope, 0), Num(d.accel[2], scope, 0));
+                    glm::dvec3 acc(Num(d.accel[0], scope, 0), Num(d.accel[1], scope, 0),
+                                   Num(d.accel[2], scope, 0));
                     acc -= p.vel * Num(d.drag, scope, 0);
                     p.vel += acc * static_cast<double>(dt);
                     glm::dvec3 next = p.pos + p.vel * static_cast<double>(dt);
@@ -579,7 +598,8 @@ namespace perlin::particle {
                         for (int axis = 0; axis < 3; axis++) {
                             glm::dvec3 probe = p.pos;
                             probe[axis] = next[axis] + (p.vel[axis] > 0 ? radius : -radius);
-                            if (world.solid(static_cast<int>(std::floor(probe.x)), static_cast<int>(std::floor(probe.y)),
+                            if (world.solid(static_cast<int>(std::floor(probe.x)),
+                                            static_cast<int>(std::floor(probe.y)),
                                             static_cast<int>(std::floor(probe.z)))) {
                                 next[axis] = p.pos[axis];
                                 p.vel[axis] *= -d.restitution;
@@ -605,7 +625,7 @@ namespace perlin::particle {
             if (dead) {
                 if (owner != byId.end())
                     owner->second->e.alive = std::max(0, owner->second->e.alive - 1);
-                particles[i] = std::move(particles.back());
+                particles[i] = particles.back();
                 particles.pop_back();
             } else {
                 i++;
@@ -614,7 +634,8 @@ namespace perlin::particle {
         std::erase_if(emitters, [](const Live& l) { return l.e.done && l.e.alive <= 0; });
     }
 
-    void DataParticles::Collect(const CameraView& cam, const DataWorld& world, std::vector<CustomQuad>& out) const {
+    void DataParticles::Collect(const CameraView& cam, const DataWorld& world,
+                                std::vector<CustomQuad>& out) const {
         std::unordered_map<uint64_t, const Live*> byId;
         for (const Live& l : emitters)
             byId[l.id] = &l;
@@ -629,7 +650,8 @@ namespace perlin::particle {
             q.centre = p.pos;
             q.texture = d.texture;
             q.blend = d.blend;
-            const float w = static_cast<float>(Num(d.size[0], scope, 0.1)), h = static_cast<float>(Num(d.size[1], scope, 0.1));
+            const float w = static_cast<float>(Num(d.size[0], scope, 0.1)),
+                        h = static_cast<float>(Num(d.size[1], scope, 0.1));
             glm::vec3 right = cam.right, up = cam.up;
             const std::string& f = d.facing;
             if (f == "rotate_y" || f == "lookat_y") {
@@ -652,7 +674,8 @@ namespace perlin::particle {
                     right = glm::dot(r, r) > 1e-8f ? glm::normalize(r) : cam.right;
                 }
             }
-            if (f != "emitter_transform_xy" && f != "emitter_transform_xz" && f != "emitter_transform_yz" && p.rotation != 0.0f) {
+            if (f != "emitter_transform_xy" && f != "emitter_transform_xz" && f != "emitter_transform_yz" &&
+                p.rotation != 0.0f) {
                 const float c = std::cos(p.rotation), s = std::sin(p.rotation);
                 const glm::vec3 r2 = right * c + up * s, u2 = up * c - right * s;
                 right = r2;
@@ -700,8 +723,10 @@ namespace perlin::particle {
                         }
                 }
             } else if (d.hasColor) {
-                c = {static_cast<float>(Num(d.color[0], scope, 1)), static_cast<float>(Num(d.color[1], scope, 1)),
-                     static_cast<float>(Num(d.color[2], scope, 1)), static_cast<float>(Num(d.color[3], scope, 1))};
+                c = {static_cast<float>(Num(d.color[0], scope, 1)),
+                     static_cast<float>(Num(d.color[1], scope, 1)),
+                     static_cast<float>(Num(d.color[2], scope, 1)),
+                     static_cast<float>(Num(d.color[3], scope, 1))};
             }
             if (d.lit && world.light)
                 c = glm::vec4(glm::vec3(c) * world.light(p.pos), c.a);

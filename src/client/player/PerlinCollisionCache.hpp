@@ -42,12 +42,13 @@ namespace perlin::physics::bds {
         cache.region = region;
     }
 
-    template<class Query>
+    template <class Query>
     bool RefreshCollisionCache(CollisionCache& cache, const CollisionBox& region, Query&& query) {
         bool contained = true;
         for (int axis = 0; axis < 3; ++axis)
             contained &= region[axis] >= cache.region[axis] && !(region[axis] > cache.region[axis + 3]) &&
-                         region[axis + 3] >= cache.region[axis] && !(region[axis + 3] > cache.region[axis + 3]);
+                         region[axis + 3] >= cache.region[axis] &&
+                         !(region[axis + 3] > cache.region[axis + 3]);
         if (contained)
             return false;
         const bool full = cache.region[0] >= cache.region[3] || !(cache.region[4] > cache.region[1]) ||
@@ -55,7 +56,8 @@ namespace perlin::physics::bds {
                           cache.region[0] >= region[3] || region[1] >= cache.region[4] ||
                           !(region[4] > cache.region[1]) || region[2] >= cache.region[5] ||
                           !(region[5] > cache.region[2]);
-        const auto regions = full ? std::vector<CollisionBox>{region} : CacheRegionDifference(region, cache.region);
+        const auto regions =
+            full ? std::vector<CollisionBox>{region} : CacheRegionDifference(region, cache.region);
         if (regions.empty())
             return false;
         std::vector<CollisionRecord> records;

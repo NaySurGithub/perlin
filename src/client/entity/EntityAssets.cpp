@@ -38,7 +38,8 @@ namespace perlin::entity {
         std::vector<fs::path> JsonFiles(const fs::path& dir) {
             std::vector<fs::path> files;
             std::error_code ec;
-            for (const auto& e : fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec))
+            for (const auto& e :
+                 fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec))
                 if (e.is_regular_file() && e.path().extension() == ".json")
                     files.push_back(e.path());
             const auto legacy = [](const fs::path& p) { return p.filename().string().contains(".v1."); };
@@ -126,7 +127,8 @@ namespace perlin::entity {
                 out[d.identifier] = std::move(d);
         }
 
-        void ParseRenderControllers(const Json& doc, std::unordered_map<std::string, RenderControllerDef>& out) {
+        void ParseRenderControllers(const Json& doc,
+                                    std::unordered_map<std::string, RenderControllerDef>& out) {
             const Json* list = doc.Find("render_controllers");
             if (!list || !list->IsObject())
                 return;
@@ -144,7 +146,8 @@ namespace perlin::entity {
                             for (const auto& [name, values] : group.object)
                                 if (values.IsArray())
                                     for (const Json& v : values.array)
-                                        rc.arrays[LowerCase(name)].push_back(Value::Str(LowerCase(v.StringOr(""))));
+                                        rc.arrays[LowerCase(name)].push_back(
+                                            Value::Str(LowerCase(v.StringOr(""))));
                 if (const Json* parts = def.Find("part_visibility"); parts && parts->IsArray())
                     for (const Json& entry : parts->array)
                         if (entry.IsObject())
@@ -353,7 +356,8 @@ namespace perlin::entity {
             if (file::Read(p, text))
                 animations.LoadControllers(text);
         ThreadPool pool(HardwareThreads());
-        const auto parseAll = [&pool](const std::vector<fs::path>& files, std::vector<Json>& docs, std::vector<char>& ok) {
+        const auto parseAll = [&pool](const std::vector<fs::path>& files, std::vector<Json>& docs,
+                                      std::vector<char>& ok) {
             docs.assign(files.size(), Json());
             ok.assign(files.size(), 0);
             pool.ParallelFor(files.size(), [&](size_t i) {
@@ -390,7 +394,8 @@ namespace perlin::entity {
                 }
                 return nullptr;
             };
-            const std::vector<fs::path> behaviorFiles = JsonFiles(fs::path(root).parent_path() / "behavior_pack" / "entities");
+            const std::vector<fs::path> behaviorFiles =
+                JsonFiles(fs::path(root).parent_path() / "behavior_pack" / "entities");
             std::vector<Json> behaviorDocs;
             std::vector<char> behaviorOk;
             parseAll(behaviorFiles, behaviorDocs, behaviorOk);
@@ -416,10 +421,12 @@ namespace perlin::entity {
                     };
                     if (const Json* ride = findRide(*entity))
                         if (const Json* seat = ride->Find("seats")) {
-                            const Json* first = seat->IsArray() && !seat->array.empty() ? &seat->array[0] : seat;
+                            const Json* first =
+                                seat->IsArray() && !seat->array.empty() ? &seat->array[0] : seat;
                             if (const Json* pos = first->IsObject() ? first->Find("position") : nullptr)
                                 if (pos->IsArray() && pos->array.size() >= 3 && pos->array[0].IsNumber())
-                                    seats[id->string] = {static_cast<float>(pos->array[0].number), static_cast<float>(pos->array[1].number),
+                                    seats[id->string] = {static_cast<float>(pos->array[0].number),
+                                                         static_cast<float>(pos->array[1].number),
                                                          static_cast<float>(pos->array[2].number)};
                         }
                 }
@@ -427,7 +434,8 @@ namespace perlin::entity {
                     const Json* w = box->Find("width");
                     const Json* hgt = box->Find("height");
                     if (w && hgt && w->IsNumber() && hgt->IsNumber())
-                        collisionBoxes[id->string] = {static_cast<float>(w->number), static_cast<float>(hgt->number)};
+                        collisionBoxes[id->string] = {static_cast<float>(w->number),
+                                                      static_cast<float>(hgt->number)};
                 }
             }
         }
@@ -436,14 +444,16 @@ namespace perlin::entity {
                 def.renderControllers.push_back({"controller.render.perlin_implicit_default", nullptr});
         for (const auto& [id, def] : entities)
             for (const auto& ref : def.renderControllers)
-                if (!controllers.count(ref.id)) {
+                if (!controllers.contains(ref.id)) {
                     RenderControllerDef rc;
                     rc.geometry = Expr::Parse("Geometry.default");
                     rc.textures.push_back(Expr::Parse("Texture.default"));
                     controllers[ref.id] = std::move(rc);
                 }
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-        Log("entity", "loaded {} entity definitions, {} geometries, {} render controllers in {} ms", entities.size(), geometries.Size(), controllers.size(), static_cast<int>(ms));
+        const double ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        Log("entity", "loaded {} entity definitions, {} geometries, {} render controllers in {} ms",
+            entities.size(), geometries.Size(), controllers.size(), static_cast<int>(ms));
     }
 
     void EntityAssets::LoadDirectory(const std::string& dir, bool overlay) {
@@ -486,13 +496,14 @@ namespace perlin::entity {
                 def.renderControllers.push_back({"controller.render.perlin_implicit_default", nullptr});
         for (const auto& [id, def] : entities)
             for (const auto& ref : def.renderControllers)
-                if (!controllers.count(ref.id)) {
+                if (!controllers.contains(ref.id)) {
                     RenderControllerDef rc;
                     rc.geometry = Expr::Parse("Geometry.default");
                     rc.textures.push_back(Expr::Parse("Texture.default"));
                     controllers[ref.id] = std::move(rc);
                 }
-        Log("entity", "server pack {}: {} new entity definitions, {} geometries total", dir, (entities.size() - before), geometries.Size());
+        Log("entity", "server pack {}: {} new entity definitions, {} geometries total", dir,
+            (entities.size() - before), geometries.Size());
     }
 
     const ClientEntityDef* EntityAssets::Entity(const std::string& identifier) const {

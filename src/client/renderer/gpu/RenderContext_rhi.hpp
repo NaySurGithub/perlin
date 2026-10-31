@@ -118,19 +118,25 @@ namespace perlin {
         void SetVsync(bool enabled) override;
         bool ReloadShaders() override;
         bool PackShadowsActive() const override { return packActive || javaActive; }
-        bool SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) override;
+        bool SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options,
+                               std::string& error) override;
         void ClearJavaShaderPack() override;
         bool JavaShaderPackActive() const override { return javaActive || jpack != nullptr; }
         std::vector<JavaPackOption> JavaShaderPackOptions() const override;
         bool JavaPackReady() const { return PackRunning(); }
         std::string JavaShaderPackError() const override { return jpackError; }
         void SetJavaShaderPackDimension(const std::string& folder) override;
-        void SetBlockNameLookup(std::function<std::string(uint16_t)> lookup) override { blockNames = std::move(lookup); }
+        void SetBlockNameLookup(std::function<std::string(uint16_t)> lookup) override {
+            blockNames = std::move(lookup);
+        }
 
         void BeginFrame(const FrameParams& params) override;
         void EndFrame() override;
         void RequestScreenshot(const std::string& path) override;
-        void SetForcedSize(int w, int h) override { forcedW = w; forcedH = h; }
+        void SetForcedSize(int w, int h) override {
+            forcedW = w;
+            forcedH = h;
+        }
         void RequestFrameCapture(CaptureSink sink) override;
         bool QueryNativeHandles(NativeHandleInfo& out) const override;
 
@@ -142,10 +148,13 @@ namespace perlin {
         int MaxAtlasLayers(int tilePx) const override;
         void UpdateAtlasRegion(int tile, const uint8_t* rgba) override;
 
-        uint32_t UiCreateTexture(int w, int h, const uint8_t* rgba, bool linear, bool repeat = false) override;
+        uint32_t UiCreateTexture(int w, int h, const uint8_t* rgba, bool linear,
+                                 bool repeat = false) override;
         void UiDestroyTexture(uint32_t texture) override;
-        uint32_t UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount) override;
-        uint32_t UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount) override;
+        uint32_t UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
+                              uint32_t indexCount) override;
+        uint32_t UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
+                                   uint32_t indexCount) override;
         void UiDestroyMesh(uint32_t mesh) override;
         uint32_t UiLiveMeshes() const override { return staticUiMeshes; }
         void UiSubmit(UiLayer layer, const UiDraw& draw) override;
@@ -162,16 +171,21 @@ namespace perlin {
         void UnloadLevelResources() override;
         void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) override;
         void SetChunkCullRadius(int chunks) override { chunkCullRadius = chunks; }
-        bool SectionReached(int sx, int sy, int sz) const override { return meshes.SectionReached(sx, sy, sz, caveCulling); }
+        bool SectionReached(int sx, int sy, int sz) const override {
+            return meshes.SectionReached(sx, sy, sz, caveCulling);
+        }
 
         // live renderer switch: applied on the render thread at the start of the next frame, keeping every resource
         bool RequestRendererSwitch(const std::string& id) override;
         bool RendererSwitchPending() const override;
         // tears the device down and rebuilds every resource on it (api switch, or recovery on the same api); between frames only
         bool RebuildDevice(const std::string& id);
-        std::string ActiveRendererId() const override { return initialized ? rhi::ApiId(gpu.Api()) : std::string(); }
+        std::string ActiveRendererId() const override {
+            return initialized ? rhi::ApiId(gpu.Api()) : std::string();
+        }
         // headless init for tests: renders into an owned image instead of a window
-        bool InitializeOffscreen(const gpu::GpuSettings& settings, std::span<const uint8_t> pack, std::string* error = nullptr);
+        bool InitializeOffscreen(const gpu::GpuSettings& settings, std::span<const uint8_t> pack,
+                                 std::string* error = nullptr);
         bool ReadBackFrame(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
 
         gpu::Gpu& Gpu() { return gpu; }
@@ -338,7 +352,8 @@ namespace perlin {
         bool EnsureSceneTargets();
         void DestroyPostTargets();
         void RecordPost();
-        void FullscreenPass(View view, Program program, rhi::Format colorFormat, uint32_t w, uint32_t h, bool additive);
+        void FullscreenPass(View view, Program program, rhi::Format colorFormat, uint32_t w, uint32_t h,
+                            bool additive);
         rhi::TextureHandle RecordUpscale(rhi::TextureHandle source, uint32_t sourceW, uint32_t sourceH);
         void RecordBloom(float strength);
         void RunStage(rhi::CommandList& list, const Stage& stage);
@@ -391,10 +406,12 @@ namespace perlin {
         void PlanViews(const FrameParams& params);
         // snapshots uniforms and textures for a draw; Push then adds as many ranges as needed against that snapshot
         bool Prepare(View view, const DrawState& state, DrawCall& out);
-        void Push(View view, const DrawCall& templ, const Source& vertices, const Source* indices, rhi::IndexType indexType, uint32_t first,
-                  uint32_t count, const rhi::Rect* scissor = nullptr);
-        void Submit(View view, const DrawState& state, const Source& vertices, const Source* indices, rhi::IndexType indexType,
-                    uint32_t first, uint32_t count, const rhi::Rect* scissor = nullptr);
+        void Push(View view, const DrawCall& templ, const Source& vertices, const Source* indices,
+                  rhi::IndexType indexType, uint32_t first, uint32_t count,
+                  const rhi::Rect* scissor = nullptr);
+        void Submit(View view, const DrawState& state, const Source& vertices, const Source* indices,
+                    rhi::IndexType indexType, uint32_t first, uint32_t count,
+                    const rhi::Rect* scissor = nullptr);
         void ApplyMaterial(DrawState& state, const char* material) const;
         DrawState Base(Program program, bool depth, bool depthWrite, rhi::CompareOp op) const;
         void SetTransform(const glm::mat4& model);
@@ -407,7 +424,8 @@ namespace perlin {
         void Replay(rhi::CommandList& list, const std::vector<DrawCall>& draws);
         void FinishReadbacks();
         void ResolveCapture(rhi::CommandList& list, const Target& target);
-        static void SaveBmp(const std::string& path, uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra);
+        static void SaveBmp(const std::string& path, uint32_t w, uint32_t h, uint32_t pitch,
+                            const uint8_t* bgra);
 
         // ui
         UiMeshGpu* LookupUiMesh(uint32_t id);
@@ -433,8 +451,8 @@ namespace perlin {
         static rhi::CompareOp ReverseOp(rhi::CompareOp op);
         static bool StageReversed(const Stage& stage);
         void UploadLightmap(const uint8_t* pixels);
-        bool MakeTexture(TexRec& rec, uint32_t w, uint32_t h, uint32_t layers, uint32_t mips, rhi::Format format, gpu::SamplerKind sampler,
-                         const char* name);
+        bool MakeTexture(TexRec& rec, uint32_t w, uint32_t h, uint32_t layers, uint32_t mips,
+                         rhi::Format format, gpu::SamplerKind sampler, const char* name);
         void FreeTexture(TexRec& rec);
 
         // state
@@ -475,7 +493,8 @@ namespace perlin {
         };
         std::unordered_map<std::string, std::vector<JavaMaterialRule>> javaMaterialRules;
         size_t javaMaterialCount = 0;
-        bool SetBakedJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error);
+        bool SetBakedJavaShaderPack(const std::string& path,
+                                    const std::map<std::string, std::string>& options, std::string& error);
         void ClearBakedJavaShaderPack();
         bool EnsureJavaMaterials();
         bool javaTexReady = false;
@@ -537,8 +556,8 @@ namespace perlin {
         Texture sunSource, moonSource, cloudSource, iconSource;
 
         // static geometry
-        rhi::BufferHandle topSky, bottomSky, skyBox, skyBoxIdx, screenTri, starVerts, starIdx, sunriseVerts, sunriseIdx, sunVerts, moonVerts,
-            quadIdx, fanIdx;
+        rhi::BufferHandle topSky, bottomSky, skyBox, skyBoxIdx, screenTri, starVerts, starIdx, sunriseVerts,
+            sunriseIdx, sunVerts, moonVerts, quadIdx, fanIdx;
         uint32_t starIndexCount = 0, skyFanIndexCount = 0, sunriseIndexCount = 0;
 
         // clouds

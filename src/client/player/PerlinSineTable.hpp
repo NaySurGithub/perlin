@@ -53,8 +53,11 @@ namespace perlin::physics::bds {
 
     inline Float3 CurrentSprintJump(Float3 velocity, float yaw) {
         const float coordinate = detail::Round(detail::Round(yaw * 0.017453292f) * 10430.378f);
-        velocity.x = detail::Round(velocity.x - detail::Round(CurrentSineEntry(SineIndex(coordinate)) * 0.2f));
-        velocity.z = detail::Round(velocity.z + detail::Round(CurrentSineEntry(SineIndex(detail::Round(coordinate + 16384.0f))) * 0.2f));
+        velocity.x =
+            detail::Round(velocity.x - detail::Round(CurrentSineEntry(SineIndex(coordinate)) * 0.2f));
+        velocity.z = detail::Round(
+            velocity.z +
+            detail::Round(CurrentSineEntry(SineIndex(detail::Round(coordinate + 16384.0f))) * 0.2f));
         return velocity;
     }
 }

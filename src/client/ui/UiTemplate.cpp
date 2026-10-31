@@ -21,7 +21,8 @@ namespace perlin::ui {
 
     void ReplaceAll(std::string& text, const std::string& key, const std::string& value) {
         const std::string needle = "{{" + key + "}}";
-        for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + value.size()))
+        for (size_t at = text.find(needle); at != std::string::npos;
+             at = text.find(needle, at + value.size()))
             text.replace(at, needle.size(), value);
     }
 
@@ -41,7 +42,6 @@ namespace perlin::ui {
             return buf;
         }
 
-
         bool SplitHeader(const std::string& content, uint64_t& hash, std::string& body) {
             const size_t prefix = std::char_traits<char>::length(kHeaderPrefix);
             if (content.compare(0, prefix, kHeaderPrefix) != 0)
@@ -55,8 +55,8 @@ namespace perlin::ui {
         }
     }
 
-    std::string LoadUiTemplate(const std::string& dataDir, const std::string& fileName, const std::string& defaultText,
-                               uint64_t& version) {
+    std::string LoadUiTemplate(const std::string& dataDir, const std::string& fileName,
+                               const std::string& defaultText, uint64_t& version) {
         const fs::path file = fs::path(dataDir) / "ui" / fileName;
         const uint64_t builtIn = Fnv1a(defaultText);
         std::error_code ec;
@@ -69,8 +69,10 @@ namespace perlin::ui {
                 if (fileHash == builtIn) {
                     rewrite = false;
                 } else if (Fnv1a(body) != fileHash) {
-                    fs::copy_file(file, fs::path(file).concat(".old"), fs::copy_options::overwrite_existing, ec);
-                    Log("ui", "{} changed in this build; your edited copy was saved as {}.old", fileName, fileName);
+                    fs::copy_file(file, fs::path(file).concat(".old"), fs::copy_options::overwrite_existing,
+                                  ec);
+                    Log("ui", "{} changed in this build; your edited copy was saved as {}.old", fileName,
+                        fileName);
                 }
             } else if (content != defaultText) {
                 fs::copy_file(file, fs::path(file).concat(".old"), fs::copy_options::overwrite_existing, ec);
@@ -97,7 +99,7 @@ namespace perlin::ui {
     std::string ScreenTemplate(const std::string& fileName, const std::string& defaultText) {
         struct Entry {
             std::string defaultText, text;
-            std::chrono::steady_clock::time_point checked{};
+            std::chrono::steady_clock::time_point checked;
         };
         static std::mutex mutex;
         static std::unordered_map<std::string, Entry> cache;
@@ -129,8 +131,9 @@ namespace perlin::ui {
             ScreenTemplate(fileName, text);
     }
 
-    bool TemplateSlot::Refresh(const char* fileName, const std::string& defaultText, std::chrono::milliseconds every,
-                               std::chrono::steady_clock::time_point now, const char* logLabel) {
+    bool TemplateSlot::Refresh(const char* fileName, const std::string& defaultText,
+                               std::chrono::milliseconds every, std::chrono::steady_clock::time_point now,
+                               const char* logLabel) {
         if (now - checkAt <= every && !text.empty())
             return false;
         checkAt = now;

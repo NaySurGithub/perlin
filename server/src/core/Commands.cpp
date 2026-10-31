@@ -18,8 +18,9 @@ namespace perlin::server {
     namespace {
         namespace proto = perlin::proto2225;
 
-
-        std::string StripNamespace(const std::string& s) { return s.starts_with("minecraft:") ? s.substr(10) : s; }
+        std::string StripNamespace(const std::string& s) {
+            return s.starts_with("minecraft:") ? s.substr(10) : s;
+        }
 
         struct Token {
             std::string text;
@@ -99,7 +100,9 @@ namespace perlin::server {
             double x = 0, y = 0, z = 0;
         };
 
-        Vec FeetOf(const Session& s) { return {s.X(), s.Y() - kEye, s.Z()}; }
+        Vec FeetOf(const Session& s) {
+            return {s.X(), s.Y() - kEye, s.Z()};
+        }
 
         Vec Origin(Server& server, Session* source) {
             if (source)
@@ -130,7 +133,8 @@ namespace perlin::server {
         const char* kSelectorOptions = "name, distance, x, y, z, limit, sort, gamemode, type";
     }
 
-    bool ResolveSelector(Server& server, Session* source, const std::string& text, std::vector<Session*>& out, std::string& error) {
+    bool ResolveSelector(Server& server, Session* source, const std::string& text, std::vector<Session*>& out,
+                         std::string& error) {
         out.clear();
         if (text.size() < 2 || text[0] != '@') {
             error = "Invalid selector";
@@ -138,7 +142,8 @@ namespace perlin::server {
         }
         const char kind = static_cast<char>(std::tolower(static_cast<unsigned char>(text[1])));
         if (std::string("spare").find(kind) == std::string::npos || (text.size() > 2 && text[2] != '[')) {
-            error = "Unknown selector type '" + text.substr(0, text.size() > 2 && text[2] != '[' ? 3 : 2) + "'";
+            error =
+                "Unknown selector type '" + text.substr(0, text.size() > 2 && text[2] != '[' ? 3 : 2) + "'";
             return false;
         }
         // arguments
@@ -192,7 +197,7 @@ namespace perlin::server {
         bool haveDistance = false;
         int limit = (kind == 'p' || kind == 'r' || kind == 's') ? 1 : 1 << 30;
         std::string sort = kind == 'p' ? "nearest" : kind == 'r' ? "random" : "arbitrary";
-        std::vector<std::pair<bool, int>> modes;   // (negated, mode)
+        std::vector<std::pair<bool, int>> modes; // (negated, mode)
         bool typeOk = true;
         for (const auto& [key, value] : options) {
             if (key == "name") {
@@ -230,10 +235,14 @@ namespace perlin::server {
                 bool neg = !value.empty() && value[0] == '!';
                 const std::string v = str::Lower(neg ? value.substr(1) : value);
                 int mode = -1;
-                if (v == "survival" || v == "s" || v == "0") mode = 0;
-                else if (v == "creative" || v == "c" || v == "1") mode = 1;
-                else if (v == "adventure" || v == "a" || v == "2") mode = 2;
-                else if (v == "spectator" || v == "sp" || v == "6") mode = 6;
+                if (v == "survival" || v == "s" || v == "0")
+                    mode = 0;
+                else if (v == "creative" || v == "c" || v == "1")
+                    mode = 1;
+                else if (v == "adventure" || v == "a" || v == "2")
+                    mode = 2;
+                else if (v == "spectator" || v == "sp" || v == "6")
+                    mode = 6;
                 if (mode < 0) {
                     error = "Invalid or unknown game mode '" + value + "'";
                     return false;
@@ -271,15 +280,19 @@ namespace perlin::server {
             if (!modeOk)
                 continue;
             const Vec f = FeetOf(*s);
-            const double d = std::sqrt((f.x - origin.x) * (f.x - origin.x) + (f.y - origin.y) * (f.y - origin.y) + (f.z - origin.z) * (f.z - origin.z));
+            const double d =
+                std::sqrt((f.x - origin.x) * (f.x - origin.x) + (f.y - origin.y) * (f.y - origin.y) +
+                          (f.z - origin.z) * (f.z - origin.z));
             if (haveDistance && (d < distLo || d > distHi))
                 continue;
             kept.emplace_back(d, s);
         }
         if (sort == "nearest")
-            std::stable_sort(kept.begin(), kept.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            std::stable_sort(kept.begin(), kept.end(),
+                             [](const auto& a, const auto& b) { return a.first < b.first; });
         else if (sort == "furthest")
-            std::stable_sort(kept.begin(), kept.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+            std::stable_sort(kept.begin(), kept.end(),
+                             [](const auto& a, const auto& b) { return a.first > b.first; });
         else if (sort == "random") {
             static std::mt19937 rng{std::random_device{}()};
             std::shuffle(kept.begin(), kept.end(), rng);
@@ -288,7 +301,6 @@ namespace perlin::server {
             out.push_back(kept[i].second);
         return true;
     }
-
 
     bool ParseOverload(const std::string& notation, OverloadSpec& out, std::string* error) {
         out.clear();
@@ -304,43 +316,59 @@ namespace perlin::server {
                 p.kind = ArgKind::Literal;
                 p.values = {str::Lower(word)};
                 if (optionalSeen) {
-                    if (error) *error = "a keyword after an optional argument: " + word;
+                    if (error)
+                        *error = "a keyword after an optional argument: " + word;
                     return false;
                 }
                 out.push_back(std::move(p));
                 continue;
             }
             if (word.size() < 5 || word.back() != (required ? '>' : ']')) {
-                if (error) *error = "malformed argument " + word;
+                if (error)
+                    *error = "malformed argument " + word;
                 return false;
             }
             const std::string inner = word.substr(1, word.size() - 2);
             const size_t colon = inner.find(':');
             if (colon == std::string::npos) {
-                if (error) *error = "argument without a type: " + word;
+                if (error)
+                    *error = "argument without a type: " + word;
                 return false;
             }
             p.name = inner.substr(0, colon);
             const std::string type = inner.substr(colon + 1);
             p.optional = optional;
             if (required && optionalSeen) {
-                if (error) *error = "a required argument after an optional one: " + word;
+                if (error)
+                    *error = "a required argument after an optional one: " + word;
                 return false;
             }
             optionalSeen = optionalSeen || optional;
-            if (type == "int") p.kind = ArgKind::Int;
-            else if (type == "float") p.kind = ArgKind::Float;
-            else if (type == "string") p.kind = ArgKind::String;
-            else if (type == "text") p.kind = ArgKind::Text;
-            else if (type == "targets") p.kind = ArgKind::Targets;
-            else if (type == "target") p.kind = ArgKind::Target;
-            else if (type == "profiles") p.kind = ArgKind::Profiles;
-            else if (type == "pos") p.kind = ArgKind::Pos;
-            else if (type == "blockpos") p.kind = ArgKind::BlockPos;
-            else if (type == "item") p.kind = ArgKind::Item;
-            else if (type == "block") p.kind = ArgKind::Block;
-            else if (type == "biome") p.kind = ArgKind::Biome;
-            else if (type.rfind("enum(", 0) == 0 && type.back() == ')') {
+            if (type == "int")
+                p.kind = ArgKind::Int;
+            else if (type == "float")
+                p.kind = ArgKind::Float;
+            else if (type == "string")
+                p.kind = ArgKind::String;
+            else if (type == "text")
+                p.kind = ArgKind::Text;
+            else if (type == "targets")
+                p.kind = ArgKind::Targets;
+            else if (type == "target")
+                p.kind = ArgKind::Target;
+            else if (type == "profiles")
+                p.kind = ArgKind::Profiles;
+            else if (type == "pos")
+                p.kind = ArgKind::Pos;
+            else if (type == "blockpos")
+                p.kind = ArgKind::BlockPos;
+            else if (type == "item")
+                p.kind = ArgKind::Item;
+            else if (type == "block")
+                p.kind = ArgKind::Block;
+            else if (type == "biome")
+                p.kind = ArgKind::Biome;
+            else if (type.starts_with("enum(") && type.back() == ')') {
                 p.kind = ArgKind::Enum;
                 std::string list = type.substr(5, type.size() - 6);
                 size_t from = 0;
@@ -353,11 +381,13 @@ namespace perlin::server {
                     from = bar + 1;
                 }
                 if (p.values.empty()) {
-                    if (error) *error = "empty enum in " + word;
+                    if (error)
+                        *error = "empty enum in " + word;
                     return false;
                 }
             } else {
-                if (error) *error = "unknown type '" + type + "' in " + word;
+                if (error)
+                    *error = "unknown type '" + type + "' in " + word;
                 return false;
             }
             out.push_back(std::move(p));
@@ -384,7 +414,6 @@ namespace perlin::server {
         }
         return line;
     }
-
 
     namespace {
         struct Step {
@@ -421,7 +450,8 @@ namespace perlin::server {
             return ParseDouble(t.substr(i), c.value);
         }
 
-        bool Resolve(Server& server, Session* source, const std::vector<Token>& tokens, size_t at, bool block, std::array<double, 3>& out, std::string& error) {
+        bool Resolve(Server& server, Session* source, const std::vector<Token>& tokens, size_t at, bool block,
+                     std::array<double, 3>& out, std::string& error) {
             Coord c[3];
             for (int k = 0; k < 3; k++) {
                 if (!ParseCoord(tokens[at + static_cast<size_t>(k)].text, c[k])) {
@@ -437,13 +467,16 @@ namespace perlin::server {
             const Vec base = Origin(server, source);
             if (anyLocal) {
                 constexpr double kPi = 3.14159265358979323846;
-                const double yaw = (source ? source->Yaw() : 0.0) * kPi / 180.0, pitch = (source ? source->Pitch() : 0.0) * kPi / 180.0;
+                const double yaw = (source ? source->Yaw() : 0.0) * kPi / 180.0,
+                             pitch = (source ? source->Pitch() : 0.0) * kPi / 180.0;
                 // forward, left, and up = forward x left, for yaw 0 facing +z
-                const double fx = -std::sin(yaw) * std::cos(pitch), fy = -std::sin(pitch), fz = std::cos(yaw) * std::cos(pitch);
+                const double fx = -std::sin(yaw) * std::cos(pitch), fy = -std::sin(pitch),
+                             fz = std::cos(yaw) * std::cos(pitch);
                 const double lx = std::cos(yaw), lz = std::sin(yaw);
                 const double ux = fy * lz, uy = fz * lx - fx * lz, uz = -fy * lx;
                 const double left = c[0].value, up = c[1].value, forward = c[2].value;
-                out = {base.x + left * lx + up * ux + forward * fx, base.y + up * uy + forward * fy, base.z + left * lz + up * uz + forward * fz};
+                out = {base.x + left * lx + up * ux + forward * fx, base.y + up * uy + forward * fy,
+                       base.z + left * lz + up * uz + forward * fz};
                 return true;
             }
             const double origin[3] = {base.x, base.y, base.z};
@@ -464,7 +497,8 @@ namespace perlin::server {
             return true;
         }
 
-        Step ParseArg(Server& server, Session* source, const ParamSpec& p, const std::vector<Token>& tokens, size_t& at, ArgValue& v) {
+        Step ParseArg(Server& server, Session* source, const ParamSpec& p, const std::vector<Token>& tokens,
+                      size_t& at, ArgValue& v) {
             Step st;
             if (p.kind == ArgKind::Text) {
                 if (at >= tokens.size()) {
@@ -592,7 +626,8 @@ namespace perlin::server {
                 if (cut != std::string::npos)
                     name.resize(cut);
                 const std::string full = "minecraft:" + StripNamespace(str::Lower(name));
-                if (p.kind == ArgKind::Block && (full == "minecraft:air" || full == "minecraft:cave_air" || full == "minecraft:void_air")) {
+                if (p.kind == ArgKind::Block && (full == "minecraft:air" || full == "minecraft:cave_air" ||
+                                                 full == "minecraft:void_air")) {
                     v.text = "minecraft:air";
                     v.index = 0;
                     break;
@@ -600,7 +635,9 @@ namespace perlin::server {
                 const CatalogItem* item = BlockCatalog::Instance().ItemByName(full);
                 if (!item || (p.kind == ArgKind::Block && !item->block)) {
                     st.status = 1;
-                    st.error = std::string(p.kind == ArgKind::Block ? "Unknown block type '" : "Unknown item '") + full + "'";
+                    st.error =
+                        std::string(p.kind == ArgKind::Block ? "Unknown block type '" : "Unknown item '") +
+                        full + "'";
                     return st;
                 }
                 v.text = full;
@@ -631,7 +668,8 @@ namespace perlin::server {
         }
     }
 
-    MatchResult MatchCommand(Server& server, Session* source, const std::string& name, const std::vector<OverloadSpec>& overloads, const std::string& args) {
+    MatchResult MatchCommand(Server& server, Session* source, const std::string& name,
+                             const std::vector<OverloadSpec>& overloads, const std::string& args) {
         MatchResult result;
         const std::vector<Token> tokens = Tokenize(args);
         // the typed command up to token `upTo` (exclusive of the rest), for the error context
@@ -692,9 +730,11 @@ namespace perlin::server {
                 // execution-time errors: a selector or name that matched nobody
                 for (const ParamSpec& p : overloads[o]) {
                     const auto found = values.find(p.name);
-                    if ((p.kind == ArgKind::Targets || p.kind == ArgKind::Target) && found != values.end() && found->second.present && found->second.players.empty()) {
+                    if ((p.kind == ArgKind::Targets || p.kind == ArgKind::Target) && found != values.end() &&
+                        found->second.present && found->second.players.empty()) {
                         result.ok = false;
-                        result.error = found->second.text.starts_with("@e") ? "No entity was found" : "No player was found";
+                        result.error = found->second.text.starts_with("@e") ? "No entity was found"
+                                                                            : "No player was found";
                         return result;
                     }
                 }
@@ -716,8 +756,8 @@ namespace perlin::server {
         return result;
     }
 
-
-    void FillAvailableCommands(proto::AvailableCommandsPacket& out, const std::map<std::string, CommandDef>& commands, bool isOperator) {
+    void FillAvailableCommands(proto::AvailableCommandsPacket& out,
+                               const std::map<std::string, CommandDef>& commands, bool isOperator) {
         using VT = proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType;
         using ET = proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType;
         std::map<std::string, uint32_t> valueIndex;
@@ -788,19 +828,34 @@ namespace perlin::server {
                     case ArgKind::Literal:
                     case ArgKind::Enum:
                         arg.enumType = ET::Enum;
-                        arg.valueType = static_cast<VT>(enumOf(cmdName + "_" + p.name + "_" + std::to_string(o), p.values));
+                        arg.valueType = static_cast<VT>(
+                            enumOf(cmdName + "_" + p.name + "_" + std::to_string(o), p.values));
                         break;
-                    case ArgKind::Int: arg.valueType = VT::Int; break;
-                    case ArgKind::Float: arg.valueType = VT::Float; break;
+                    case ArgKind::Int:
+                        arg.valueType = VT::Int;
+                        break;
+                    case ArgKind::Float:
+                        arg.valueType = VT::Float;
+                        break;
                     case ArgKind::String:
                     case ArgKind::Item:
-                    case ArgKind::Block: arg.valueType = VT::String; break;
-                    case ArgKind::Text: arg.valueType = VT::RawText; break;
+                    case ArgKind::Block:
+                        arg.valueType = VT::String;
+                        break;
+                    case ArgKind::Text:
+                        arg.valueType = VT::RawText;
+                        break;
                     case ArgKind::Targets:
                     case ArgKind::Target:
-                    case ArgKind::Profiles: arg.valueType = VT::Target; break;
-                    case ArgKind::Pos: arg.valueType = VT::Position; break;
-                    case ArgKind::BlockPos: arg.valueType = VT::BlockPosition; break;
+                    case ArgKind::Profiles:
+                        arg.valueType = VT::Target;
+                        break;
+                    case ArgKind::Pos:
+                        arg.valueType = VT::Position;
+                        break;
+                    case ArgKind::BlockPos:
+                        arg.valueType = VT::BlockPosition;
+                        break;
                     case ArgKind::Biome:
                         arg.enumType = ET::SoftEnum;
                         arg.valueType = static_cast<VT>(biomes());

@@ -34,7 +34,8 @@ namespace perlin::ui {
                 out.push_back(candidate);
                 return;
             }
-            for (fs::directory_iterator it(base, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec))
+            for (fs::directory_iterator it(base, fs::directory_options::skip_permission_denied, ec), end;
+                 !ec && it != end; it.increment(ec))
                 if (it->is_directory(ec))
                     Collect(it->path(), depth - 1, out);
         }
@@ -54,7 +55,8 @@ namespace perlin::ui {
             Collect(h / ".local/share/mcpelauncher/versions", 3, found);
             Collect(h / ".var/app/io.mrarm.mcpelauncher/data/mcpelauncher/versions", 3, found);
             // newest first: dotted version paths sort later
-            std::sort(found.begin(), found.end(), [](const fs::path& a, const fs::path& b) { return a.string() > b.string(); });
+            std::sort(found.begin(), found.end(),
+                      [](const fs::path& a, const fs::path& b) { return a.string() > b.string(); });
             out.insert(out.end(), found.begin(), found.end());
             return out;
         }
@@ -121,12 +123,17 @@ namespace perlin::ui {
             Log("ui", "MinecraftTen font from the Bedrock install: {}", path);
             return true;
         }
-        Log("ui", "no Bedrock install with minecraft-ten.ttf found; MinecraftTen labels use the regular font");
+        Log("ui",
+            "no Bedrock install with minecraft-ten.ttf found; MinecraftTen labels use the regular font");
         return false;
     }
 
-    float TenFont::Ascent(float scale) const { return impl ? impl->ascent * Em(scale) : 0.0f; }
-    float TenFont::Descent(float scale) const { return impl ? impl->descent * Em(scale) : 0.0f; }
+    float TenFont::Ascent(float scale) const {
+        return impl ? impl->ascent * Em(scale) : 0.0f;
+    }
+    float TenFont::Descent(float scale) const {
+        return impl ? impl->descent * Em(scale) : 0.0f;
+    }
 
     float TenFont::XHeight(float scale) const {
         if (!impl)
@@ -209,18 +216,21 @@ namespace perlin::ui {
         for (uint32_t cp : codepoints) {
             Raster r{cp, 0, 0, 0, 0, {}};
             int x1 = 0, y1 = 0;
-            stbtt_GetCodepointBitmapBox(&impl->info, static_cast<int>(cp), scale, scale, &r.x0, &r.y0, &x1, &y1);
+            stbtt_GetCodepointBitmapBox(&impl->info, static_cast<int>(cp), scale, scale, &r.x0, &r.y0, &x1,
+                                        &y1);
             r.w = std::max(0, x1 - r.x0);
             r.h = std::max(0, y1 - r.y0);
             if (r.w > 0 && r.h > 0) {
                 r.alpha.resize(static_cast<size_t>(r.w) * static_cast<size_t>(r.h));
-                stbtt_MakeCodepointBitmap(&impl->info, r.alpha.data(), r.w, r.h, r.w, scale, scale, static_cast<int>(cp));
+                stbtt_MakeCodepointBitmap(&impl->info, r.alpha.data(), r.w, r.h, r.w, scale, scale,
+                                          static_cast<int>(cp));
             }
             cellW = std::max(cellW, r.w + 2);
             cellH = std::max(cellH, r.h + 2);
             rasters.push_back(std::move(r));
         }
-        const int across = std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(rasters.size())))));
+        const int across =
+            std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(rasters.size())))));
         page->width = across * cellW;
         page->height = ((static_cast<int>(rasters.size()) + across - 1) / across) * cellH;
         page->height = std::max(page->height, 1);
@@ -232,9 +242,13 @@ namespace perlin::ui {
             for (int y = 0; y < r.h; y++)
                 for (int x = 0; x < r.w; x++) {
                     // heading face stays smooth: keep truetype coverage as-is
-                    const unsigned char a = r.alpha[static_cast<size_t>(y) * static_cast<size_t>(r.w) + static_cast<size_t>(x)];
+                    const unsigned char a =
+                        r.alpha[static_cast<size_t>(y) * static_cast<size_t>(r.w) + static_cast<size_t>(x)];
                     const uint8_t v = a;
-                    uint8_t* px = &page->rgba[(static_cast<size_t>(cy + y) * static_cast<size_t>(page->width) + static_cast<size_t>(cx + x)) * 4];
+                    uint8_t* px =
+                        &page->rgba[(static_cast<size_t>(cy + y) * static_cast<size_t>(page->width) +
+                                     static_cast<size_t>(cx + x)) *
+                                    4];
                     px[0] = px[1] = px[2] = 255;
                     px[3] = v;
                 }

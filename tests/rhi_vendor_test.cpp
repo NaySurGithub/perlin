@@ -9,12 +9,12 @@ using namespace rhi;
 using namespace rhi::vendor;
 
 static int g_failed = 0;
-#define CHECK(cond)                                                              \
-    do {                                                                         \
-        if (!(cond)) {                                                           \
-            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-            g_failed++;                                                          \
-        }                                                                        \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                             \
+            g_failed++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 int main() {
@@ -30,7 +30,8 @@ int main() {
     // never larger than the output, never degenerate
     RenderSizeFor(Quality::Quality, 1, 1, w, h);
     CHECK(w == 2 && h == 2);
-    for (Quality q : {Quality::Native, Quality::UltraQuality, Quality::Quality, Quality::Balanced, Quality::Performance, Quality::UltraPerformance}) {
+    for (Quality q : {Quality::Native, Quality::UltraQuality, Quality::Quality, Quality::Balanced,
+                      Quality::Performance, Quality::UltraPerformance}) {
         RenderSizeFor(q, 1280, 720, w, h);
         CHECK(w <= 1280 && h <= 720 && w >= 2 && h >= 2);
         CHECK(ScaleOf(q) > 0.0f && ScaleOf(q) <= 1.0f);
@@ -44,7 +45,8 @@ int main() {
     for (uint32_t i = 0; i < phases; i++) {
         const auto j = JitterFor(i, 1280, 1920);
         CHECK(j[0] >= -0.5f && j[0] < 0.5f && j[1] >= -0.5f && j[1] < 0.5f);
-        seen.insert({static_cast<int>(std::floor((j[0] + 0.5f) * 8)), static_cast<int>(std::floor((j[1] + 0.5f) * 8))});
+        seen.insert({static_cast<int>(std::floor((j[0] + 0.5f) * 8)),
+                     static_cast<int>(std::floor((j[1] + 0.5f) * 8))});
         const auto again = JitterFor(i + phases, 1280, 1920);
         CHECK(again[0] == j[0] && again[1] == j[1]);
     }

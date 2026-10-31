@@ -36,65 +36,30 @@ namespace perlin {
             w.put<int32_t>(level).str(text);
             (void)detail::call_void(Op::Log, w);
         }
-        template <class... Args> void debug(std::format_string<Args...> fmt, Args&&... args) { write(0, std::format(fmt, std::forward<Args>(args)...)); }
-        template <class... Args> void info(std::format_string<Args...> fmt, Args&&... args) { write(1, std::format(fmt, std::forward<Args>(args)...)); }
-        template <class... Args> void warn(std::format_string<Args...> fmt, Args&&... args) { write(2, std::format(fmt, std::forward<Args>(args)...)); }
-        template <class... Args> void error(std::format_string<Args...> fmt, Args&&... args) { write(3, std::format(fmt, std::forward<Args>(args)...)); }
+        template <class... Args> void debug(std::format_string<Args...> fmt, Args&&... args) {
+            write(0, std::format(fmt, std::forward<Args>(args)...));
+        }
+        template <class... Args> void info(std::format_string<Args...> fmt, Args&&... args) {
+            write(1, std::format(fmt, std::forward<Args>(args)...));
+        }
+        template <class... Args> void warn(std::format_string<Args...> fmt, Args&&... args) {
+            write(2, std::format(fmt, std::forward<Args>(args)...));
+        }
+        template <class... Args> void error(std::format_string<Args...> fmt, Args&&... args) {
+            write(3, std::format(fmt, std::forward<Args>(args)...));
+        }
     }
 
-    template <abi::Event E>
-    struct EventTag {
+    template <abi::Event E> struct EventTag {
         using Payload = abi::payload_t<E>;
         static constexpr abi::Event id = E;
     };
 
+    // a tag per event in abi_table.h: ctx.on<event::Tick>(...)
     namespace event {
-#define PERLIN_EVENT_TAG(Name) using Name = EventTag<abi::Event::Name>
-        PERLIN_EVENT_TAG(Tick);
-        PERLIN_EVENT_TAG(Frame);
-        PERLIN_EVENT_TAG(ChatReceived);
-        PERLIN_EVENT_TAG(ChatSending);
-        PERLIN_EVENT_TAG(Connected);
-        PERLIN_EVENT_TAG(Disconnected);
-        PERLIN_EVENT_TAG(Key);
-        PERLIN_EVENT_TAG(Command);
-        PERLIN_EVENT_TAG(Damage);
-        PERLIN_EVENT_TAG(Death);
-        PERLIN_EVENT_TAG(Respawned);
-        PERLIN_EVENT_TAG(DimensionChanged);
-        PERLIN_EVENT_TAG(ScreenChanged);
-        PERLIN_EVENT_TAG(SlotChanged);
-        PERLIN_EVENT_TAG(EntityAdded);
-        PERLIN_EVENT_TAG(EntityRemoved);
-        PERLIN_EVENT_TAG(Sound);
-        PERLIN_EVENT_TAG(HttpResponse);
-        PERLIN_EVENT_TAG(Packet);
-        PERLIN_EVENT_TAG(Title);
-        PERLIN_EVENT_TAG(SettingChanged);
-        PERLIN_EVENT_TAG(Look);
-        PERLIN_EVENT_TAG(MouseMove);
-        PERLIN_EVENT_TAG(MouseButton);
-        PERLIN_EVENT_TAG(MouseWheel);
-        PERLIN_EVENT_TAG(KeyRaw);
-        PERLIN_EVENT_TAG(TextInput);
-        PERLIN_EVENT_TAG(ScreenRender);
-        PERLIN_EVENT_TAG(SlotClick);
-        PERLIN_EVENT_TAG(Interact);
-        PERLIN_EVENT_TAG(ChunkLoaded);
-        PERLIN_EVENT_TAG(ChunkUnloaded);
-        PERLIN_EVENT_TAG(BlockChanged);
-        PERLIN_EVENT_TAG(ResourcesReloaded);
-        PERLIN_EVENT_TAG(LevelLoaded);
-        PERLIN_EVENT_TAG(LevelUnloaded);
-        PERLIN_EVENT_TAG(ModsLoaded);
-        PERLIN_EVENT_TAG(ClientStopping);
-        PERLIN_EVENT_TAG(Toast);
-        PERLIN_EVENT_TAG(ModMessage);
-        PERLIN_EVENT_TAG(Tooltip);
-        PERLIN_EVENT_TAG(ScreenButton);
-        PERLIN_EVENT_TAG(WindowFocus);
-        PERLIN_EVENT_TAG(ServerPing);
-#undef PERLIN_EVENT_TAG
+#define PERLIN_X(Name, ...) using Name = EventTag<abi::Event::Name>;
+        PERLIN_ABI_EVENTS(PERLIN_X)
+#undef PERLIN_X
     }
 
     template <class T>
@@ -105,39 +70,123 @@ namespace perlin {
 
     enum class Key : int {
         None = 0,
-        A = 'A', B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-        Num0 = '0', Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
-        F1 = 0x70, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
-        Space = 0x20, Tab = 0x09, Enter = 0x0D, Escape = 0x1B, Backspace = 0x08, Shift = 0x10, Control = 0x11, Alt = 0x12,
-        Left = 0x25, Up, Right, Down, Home = 0x24, End = 0x23, PageUp = 0x21, PageDown = 0x22, Delete = 0x2E,
-        MouseMiddle = 1000, MouseLeft, MouseRight,
+        A = 'A',
+        B,
+        C,
+        D,
+        E,
+        F,
+        G,
+        H,
+        I,
+        J,
+        K,
+        L,
+        M,
+        N,
+        O,
+        P,
+        Q,
+        R,
+        S,
+        T,
+        U,
+        V,
+        W,
+        X,
+        Y,
+        Z,
+        Num0 = '0',
+        Num1,
+        Num2,
+        Num3,
+        Num4,
+        Num5,
+        Num6,
+        Num7,
+        Num8,
+        Num9,
+        F1 = 0x70,
+        F2,
+        F3,
+        F4,
+        F5,
+        F6,
+        F7,
+        F8,
+        F9,
+        F10,
+        F11,
+        F12,
+        Space = 0x20,
+        Tab = 0x09,
+        Enter = 0x0D,
+        Escape = 0x1B,
+        Backspace = 0x08,
+        Shift = 0x10,
+        Control = 0x11,
+        Alt = 0x12,
+        Left = 0x25,
+        Up,
+        Right,
+        Down,
+        Home = 0x24,
+        End = 0x23,
+        PageUp = 0x21,
+        PageDown = 0x22,
+        Delete = 0x2E,
+        MouseMiddle = 1000,
+        MouseLeft,
+        MouseRight,
     };
 
     inline std::string key_id(Key key) {
         const int k = static_cast<int>(key);
-        if (k >= 'A' && k <= 'Z') return std::string("key.keyboard.") + static_cast<char>(k - 'A' + 'a');
-        if (k >= '0' && k <= '9') return std::string("key.keyboard.") + static_cast<char>(k);
-        if (k >= 0x70 && k <= 0x7B) return "key.keyboard.f" + std::to_string(k - 0x70 + 1);
+        if (k >= 'A' && k <= 'Z')
+            return std::string("key.keyboard.") + static_cast<char>(k - 'A' + 'a');
+        if (k >= '0' && k <= '9')
+            return std::string("key.keyboard.") + static_cast<char>(k);
+        if (k >= 0x70 && k <= 0x7B)
+            return "key.keyboard.f" + std::to_string(k - 0x70 + 1);
         switch (key) {
-        case Key::Space: return "key.keyboard.space";
-        case Key::Tab: return "key.keyboard.tab";
-        case Key::Enter: return "key.keyboard.enter";
-        case Key::Shift: return "key.keyboard.shift";
-        case Key::Control: return "key.keyboard.control";
-        case Key::Alt: return "key.keyboard.alt";
-        case Key::Left: return "key.keyboard.left";
-        case Key::Up: return "key.keyboard.up";
-        case Key::Right: return "key.keyboard.right";
-        case Key::Down: return "key.keyboard.down";
-        case Key::Home: return "key.keyboard.home";
-        case Key::End: return "key.keyboard.end";
-        case Key::PageUp: return "key.keyboard.page.up";
-        case Key::PageDown: return "key.keyboard.page.down";
-        case Key::Delete: return "key.keyboard.delete";
-        case Key::MouseMiddle: return "key.mouse.middle";
-        case Key::MouseLeft: return "key.mouse.left";
-        case Key::MouseRight: return "key.mouse.right";
-        default: return {};
+        case Key::Space:
+            return "key.keyboard.space";
+        case Key::Tab:
+            return "key.keyboard.tab";
+        case Key::Enter:
+            return "key.keyboard.enter";
+        case Key::Shift:
+            return "key.keyboard.shift";
+        case Key::Control:
+            return "key.keyboard.control";
+        case Key::Alt:
+            return "key.keyboard.alt";
+        case Key::Left:
+            return "key.keyboard.left";
+        case Key::Up:
+            return "key.keyboard.up";
+        case Key::Right:
+            return "key.keyboard.right";
+        case Key::Down:
+            return "key.keyboard.down";
+        case Key::Home:
+            return "key.keyboard.home";
+        case Key::End:
+            return "key.keyboard.end";
+        case Key::PageUp:
+            return "key.keyboard.page.up";
+        case Key::PageDown:
+            return "key.keyboard.page.down";
+        case Key::Delete:
+            return "key.keyboard.delete";
+        case Key::MouseMiddle:
+            return "key.mouse.middle";
+        case Key::MouseLeft:
+            return "key.mouse.left";
+        case Key::MouseRight:
+            return "key.mouse.right";
+        default:
+            return {};
         }
     }
 
@@ -155,48 +204,46 @@ namespace perlin {
         size_t size() const { return args.size(); }
         bool empty() const { return args.empty(); }
         const std::string& operator[](size_t i) const { return args[i]; }
-        std::string_view arg_or(size_t i, std::string_view fallback) const { return i < args.size() ? std::string_view(args[i]) : fallback; }
+        std::string_view arg_or(size_t i, std::string_view fallback) const {
+            return i < args.size() ? std::string_view(args[i]) : fallback;
+        }
 
-        template <class... A>
-        void reply(std::format_string<A...> fmt, A&&... a) const {
+        template <class... A> void reply(std::format_string<A...> fmt, A&&... a) const {
             (void)act::message(fmt, std::forward<A>(a)...);
         }
     };
 
     namespace detail_cmd {
-        template <class T>
-        struct is_optional : std::false_type {};
-        template <class T>
-        struct is_optional<std::optional<T>> : std::true_type {};
+        template <class T> struct is_optional : std::false_type {};
+        template <class T> struct is_optional<std::optional<T>> : std::true_type {};
 
-        template <class F>
-        struct signature : signature<decltype(&F::operator())> {};
-        template <class C, class R, class... A>
-        struct signature<R (C::*)(A...) const> {
+        template <class F> struct signature : signature<decltype(&F::operator())> {};
+        template <class C, class R, class... A> struct signature<R (C::*)(A...) const> {
             using args = std::tuple<std::remove_cvref_t<A>...>;
         };
-        template <class C, class R, class... A>
-        struct signature<R (C::*)(A...)> {
+        template <class C, class R, class... A> struct signature<R (C::*)(A...)> {
             using args = std::tuple<std::remove_cvref_t<A>...>;
         };
-        template <class R, class... A>
-        struct signature<R (*)(A...)> {
+        template <class R, class... A> struct signature<R (*)(A...)> {
             using args = std::tuple<std::remove_cvref_t<A>...>;
         };
 
-        template <class T>
-        bool parse_value(std::string_view token, T& out) {
+        template <class T> bool parse_value(std::string_view token, T& out) {
             if constexpr (std::is_same_v<T, bool>) {
-                if (token == "true" || token == "on" || token == "1" || token == "yes") out = true;
-                else if (token == "false" || token == "off" || token == "0" || token == "no") out = false;
-                else return false;
+                if (token == "true" || token == "on" || token == "1" || token == "yes")
+                    out = true;
+                else if (token == "false" || token == "off" || token == "0" || token == "no")
+                    out = false;
+                else
+                    return false;
                 return true;
             } else if constexpr (std::is_same_v<T, std::string>) {
                 out = std::string(token);
                 return true;
             } else if constexpr (std::is_enum_v<T>) {
                 const auto value = meta::enum_cast_nocase<T>(token);
-                if (!value) return false;
+                if (!value)
+                    return false;
                 out = *value;
                 return true;
             } else if constexpr (std::is_floating_point_v<T>) {
@@ -208,15 +255,15 @@ namespace perlin {
             }
         }
 
-        template <class T>
-        bool parse_arg(const CommandCall& call, size_t index, T& out) {
+        template <class T> bool parse_arg(const CommandCall& call, size_t index, T& out) {
             if constexpr (is_optional<T>::value) {
                 if (index >= call.args.size()) {
                     out = std::nullopt;
                     return true;
                 }
                 typename T::value_type inner{};
-                if (!parse_value<typename T::value_type>(call.args[index], inner)) return false;
+                if (!parse_value<typename T::value_type>(call.args[index], inner))
+                    return false;
                 out = std::move(inner);
                 return true;
             } else {
@@ -224,8 +271,7 @@ namespace perlin {
             }
         }
 
-        template <class T>
-        std::string describe() {
+        template <class T> std::string describe() {
             if constexpr (is_optional<T>::value) {
                 return "[" + describe<typename T::value_type>().substr(1);
             } else if constexpr (std::is_same_v<T, bool>) {
@@ -235,7 +281,8 @@ namespace perlin {
             } else if constexpr (std::is_enum_v<T>) {
                 std::string out = "<";
                 for (size_t i = 0; i < meta::enum_count<T>; i++) {
-                    if (i) out += '|';
+                    if (i)
+                        out += '|';
                     out += meta::enum_names<T>[i];
                 }
                 return out + ">";
@@ -246,22 +293,20 @@ namespace perlin {
             }
         }
 
-        template <class T>
-        std::string describe_closed() {
+        template <class T> std::string describe_closed() {
             std::string text = describe<T>();
-            if (is_optional<T>::value && !text.empty()) text.back() = ']';
+            if (is_optional<T>::value && !text.empty())
+                text.back() = ']';
             return text;
         }
 
-        template <class Tuple, size_t... I>
-        std::string usage_of(std::index_sequence<I...>) {
+        template <class Tuple, size_t... I> std::string usage_of(std::index_sequence<I...>) {
             std::string out;
             ((out += " " + describe_closed<std::tuple_element_t<I, Tuple>>()), ...);
             return out;
         }
 
-        template <class F>
-        constexpr bool takes_call() {
+        template <class F> constexpr bool takes_call() {
             using Args = typename signature<std::remove_cvref_t<F>>::args;
             if constexpr (std::tuple_size_v<Args> == 1)
                 return std::is_same_v<std::tuple_element_t<0, Args>, CommandCall>;
@@ -276,14 +321,10 @@ namespace perlin {
     public:
         using Duration = std::chrono::duration<double>;
 
-        template <EventTagLike Tag, class Fn>
-        void on(Fn&& fn) {
+        template <EventTagLike Tag, class Fn> void on(Fn&& fn) {
             add_handler(Tag::id, wrap<typename Tag::Payload>(std::forward<Fn>(fn)));
         }
-        template <abi::Event E, class Fn>
-        void on(Fn&& fn) {
-            on<EventTag<E>>(std::forward<Fn>(fn));
-        }
+        template <abi::Event E, class Fn> void on(Fn&& fn) { on<EventTag<E>>(std::forward<Fn>(fn)); }
 
         template <class Fn> void on_chat(Fn&& fn) { on<event::ChatReceived>(std::forward<Fn>(fn)); }
         template <class Fn> void on_tick(Fn&& fn) { on<event::Tick>(std::forward<Fn>(fn)); }
@@ -292,7 +333,8 @@ namespace perlin {
 
         template <class Rep, class Period, class Fn>
         TimerId after(std::chrono::duration<Rep, Period> delay, Fn&& fn) {
-            return add_timer(std::chrono::duration_cast<Duration>(delay), Duration::zero(), std::forward<Fn>(fn));
+            return add_timer(std::chrono::duration_cast<Duration>(delay), Duration::zero(),
+                             std::forward<Fn>(fn));
         }
         template <class Rep, class Period, class Fn>
         TimerId every(std::chrono::duration<Rep, Period> period, Fn&& fn) {
@@ -301,29 +343,34 @@ namespace perlin {
         }
         void cancel(TimerId timer) {
             for (auto& t : timers)
-                if (t.id == timer) t.alive = false;
+                if (t.id == timer)
+                    t.alive = false;
         }
 
-        template <meta::fixed_string Name, class Fn>
-        void command(std::string_view description, Fn&& fn) {
+        template <meta::fixed_string Name, class Fn> void command(std::string_view description, Fn&& fn) {
             using Fun = std::remove_cvref_t<Fn>;
             const std::string name(Name.view());
             if constexpr (detail_cmd::takes_call<Fun>()) {
-                add_command(name, "", std::string(description), [f = std::forward<Fn>(fn)](const CommandCall& c) mutable { f(c); });
+                add_command(name, "", std::string(description),
+                            [f = std::forward<Fn>(fn)](const CommandCall& c) mutable { f(c); });
             } else {
                 using Args = typename detail_cmd::signature<Fun>::args;
-                const std::string usage = detail_cmd::usage_of<Args>(std::make_index_sequence<std::tuple_size_v<Args>>{});
-                add_command(name, usage, std::string(description), [f = std::forward<Fn>(fn), usage, name](const CommandCall& c) mutable {
-                    Args values{};
-                    const bool ok = [&]<size_t... I>(std::index_sequence<I...>) {
-                        return (detail_cmd::parse_arg<std::tuple_element_t<I, Args>>(c, I, std::get<I>(values)) && ...);
-                    }(std::make_index_sequence<std::tuple_size_v<Args>>{});
-                    if (!ok) {
-                        c.reply("Usage: /{}{}", name, usage);
-                        return;
-                    }
-                    std::apply(f, std::move(values));
-                });
+                const std::string usage =
+                    detail_cmd::usage_of<Args>(std::make_index_sequence<std::tuple_size_v<Args>>{});
+                add_command(name, usage, std::string(description),
+                            [f = std::forward<Fn>(fn), usage, name](const CommandCall& c) mutable {
+                                Args values{};
+                                const bool ok = [&]<size_t... I>(std::index_sequence<I...>) {
+                                    return (detail_cmd::parse_arg<std::tuple_element_t<I, Args>>(
+                                                c, I, std::get<I>(values)) &&
+                                            ...);
+                                }(std::make_index_sequence<std::tuple_size_v<Args>>{});
+                                if (!ok) {
+                                    c.reply("Usage: /{}{}", name, usage);
+                                    return;
+                                }
+                                std::apply(f, std::move(values));
+                            });
             }
         }
 
@@ -336,44 +383,67 @@ namespace perlin {
         void bind(std::string_view label, Key default_key, Fn&& fn) {
             bind(std::string(Id.view()), std::string(label), default_key, std::forward<Fn>(fn));
         }
-        template <class Fn>
-        void bind(std::string id, std::string label, Key default_key, Fn&& fn) {
+        template <class Fn> void bind(std::string id, std::string label, Key default_key, Fn&& fn) {
             abi::Writer w;
             w.write(id, label, key_id(default_key));
             (void)detail::call_void(Op::KeyRegister, w);
             keys[id] = wrap_key(std::forward<Fn>(fn));
         }
 
-        template <meta::fixed_string Layer, class Fn>
-        void hud(Fn&& fn, int z = 0) {
+        // member functions of a plugin class as handlers: ctx.command<"greet">("say hello", this, &Hello::greet)
+        template <class C, class R, class... A> static auto member(C* self, R (C::*fn)(A...)) {
+            return [self, fn](A... a) -> R { return (self->*fn)(std::forward<A>(a)...); };
+        }
+        template <class C, class R, class... A> static auto member(const C* self, R (C::*fn)(A...) const) {
+            return [self, fn](A... a) -> R { return (self->*fn)(std::forward<A>(a)...); };
+        }
+        template <meta::fixed_string Name, class C, class F>
+            requires std::is_member_function_pointer_v<F>
+        void command(std::string_view description, C* self, F fn) {
+            command<Name>(description, member(self, fn));
+        }
+        template <meta::fixed_string Id, class C, class F>
+            requires std::is_member_function_pointer_v<F>
+        void bind(std::string_view label, Key default_key, C* self, F fn) {
+            bind<Id>(label, default_key, member(self, fn));
+        }
+        template <meta::fixed_string Layer, class C, class F>
+            requires std::is_member_function_pointer_v<F>
+        void hud(C* self, F fn, int z = 0) {
+            hud<Layer>(member(self, fn), z);
+        }
+        Context& raw() { return *this; }
+
+        template <meta::fixed_string Layer, class Fn> void hud(Fn&& fn, int z = 0) {
             hud(std::string(Layer.view()), std::forward<Fn>(fn), z);
         }
-        template <class Fn>
-        void hud(std::string layer, Fn&& fn, int z = 0) {
+        template <class Fn> void hud(std::string layer, Fn&& fn, int z = 0) {
             layers.push_back({std::move(layer), z, std::forward<Fn>(fn), {}});
         }
 
-        template <class... Args>
-        void print(std::format_string<Args...> fmt, Args&&... args) { (void)act::message(fmt, std::forward<Args>(args)...); }
-
-        template <class T, class Fn>
-        void on_change(const Setting<T>& setting, Fn&& fn) {
-            change_handlers[std::string(setting.id())].push_back([f = std::forward<Fn>(fn)](const std::string& value) mutable {
-                if constexpr (std::is_invocable_v<Fn&, T>)
-                    f(detail_settings::parse<T>(value));
-                else
-                    f();
-            });
+        template <class... Args> void print(std::format_string<Args...> fmt, Args&&... args) {
+            (void)act::message(fmt, std::forward<Args>(args)...);
         }
-        template <class Fn>
-        void on_press(const Button& button, Fn&& fn) {
+
+        template <class T, class Fn> void on_change(const Setting<T>& setting, Fn&& fn) {
+            change_handlers[std::string(setting.id())].push_back(
+                [f = std::forward<Fn>(fn)](const std::string& value) mutable {
+                    if constexpr (std::is_invocable_v<Fn&, T>)
+                        f(detail_settings::parse<T>(value));
+                    else
+                        f();
+                });
+        }
+        template <class Fn> void on_press(const Button& button, Fn&& fn) {
             press_handlers[std::string(button.id())] = std::forward<Fn>(fn);
         }
-        template <class Fn>
-        void on_setting_changed(Fn&& fn) { setting_observers.push_back(std::forward<Fn>(fn)); }
+        template <class Fn> void on_setting_changed(Fn&& fn) {
+            setting_observers.push_back(std::forward<Fn>(fn));
+        }
 
         Config& config() {
-            if (!cfg) cfg = std::make_unique<Config>();
+            if (!cfg)
+                cfg = std::make_unique<Config>();
             return *cfg;
         }
 
@@ -387,11 +457,16 @@ namespace perlin {
         uint64_t subscriptions() const {
             uint64_t mask = bit(abi::Event::HttpResponse) | bit(abi::Event::SettingChanged);
             for (const auto& entry : handlers)
-                if (!entry.second.empty()) mask |= 1ull << entry.first;
-            if (!timers.empty()) mask |= bit(abi::Event::Tick);
-            if (!layers.empty()) mask |= bit(abi::Event::Frame);
-            if (!commands.empty()) mask |= bit(abi::Event::Command);
-            if (!keys.empty()) mask |= bit(abi::Event::Key);
+                if (!entry.second.empty())
+                    mask |= 1ull << entry.first;
+            if (!timers.empty())
+                mask |= bit(abi::Event::Tick);
+            if (!layers.empty())
+                mask |= bit(abi::Event::Frame);
+            if (!commands.empty())
+                mask |= bit(abi::Event::Command);
+            if (!keys.empty())
+                mask |= bit(abi::Event::Key);
             return mask;
         }
 
@@ -412,8 +487,7 @@ namespace perlin {
         };
         using Handler = std::function<Flow(abi::Reader&)>;
 
-        template <class P, class Fn>
-        Handler wrap(Fn&& fn) {
+        template <class P, class Fn> Handler wrap(Fn&& fn) {
             return [f = std::forward<Fn>(fn)](abi::Reader& r) mutable -> Flow {
                 if constexpr (std::is_same_v<P, abi::EventNothing>) {
                     if constexpr (std::is_void_v<std::invoke_result_t<Fn&>>) {
@@ -441,19 +515,22 @@ namespace perlin {
             };
         }
 
-        template <class Fn>
-        std::function<void(bool)> wrap_key(Fn&& fn) {
+        template <class Fn> std::function<void(bool)> wrap_key(Fn&& fn) {
             if constexpr (std::is_invocable_v<Fn&, bool>)
                 return std::forward<Fn>(fn);
             else
                 return [f = std::forward<Fn>(fn)](bool down) mutable {
-                    if (down) f();
+                    if (down)
+                        f();
                 };
         }
 
-        void add_handler(abi::Event id, Handler h) { handlers[static_cast<uint32_t>(id)].push_back(std::move(h)); }
+        void add_handler(abi::Event id, Handler h) {
+            handlers[static_cast<uint32_t>(id)].push_back(std::move(h));
+        }
 
-        void add_command(const std::string& name, const std::string& usage, const std::string& description, std::function<void(const CommandCall&)> fn) {
+        void add_command(const std::string& name, const std::string& usage, const std::string& description,
+                         std::function<void(const CommandCall&)> fn) {
             abi::Writer w;
             w.write(name, usage.empty() ? std::string("/") + name : "/" + name + usage, description);
             (void)detail::call_void(Op::CommandRegister, w);
@@ -467,12 +544,10 @@ namespace perlin {
             (void)detail::call_void(Op::CommandUnregister, w);
             commands.erase(name);
         }
-        template <meta::fixed_string Name>
-        void remove_command() { remove_command(std::string(Name.view())); }
+        template <meta::fixed_string Name> void remove_command() { remove_command(std::string(Name.view())); }
 
     private:
-        template <class Fn>
-        TimerId add_timer(Duration delay, Duration period, Fn&& fn) {
+        template <class Fn> TimerId add_timer(Duration delay, Duration period, Fn&& fn) {
             const TimerId id = static_cast<TimerId>(next_timer++);
             timers.push_back({id, elapsed + delay.count(), period.count(), std::forward<Fn>(fn), true});
             return id;
@@ -501,15 +576,19 @@ namespace perlin {
         std::vector<std::string> out;
         size_t at = 0;
         while (at < text.size()) {
-            while (at < text.size() && text[at] == ' ') at++;
-            if (at >= text.size()) break;
+            while (at < text.size() && text[at] == ' ')
+                at++;
+            if (at >= text.size())
+                break;
             std::string token;
             if (text[at] == '"') {
                 at++;
-                while (at < text.size() && text[at] != '"') token += text[at++];
+                while (at < text.size() && text[at] != '"')
+                    token += text[at++];
                 at++;
             } else {
-                while (at < text.size() && text[at] != ' ') token += text[at++];
+                while (at < text.size() && text[at] != ' ')
+                    token += text[at++];
             }
             out.push_back(std::move(token));
         }
@@ -519,10 +598,13 @@ namespace perlin {
     inline void Context::run_timers() {
         for (size_t i = 0; i < timers.size(); i++) {
             Timer& t = timers[i];
-            if (!t.alive || t.due > elapsed) continue;
+            if (!t.alive || t.due > elapsed)
+                continue;
             auto fn = t.fn;
-            if (t.period > 0) t.due += t.period;
-            else t.alive = false;
+            if (t.period > 0)
+                t.due += t.period;
+            else
+                t.alive = false;
             fn();
         }
         std::erase_if(timers, [](const Timer& t) { return !t.alive; });
@@ -533,10 +615,13 @@ namespace perlin {
             ui::Canvas canvas(frame.guiWidth, frame.guiHeight);
             layer.draw(canvas);
             const auto& data = canvas.commands().data;
-            if (data == layer.last) continue;
+            if (data == layer.last)
+                continue;
             layer.last = data;
-            if (data.empty()) (void)ui::clear(layer.name);
-            else (void)ui::submit(layer.name, layer.z, canvas);
+            if (data.empty())
+                (void)ui::clear(layer.name);
+            else
+                (void)ui::submit(layer.name, layer.z, canvas);
         }
     }
 
@@ -568,20 +653,24 @@ namespace perlin {
         case abi::Event::Key: {
             abi::Reader copy = r;
             const auto k = copy.read<abi::payload_t<abi::Event::Key>>();
-            if (const auto it = keys.find(k.id); it != keys.end()) it->second(k.down);
+            if (const auto it = keys.find(k.id); it != keys.end())
+                it->second(k.down);
             break;
         }
         case abi::Event::SettingChanged: {
             abi::Reader copy = r;
             const auto e = copy.read<abi::payload_t<abi::Event::SettingChanged>>();
             if (e.kind == abi::SettingKind::Button) {
-                if (const auto it = press_handlers.find(e.id); it != press_handlers.end()) it->second();
+                if (const auto it = press_handlers.find(e.id); it != press_handlers.end())
+                    it->second();
             } else {
                 detail_settings::store().put(e.id, e.value);
                 if (const auto it = change_handlers.find(e.id); it != change_handlers.end())
-                    for (auto& fn : it->second) fn(e.value);
+                    for (auto& fn : it->second)
+                        fn(e.value);
             }
-            for (auto& observer : setting_observers) observer(e);
+            for (auto& observer : setting_observers)
+                observer(e);
             break;
         }
         case abi::Event::HttpResponse: {
@@ -592,11 +681,13 @@ namespace perlin {
                 net::Response response;
                 response.status = e.status;
                 response.error = e.error;
-                for (const auto& h : e.headers) response.headers.push_back({h.first, h.second});
+                for (const auto& h : e.headers)
+                    response.headers.push_back({h.first, h.second});
                 response.body = e.body;
                 auto cb = std::move(it->second);
                 pending.erase(it);
-                if (cb) cb(response);
+                if (cb)
+                    cb(response);
             }
             break;
         }
@@ -604,16 +695,20 @@ namespace perlin {
             break;
         }
         const auto it = handlers.find(static_cast<uint32_t>(id));
-        if (it == handlers.end()) return;
+        if (it == handlers.end())
+            return;
         for (Handler& h : it->second) {
             abi::Reader copy = r;
-            if (h(copy) == Flow::cancel) flags |= abi::kEventCancel;
+            if (h(copy) == Flow::cancel)
+                flags |= abi::kEventCancel;
         }
     }
 
     inline void Context::run_unload() {
-        for (auto& fn : unload_handlers) fn();
-        if (cfg && cfg->changed()) (void)cfg->save();
+        for (auto& fn : unload_handlers)
+            fn();
+        if (cfg && cfg->changed())
+            (void)cfg->save();
     }
 
     namespace detail {
@@ -627,11 +722,20 @@ namespace perlin {
 void perlin_plugin_main(perlin::Context& ctx);
 
 extern "C" {
-__attribute__((export_name("perlin_alloc"))) inline void* perlin_alloc(uint32_t size) { return ::operator new(size ? size : 1); }
-__attribute__((export_name("perlin_free"))) inline void perlin_free(void* p) { ::operator delete(p); }
-__attribute__((export_name("perlin_subscriptions"))) inline uint32_t perlin_subscriptions() { return static_cast<uint32_t>(perlin::detail::context().subscriptions()); }
-__attribute__((export_name("perlin_subscriptions_hi"))) inline uint32_t perlin_subscriptions_hi() { return static_cast<uint32_t>(perlin::detail::context().subscriptions() >> 32); }
-__attribute__((export_name("perlin_event"))) inline uint32_t perlin_event(uint32_t id, const uint8_t* data, uint32_t len) {
+__attribute__((export_name("perlin_alloc"))) inline void* perlin_alloc(uint32_t size) {
+    return ::operator new(size ? size : 1);
+}
+__attribute__((export_name("perlin_free"))) inline void perlin_free(void* p) {
+    ::operator delete(p);
+}
+__attribute__((export_name("perlin_subscriptions"))) inline uint32_t perlin_subscriptions() {
+    return static_cast<uint32_t>(perlin::detail::context().subscriptions());
+}
+__attribute__((export_name("perlin_subscriptions_hi"))) inline uint32_t perlin_subscriptions_hi() {
+    return static_cast<uint32_t>(perlin::detail::context().subscriptions() >> 32);
+}
+__attribute__((export_name("perlin_event"))) inline uint32_t perlin_event(uint32_t id, const uint8_t* data,
+                                                                          uint32_t len) {
     perlin::Context& ctx = perlin::detail::context();
     perlin::abi::Reader r(data, len);
     uint32_t flags = 0;
@@ -649,5 +753,3 @@ __attribute__((export_name("perlin_event"))) inline uint32_t perlin_event(uint32
     return flags;
 }
 }
-
-#define PERLIN_PLUGIN(ctx_name) void perlin_plugin_main(perlin::Context& ctx_name)

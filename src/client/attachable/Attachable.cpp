@@ -33,17 +33,30 @@ namespace perlin::attachable {
             if (!state)
                 return false;
             const ItemState& s = *state;
-            const auto num = [&](double v) { out = Value::Num(v); return true; };
-            if (name == "frame_alpha") return num(s.partial);
-            if (name == "main_hand_item_use_duration") return num(s.using_ ? std::max(0.0f, s.maxUseTicks - s.usedTicks) : 0.0f);
-            if (name == "main_hand_item_max_duration") return num(s.maxUseTicks);
-            if (name == "get_animation_frame") return num(s.animationFrame);
-            if (name == "life_time") return num(s.lifeSeconds);
-            if (name == "anim_time") return num(animTime);
-            if (name == "all_animations_finished") return num(allFinished);
-            if (name == "any_animation_finished") return num(anyFinished);
-            if (name == "blocking") return num(s.blocking ? 1.0 : 0.0);
-            if (name == "can_damage_nearby_mobs" || name == "has_target" || name == "is_moving") return num(0);
+            const auto num = [&](double v) {
+                out = Value::Num(v);
+                return true;
+            };
+            if (name == "frame_alpha")
+                return num(s.partial);
+            if (name == "main_hand_item_use_duration")
+                return num(s.using_ ? std::max(0.0f, s.maxUseTicks - s.usedTicks) : 0.0f);
+            if (name == "main_hand_item_max_duration")
+                return num(s.maxUseTicks);
+            if (name == "get_animation_frame")
+                return num(s.animationFrame);
+            if (name == "life_time")
+                return num(s.lifeSeconds);
+            if (name == "anim_time")
+                return num(animTime);
+            if (name == "all_animations_finished")
+                return num(allFinished);
+            if (name == "any_animation_finished")
+                return num(anyFinished);
+            if (name == "blocking")
+                return num(s.blocking ? 1.0 : 0.0);
+            if (name == "can_damage_nearby_mobs" || name == "has_target" || name == "is_moving")
+                return num(0);
             if (name == "get_equipped_item_name") {
                 out = Value::Str(Shorten(s.mainHandItem));
                 return true;
@@ -68,9 +81,16 @@ namespace perlin::attachable {
         bool Context(const std::string& name, Value& out) override {
             if (!state)
                 return false;
-            if (name == "is_first_person") { out = Value::Num(state->firstPerson ? 1.0 : 0.0); return true; }
-            if (name == "item_slot") { out = Value::Str(state->mainHand ? "main_hand" : "off_hand"); return true; }
-            if (name == "owning_entity") return false;
+            if (name == "is_first_person") {
+                out = Value::Num(state->firstPerson ? 1.0 : 0.0);
+                return true;
+            }
+            if (name == "item_slot") {
+                out = Value::Str(state->mainHand ? "main_hand" : "off_hand");
+                return true;
+            }
+            if (name == "owning_entity")
+                return false;
             return false;
         }
     };
@@ -174,7 +194,8 @@ namespace perlin::attachable {
         namespace fs = std::filesystem;
         for (const std::string& dir : dirs) {
             std::error_code ec;
-            for (fs::recursive_directory_iterator it(fs::path(dir) / "attachables", ec), end; !ec && it != end; it.increment(ec)) {
+            for (fs::recursive_directory_iterator it(fs::path(dir) / "attachables", ec), end;
+                 !ec && it != end; it.increment(ec)) {
                 if (!it->is_regular_file(ec) || it->path().extension() != ".json")
                     continue;
                 std::ifstream f(it->path(), std::ios::binary);
@@ -208,7 +229,8 @@ namespace perlin::attachable {
             ss << f.rdbuf();
             text = ss.str();
         }
-        if (text.empty() && !ReadFile("attachables/" + name + ".json", text) && !ReadFile("attachables/" + name + ".entity.json", text))
+        if (text.empty() && !ReadFile("attachables/" + name + ".json", text) &&
+            !ReadFile("attachables/" + name + ".entity.json", text))
             return nullptr;
         Json doc;
         std::string error;
@@ -244,7 +266,9 @@ namespace perlin::attachable {
                         e.animate.emplace_back(a.string, nullptr);
                     else if (a.IsObject())
                         for (const auto& [target, cond] : a.object)
-                            e.animate.emplace_back(target, cond.IsString() ? Expr::Parse(cond.string) : Expr::Constant(cond.IsNumber() ? cond.number : 1));
+                            e.animate.emplace_back(
+                                target, cond.IsString() ? Expr::Parse(cond.string)
+                                                        : Expr::Constant(cond.IsNumber() ? cond.number : 1));
                 }
         }
         if (const Json* rcs = desc->Find("render_controllers"); rcs && rcs->IsArray())
@@ -264,7 +288,7 @@ namespace perlin::attachable {
 
     void Attachables::LoadSupport(Entry& e) {
         const auto once = [&](const std::string& rel, const auto& apply) {
-            if (loadedFiles.count(rel))
+            if (loadedFiles.contains(rel))
                 return;
             loadedFiles[rel] = true;
             std::string text;
@@ -281,11 +305,13 @@ namespace perlin::attachable {
                 once("animation_controllers/" + parts[2] + ".animation_controllers.json",
                      [&](const std::string& t) { animations.LoadControllers(t); });
             else if (id.starts_with("animation.") && parts.size() > 1)
-                once("animations/" + parts[1] + ".animation.json", [&](const std::string& t) { animations.LoadAnimations(t); });
+                once("animations/" + parts[1] + ".animation.json",
+                     [&](const std::string& t) { animations.LoadAnimations(t); });
         }
         for (const std::string& rc : e.renderControllers) {
             const std::string tail = rc.substr(rc.rfind('.') + 1);
-            once("render_controllers/" + tail + ".render_controllers.json", [&](const std::string& t) { LoadRenderControllers(t); });
+            once("render_controllers/" + tail + ".render_controllers.json",
+                 [&](const std::string& t) { LoadRenderControllers(t); });
         }
         for (const auto& [shortName, id] : e.geometries) {
             (void)shortName;
@@ -294,7 +320,8 @@ namespace perlin::attachable {
             if (cut != std::string::npos)
                 stem.resize(cut);
             for (const std::string& candidate : {e.name, stem})
-                once("models/entity/" + candidate + ".geo.json", [&](const std::string& t) { geometries.Load(t); });
+                once("models/entity/" + candidate + ".geo.json",
+                     [&](const std::string& t) { geometries.Load(t); });
         }
     }
 
@@ -360,7 +387,7 @@ namespace perlin::attachable {
         };
         const auto activate = [&](const std::string& id) {
             active[id] = true;
-            if (!in.animStart.count(id))
+            if (!in.animStart.contains(id))
                 in.animStart[id] = in.now;
             return in.animStart[id];
         };
@@ -369,7 +396,8 @@ namespace perlin::attachable {
             if (state.bindPose)
                 break;
             const float rootWeight = cond ? static_cast<float>(cond->Number(in.scope)) : 1.0f;
-            if (rootWeight == 0.0f) continue;
+            if (rootWeight == 0.0f)
+                continue;
             const auto found = e->animations.find(shortName);
             if (found == e->animations.end())
                 continue;
@@ -380,12 +408,14 @@ namespace perlin::attachable {
                 in.host.animTime = in.now - cs.entered;
                 in.host.allFinished = false;
                 in.host.anyFinished = false;
-                if (const auto current = controller->states.find(cs.state); current != controller->states.end()) {
+                if (const auto current = controller->states.find(cs.state);
+                    current != controller->states.end()) {
                     bool all = !current->second.animations.empty();
                     for (const auto& [name, blend] : current->second.animations) {
                         (void)blend;
                         const auto child = e->animations.find(name);
-                        const auto* animation = child != e->animations.end() ? animations.Find(child->second) : nullptr;
+                        const auto* animation =
+                            child != e->animations.end() ? animations.Find(child->second) : nullptr;
                         bool done = false;
                         if (animation) {
                             const std::string key = id + "/" + cs.state + "/" + child->second;
@@ -404,8 +434,10 @@ namespace perlin::attachable {
                 if (st == controller->states.end())
                     continue;
                 for (const auto& [animShort, animCond] : st->second.animations) {
-                    const float weight = rootWeight * (animCond ? static_cast<float>(animCond->Number(in.scope)) : 1.0f);
-                    if (weight == 0.0f) continue;
+                    const float weight =
+                        rootWeight * (animCond ? static_cast<float>(animCond->Number(in.scope)) : 1.0f);
+                    if (weight == 0.0f)
+                        continue;
                     const auto aid = e->animations.find(animShort);
                     if (aid == e->animations.end())
                         continue;
@@ -417,7 +449,7 @@ namespace perlin::attachable {
             }
         }
         for (auto it = in.animStart.begin(); it != in.animStart.end();)
-            it = active.count(it->first) ? std::next(it) : in.animStart.erase(it);
+            it = active.contains(it->first) ? std::next(it) : in.animStart.erase(it);
 
         std::string geometryRef = "geometry.default", textureRef = "texture.default";
         for (const std::string& rcId : e->renderControllers) {
@@ -449,10 +481,13 @@ namespace perlin::attachable {
         const std::string mainTexture = texPath != e->textures.end() ? texPath->second : std::string();
 
         BuiltMesh mesh;
-        BuildMesh(*geometry, pose, [&](const std::string& shortName) -> const Texture* {
-            const auto p = e->textures.find(shortName);
-            return p == e->textures.end() ? nullptr : TextureFor(p->second);
-        }, mesh);
+        BuildMesh(
+            *geometry, pose,
+            [&](const std::string& shortName) -> const Texture* {
+                const auto p = e->textures.find(shortName);
+                return p == e->textures.end() ? nullptr : TextureFor(p->second);
+            },
+            mesh);
         if (!mesh.body.empty() && !mainTexture.empty()) {
             Part body;
             body.texture = mainTexture;

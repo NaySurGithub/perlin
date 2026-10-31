@@ -15,8 +15,7 @@ namespace perlin::act {
         return detail::call_void(Op::Chat, w);
     }
 
-    template <class... Args>
-    Result<void> say(std::format_string<Args...> fmt, Args&&... args) {
+    template <class... Args> Result<void> say(std::format_string<Args...> fmt, Args&&... args) {
         return say(std::format(fmt, std::forward<Args>(args)...));
     }
 
@@ -32,12 +31,12 @@ namespace perlin::act {
         return detail::call_void(Op::LocalMessage, w);
     }
 
-    template <class... Args>
-    Result<void> message(std::format_string<Args...> fmt, Args&&... args) {
+    template <class... Args> Result<void> message(std::format_string<Args...> fmt, Args&&... args) {
         return message(std::format(fmt, std::forward<Args>(args)...));
     }
 
-    inline Result<void> toast(std::string_view text, std::chrono::milliseconds duration = std::chrono::milliseconds(3000)) {
+    inline Result<void> toast(std::string_view text,
+                              std::chrono::milliseconds duration = std::chrono::milliseconds(3000)) {
         abi::Writer w;
         w.str(text).put<int32_t>(static_cast<int32_t>(duration.count()));
         return detail::call_void(Op::Toast, w);
@@ -50,8 +49,11 @@ namespace perlin::act {
 
     inline Result<void> title(std::string_view text, const TitleOptions& options = {}) {
         abi::Writer w;
-        w.str(text).str(options.subtitle).put<int32_t>(static_cast<int32_t>(options.fade_in.count()))
-            .put<int32_t>(static_cast<int32_t>(options.stay.count())).put<int32_t>(static_cast<int32_t>(options.fade_out.count()));
+        w.str(text)
+            .str(options.subtitle)
+            .put<int32_t>(static_cast<int32_t>(options.fade_in.count()))
+            .put<int32_t>(static_cast<int32_t>(options.stay.count()))
+            .put<int32_t>(static_cast<int32_t>(options.fade_out.count()));
         return detail::call_void(Op::Title, w);
     }
 
@@ -61,9 +63,13 @@ namespace perlin::act {
         return detail::call_void(Op::InventorySelect, w);
     }
 
-    inline Result<void> swing() { return detail::call_void(Op::SwingArm); }
+    inline Result<void> swing() {
+        return detail::call_void(Op::SwingArm);
+    }
 
-    inline Result<void> use_item() { return detail::call_void(Op::UseItem); }
+    inline Result<void> use_item() {
+        return detail::call_void(Op::UseItem);
+    }
 
     inline Result<void> use_on(const BlockPos& pos, Face face = Face::Up) {
         abi::Writer w;
@@ -102,11 +108,17 @@ namespace perlin::act {
         return look(static_cast<float>(yaw), static_cast<float>(pitch));
     }
 
-    inline Result<void> jump() { return detail::call_void(Op::Jump); }
+    inline Result<void> jump() {
+        return detail::call_void(Op::Jump);
+    }
 
-    inline Result<void> respawn() { return detail::call_void(Op::Respawn); }
+    inline Result<void> respawn() {
+        return detail::call_void(Op::Respawn);
+    }
 
-    inline Result<void> disconnect() { return detail::call_void(Op::Disconnect); }
+    inline Result<void> disconnect() {
+        return detail::call_void(Op::Disconnect);
+    }
 
     inline Result<void> drop(int count = 1) {
         abi::Writer w;
@@ -126,9 +138,13 @@ namespace perlin::act {
         return detail::call_void(Op::InventoryClick, w);
     }
 
-    inline Result<void> open_inventory() { return detail::call_void(Op::InventoryOpen); }
+    inline Result<void> open_inventory() {
+        return detail::call_void(Op::InventoryOpen);
+    }
 
-    inline Result<void> close_inventory() { return detail::call_void(Op::InventoryClose); }
+    inline Result<void> close_inventory() {
+        return detail::call_void(Op::InventoryClose);
+    }
 
     struct Sound {
         std::string name;
@@ -139,7 +155,13 @@ namespace perlin::act {
 
     inline Result<void> play(const Sound& sound) {
         abi::Writer w;
-        w.str(sound.name).boolean(sound.positional).put(sound.at.x).put(sound.at.y).put(sound.at.z).put(sound.volume).put(sound.pitch);
+        w.str(sound.name)
+            .boolean(sound.positional)
+            .put(sound.at.x)
+            .put(sound.at.y)
+            .put(sound.at.z)
+            .put(sound.volume)
+            .put(sound.pitch);
         return detail::call_void(Op::PlaySound, w);
     }
 
@@ -157,8 +179,7 @@ namespace perlin::act {
         return detail::call_void(Op::OptionSet, w);
     }
 
-    template <game::Option O>
-    Result<void> set_option(game::option_t<O> value) {
+    template <game::Option O> Result<void> set_option(game::option_t<O> value) {
         using T = game::option_t<O>;
         if constexpr (std::is_same_v<T, bool>)
             return set_option(meta::enum_name(O), value ? "true" : "false");
@@ -174,8 +195,9 @@ namespace perlin::act {
         return detail::call_void(Op::PerspectiveSet, w);
     }
 
-    inline Result<void> reload_resources() { return detail::call_void(Op::ReloadResources); }
-
+    inline Result<void> reload_resources() {
+        return detail::call_void(Op::ReloadResources);
+    }
 
     inline Result<void> open_screen(Screen screen) {
         abi::Writer w;
@@ -189,11 +211,17 @@ namespace perlin::act {
         return detail::call_void(Op::OpenModSettings, w);
     }
 
-    inline Result<void> screenshot() { return detail::call_void(Op::TakeScreenshot); }
+    inline Result<void> screenshot() {
+        return detail::call_void(Op::TakeScreenshot);
+    }
 
-    inline Result<void> cycle_perspective() { return detail::call_void(Op::CyclePerspective); }
+    inline Result<void> cycle_perspective() {
+        return detail::call_void(Op::CyclePerspective);
+    }
 
-    inline Result<void> toggle_hud() { return detail::call_void(Op::ToggleHud); }
+    inline Result<void> toggle_hud() {
+        return detail::call_void(Op::ToggleHud);
+    }
 
     inline Result<void> copy_to_clipboard(std::string_view text) {
         abi::Writer w;

@@ -18,7 +18,7 @@ namespace perlin::physics::bds {
         }
     }
 
-    template<class ReadChunk>
+    template <class ReadChunk>
     bool InsideRegionReady(const CollisionBox& bounds, bool rejectField5352, ReadChunk&& read) {
         const int32_t minX = FloorBlockCoordinate(bounds[0]) >> 4;
         const int32_t minZ = FloorBlockCoordinate(bounds[2]) >> 4;
@@ -42,16 +42,18 @@ namespace perlin::physics::bds {
         return true;
     }
 
-    template<class Ready, class Visit>
-    bool CollectInsideCells(const CollisionBox& bounds, float expansion, bool callbackPresent,
-                             Ready&& ready, Visit&& visit) {
+    template <class Ready, class Visit>
+    bool CollectInsideCells(const CollisionBox& bounds, float expansion, bool callbackPresent, Ready&& ready,
+                            Visit&& visit) {
         if (!callbackPresent)
             return false;
         std::array<int32_t, 6> cells;
         CollisionBox query;
         for (int axis = 0; axis < 3; ++axis) {
-            cells[axis] = detail::FloorInsideCoordinate(detail::Round(detail::Round(bounds[axis] - expansion) + 0.001f));
-            cells[axis + 3] = detail::FloorInsideCoordinate(detail::Round(detail::Round(expansion + bounds[axis + 3]) - 0.001f));
+            cells[axis] = detail::FloorInsideCoordinate(
+                detail::Round(detail::Round(bounds[axis] - expansion) + 0.001f));
+            cells[axis + 3] = detail::FloorInsideCoordinate(
+                detail::Round(detail::Round(expansion + bounds[axis + 3]) - 0.001f));
         }
         for (int axis = 0; axis < 6; ++axis)
             query[axis] = static_cast<float>(cells[axis]);

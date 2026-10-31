@@ -20,7 +20,8 @@ namespace perlin {
         constexpr float kLookScale = 0.55f;
         constexpr float kTapSlop = 18.0f;
         constexpr float kScrollStep = 36.0f;
-        constexpr const char* kButtonNames[] = {"jump", "sneak", "attack", "use", "sprint", "pause", "chat", "f5", "f3", "tab", "f1", "inventory"};
+        constexpr const char* kButtonNames[] = {"jump", "sneak", "attack", "use", "sprint", "pause",
+                                                "chat", "f5",    "f3",     "tab", "f1",     "inventory"};
     }
 
     bool TouchControls::Gameplay(const Input& input) const {
@@ -38,10 +39,12 @@ namespace perlin {
 
     void TouchControls::SetState(const TouchState& s) {
         std::lock_guard lock(mutex);
-        const bool relayout = s.hudScale != state.hudScale || s.scale != state.scale || (!editing && s.layout != state.layout);
+        const bool relayout =
+            s.hudScale != state.hudScale || s.scale != state.scale || (!editing && s.layout != state.layout);
         const bool startEditing = s.editing && !editing && !editDone;
         const bool stopEditing = !s.editing && editing;
-        if (startEditing || stopEditing) cancelPending = true;
+        if (startEditing || stopEditing)
+            cancelPending = true;
         state = s;
         if (startEditing) {
             editing = true;
@@ -76,7 +79,8 @@ namespace perlin {
         const float H = static_cast<float>(height);
         const float global = state.scale;
         layout = {};
-        auto set = [&](Button b, float cx, float cy, float r, Action action, Kind kind, const char* label, bool system) {
+        auto set = [&](Button b, float cx, float cy, float r, Action action, Kind kind, const char* label,
+                       bool system) {
             const TouchPlace p = Place(kButtonNames[b]);
             Layout& l = layout[b];
             l.cx = p.x >= 0.0f ? p.x * W : cx;
@@ -98,13 +102,15 @@ namespace perlin {
         set(Pause, W * 0.5f - pitch * 0.5f, r + 0.02f * u, r, Action::Pause, Kind::Tap, "II", true);
         set(Chat, W * 0.5f + pitch * 0.5f, r + 0.02f * u, r, Action::Chat, Kind::Tap, "T", true);
 
-        const float scale = state.hudScale > 0 ? static_cast<float>(state.hudScale) : std::max(1.0f, std::floor(u / 240.0f));
+        const float scale =
+            state.hudScale > 0 ? static_cast<float>(state.hudScale) : std::max(1.0f, std::floor(u / 240.0f));
         hotbarW = 182.0f * scale;
         hotbarH = 22.0f * scale;
         hotbarX = W * 0.5f - hotbarW * 0.5f;
         hotbarY = H - hotbarH;
         const float ir = std::max(0.035f * u, 10.0f * scale);
-        set(Inventory, hotbarX + hotbarW + ir * 1.3f, H - hotbarH * 0.5f - 2.0f * scale, ir, Action::Inventory, Kind::Tap, "...", true);
+        set(Inventory, hotbarX + hotbarW + ir * 1.3f, H - hotbarH * 0.5f - 2.0f * scale, ir,
+            Action::Inventory, Kind::Tap, "...", true);
 
         const TouchPlace sp = Place("stick");
         stickR = kStickRadius * u * global * std::max(0.4f, sp.scale);
@@ -116,7 +122,8 @@ namespace perlin {
         ToolBox boxes[4];
         ToolBoxes(width, height, boxes);
         for (int i = 0; i < 4; i++)
-            if (x >= boxes[i].x && x < boxes[i].x + boxes[i].w && y >= boxes[i].y && y < boxes[i].y + boxes[i].h)
+            if (x >= boxes[i].x && x < boxes[i].x + boxes[i].w && y >= boxes[i].y &&
+                y < boxes[i].y + boxes[i].h)
                 return i;
         return -1;
     }
@@ -126,7 +133,7 @@ namespace perlin {
             if (editSelected < 0)
                 return;
             const char* name = editSelected == ButtonCount ? "stick" : kButtonNames[editSelected];
-            TouchPlace p = editLayout.count(name) ? editLayout[name] : TouchPlace{};
+            TouchPlace p = editLayout.contains(name) ? editLayout[name] : TouchPlace{};
             p.scale = std::clamp(p.scale * (which == 1 ? 1.12f : 1.0f / 1.12f), 0.4f, 2.5f);
             if (p.x < 0.0f && editSelected != ButtonCount) {
                 p.x = layout[editSelected].cx / static_cast<float>(width);
@@ -164,7 +171,8 @@ namespace perlin {
         float bestD = 1e30f;
         for (int i = 0; i < ButtonCount; i++) {
             const Layout& l = layout[i];
-            if (!l.visible) continue;
+            if (!l.visible)
+                continue;
             const float dx = x - l.cx, dy = y - l.cy;
             const float r = l.r * 1.2f;
             const float d = dx * dx + dy * dy;
@@ -184,7 +192,9 @@ namespace perlin {
     }
 
     void TouchControls::Erase(int64_t id) {
-        fingers.erase(std::remove_if(fingers.begin(), fingers.end(), [&](const Finger& f) { return f.id == id; }), fingers.end());
+        fingers.erase(
+            std::remove_if(fingers.begin(), fingers.end(), [&](const Finger& f) { return f.id == id; }),
+            fingers.end());
     }
 
     Binding TouchControls::PressAction(Input& input, Action action) {
@@ -302,7 +312,8 @@ namespace perlin {
             }
         }
         want[KeySprint] = want[KeySprint] || sprintLatched;
-        static constexpr Action kActions[5] = {Action::Forward, Action::Back, Action::Left, Action::Right, Action::Sprint};
+        static constexpr Action kActions[5] = {Action::Forward, Action::Back, Action::Left, Action::Right,
+                                               Action::Sprint};
         for (int i = 0; i < 5; i++) {
             if (want[i] == stickHeld[i])
                 continue;
@@ -378,7 +389,8 @@ namespace perlin {
             return;
         }
         if (!Gameplay(input)) {
-            const bool havePointer = std::any_of(fingers.begin(), fingers.end(), [](const Finger& o) { return o.role == Role::Pointer; });
+            const bool havePointer = std::any_of(fingers.begin(), fingers.end(),
+                                                 [](const Finger& o) { return o.role == Role::Pointer; });
             if (!havePointer) {
                 f.role = Role::Pointer;
                 input.OnMouseMove(x, y);
@@ -398,7 +410,8 @@ namespace perlin {
         } else if (InHotbar(x, y, slot)) {
             Tap(input, static_cast<Action>(static_cast<int>(Action::Hotbar1) + slot));
             f.role = Role::None;
-        } else if (!stickActive && (x - stickCX) * (x - stickCX) + (y - stickCY) * (y - stickCY) <= stickR * stickR * 2.56f) {
+        } else if (!stickActive &&
+                   (x - stickCX) * (x - stickCX) + (y - stickCY) * (y - stickCY) <= stickR * stickR * 2.56f) {
             f.role = Role::Stick;
             stickActive = true;
             stickX = stickCX;
@@ -490,7 +503,7 @@ namespace perlin {
             if (editSelected < 0)
                 break;
             const char* name = editSelected == ButtonCount ? "stick" : kButtonNames[editSelected];
-            TouchPlace p = editLayout.count(name) ? editLayout[name] : TouchPlace{};
+            TouchPlace p = editLayout.contains(name) ? editLayout[name] : TouchPlace{};
             p.x = std::clamp((x + f->grabX) / static_cast<float>(width), 0.02f, 0.98f);
             p.y = std::clamp((y + f->grabY) / static_cast<float>(height), 0.03f, 0.97f);
             editLayout[name] = p;

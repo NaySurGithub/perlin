@@ -1,4 +1,6 @@
 #pragma once
+#include <chrono>
+#include <condition_variable>
 // metal backend: one queue, implicit hazard tracking, so barriers are statistics only. Buffers the cpu touches are shared storage
 // and need no flush; commands record straight into encoders and the encoder kind is switched lazily. Objective-C++ with ARC.
 #import <Metal/Metal.h>
@@ -104,9 +106,46 @@ namespace rhi::metal {
     // vertex streams live at the top of the buffer table so uniforms keep their low indices
     constexpr uint32_t kVertexBufferBase = 30;
 
+    // a timeline value the gpu raises from a completion handler; waiters sleep on the condition variable instead of
+    // spinning, which on a laptop kept a performance core busy for the whole gpu frame (heat, then throttled frames)
+    struct Timeline {
+        std::atomic<uint64_t> value{0};
+        std::mutex mutex;
+        std::condition_variable cv;
+
+        void Raise(uint64_t v) {
+            uint64_t cur = value.load();
+            while (cur < v && !value.compare_exchange_weak(cur, v)) {}
+            std::lock_guard lock(mutex);
+            cv.notify_all();
+        }
+        bool Wait(uint64_t v, uint64_t timeoutNs) {
+            if (value.load(std::memory_order_acquire) >= v)
+                return true;
+            std::unique_lock lock(mutex);
+            const auto ready = [&] { return value.load(std::memory_order_acquire) >= v; };
+            if (timeoutNs == ~0ull) {
+                cv.wait(lock, ready);
+                return true;
+            }
+            return cv.wait_for(lock, std::chrono::nanoseconds(timeoutNs), ready);
+        }
+    };
+
+    // a render pipeline being compiled on a worker: state 0 = pending, 1 = ready, -1 = failed
+    struct PipelineBuild {
+        std::atomic<int> state{0};
+        std::atomic<bool> waited{false};
+        std::atomic<bool> reported{false};
+        id<MTLRenderPipelineState> render = nil;
+        std::string error;
+        Timeline done;
+    };
+
     struct Pipeline {
         bool compute = false;
         id<MTLRenderPipelineState> render = nil;
+        std::shared_ptr<PipelineBuild> build;
         id<MTLComputePipelineState> comp = nil;
         id<MTLDepthStencilState> depthStencil = nil;
         MTLCullMode cull = MTLCullModeNone;
@@ -126,7 +165,7 @@ namespace rhi::metal {
 
     // completion handlers outlive the handle, so the counter is shared
     struct Fence {
-        std::shared_ptr<std::atomic<uint64_t>> value = std::make_shared<std::atomic<uint64_t>>(0);
+        std::shared_ptr<Timeline> value = std::make_shared<Timeline>();
     };
 
     class Device;
@@ -141,38 +180,51 @@ namespace rhi::metal {
         // ends the open encoder and hands the command buffer over
         id<MTLCommandBuffer> Finish();
 
-        void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) override;
+        void Barrier(std::span<const TextureBarrier> textures,
+                     std::span<const BufferBarrier> buffers) override;
         void UavBarrier(BufferHandle) override;
         void UavBarrier(TextureHandle) override;
-        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) override;
-        void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) override;
-        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) override;
+        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                        uint64_t size) override;
+        void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
+        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
         void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) override;
         void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) override;
         void ResolveTexture(TextureHandle dst, TextureHandle src) override;
         void BeginRendering(const RenderingDesc& desc) override;
         void EndRendering() override;
         void SetPipeline(PipelineHandle pipeline) override;
-        void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) override;
+        void SetBindGroup(uint32_t set, BindGroupHandle group,
+                          std::span<const uint32_t> dynamicOffsets) override;
         void PushConstants(const void* data, uint32_t bytes, uint32_t offset) override;
         void SetViewport(const Viewport& viewport) override;
         void SetScissor(const Rect& rect) override;
         void SetVertexBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset) override;
         void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset) override;
         void SetStencilReference(uint32_t value) override;
-        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) override;
-        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) override;
-        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) override;
-        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset, uint32_t maxDraws,
-                                      uint32_t stride) override;
+        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                  uint32_t firstInstance) override;
+        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                         int32_t vertexOffset, uint32_t firstInstance) override;
+        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                 uint32_t stride) override;
+        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                      uint64_t countOffset, uint32_t maxDraws, uint32_t stride) override;
         void Dispatch(uint32_t x, uint32_t y, uint32_t z) override;
         void DispatchIndirect(BufferHandle args, uint64_t offset) override;
         void WriteTimestamp(QuerySetHandle set, uint32_t index) override;
-        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) override;
+        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                            uint64_t dstOffset) override;
         void BeginDebugLabel(const char* name, uint32_t rgba) override;
         void EndDebugLabel() override;
         void* NativeHandle() override { return (__bridge void*)commandBuffer; }
-        void InvalidateBoundState() override { dirtySets = 0xF; pipelineDirty = true; vertexDirty = 0xFF; }
+        void InvalidateBoundState() override {
+            dirtySets = 0xF;
+            pipelineDirty = true;
+            vertexDirty = 0xFF;
+        }
 
     private:
         void EndEncoder();
@@ -180,7 +232,7 @@ namespace rhi::metal {
         id<MTLComputeCommandEncoder> Compute();
         bool PrepareDraw();
         bool BindSets(const Pipeline& p);
-        void ApplyPipelineState(const Pipeline& p);
+        void ApplyPipelineState(const Pipeline& p, id<MTLRenderPipelineState> state);
 
         Device& device;
         QueueType queue;
@@ -267,7 +319,9 @@ namespace rhi::metal {
         void BeginFrame() override;
         void EndFrame() override;
         uint64_t FrameNumber() const override { return frame; }
-        uint32_t FrameSlot() const override { return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight)); }
+        uint32_t FrameSlot() const override {
+            return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight));
+        }
         void WaitIdle() override;
 
         MemoryBudget QueryMemoryBudget() override;
@@ -279,7 +333,8 @@ namespace rhi::metal {
         const DeviceOptions& Options() const { return options; }
         DeviceStats& MutableStats() { return stats; }
         void ReportError(const std::string& message);
-        id<MTLTexture> ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format, bool stencil);
+        id<MTLTexture> ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format,
+                              bool stencil);
         // swapchain images: a handle that points at a different drawable every frame
         TextureHandle CreateSurfaceTexture(Format format, uint32_t width, uint32_t height, bool sampled);
         void SetSurfaceTexture(TextureHandle handle, id<MTLTexture> texture);
@@ -303,7 +358,13 @@ namespace rhi::metal {
 
     private:
         void FillCaps();
-        id<MTLFunction> CompileStage(const Shader& shader, const PipelineLayoutDesc& layout, std::vector<StageSlot>& slots, std::string& error);
+        id<MTLFunction> CompileStage(const Shader& shader, const PipelineLayoutDesc& layout,
+                                     std::vector<StageSlot>& slots, std::string& error);
+        // binding slots for a stage and its source with the sampler indices rewritten (cheap, no compiler)
+        std::string PrepareStage(const Shader& shader, const PipelineLayoutDesc& layout, std::vector<StageSlot>& slots,
+                                 std::string& error);
+        // the compiler half: msl source -> function, libraries cached by source (thread safe)
+        id<MTLFunction> LoadFunction(const std::string& source, const std::string& entry, std::string& error);
 
         id<MTLDevice> device = nil;
         id<MTLCommandQueue> queue = nil;
@@ -318,6 +379,13 @@ namespace rhi::metal {
         std::mutex libraryMutex;
         std::unordered_map<std::string, id<MTLLibrary>> libraries;
         std::mutex errorMutex;
+        dispatch_queue_t compileQueue = nullptr;
+        dispatch_group_t compileGroup = nullptr;
+
+    public:
+        // the pipeline a draw may use now: nil while it is still compiling (the draw is skipped) or if it failed
+        id<MTLRenderPipelineState> ReadyPipeline(const Pipeline& p);
+        void WaitForCompiles();
     };
 
     std::unique_ptr<rhi::Swapchain> MakeSwapchain(Device& device, const SwapchainDesc& desc);

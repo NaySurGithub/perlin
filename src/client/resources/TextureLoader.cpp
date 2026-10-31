@@ -38,7 +38,8 @@ namespace perlin {
         }
         if (color.isArray() && color.size() >= 3) {
             for (size_t i = 0; i < 4; i++)
-                rgba[i] = static_cast<unsigned char>(std::clamp(color[i].valid() ? color[i].integer(255) : 255, 0, 255));
+                rgba[i] = static_cast<unsigned char>(
+                    std::clamp(color[i].valid() ? color[i].integer(255) : 255, 0, 255));
             return true;
         }
         return false;
@@ -97,14 +98,20 @@ namespace perlin {
             return false;
         const int w = skin.width, s = w / 64;
         std::vector<unsigned char> square(static_cast<size_t>(w) * static_cast<size_t>(w) * 4, 0);
-        std::copy(skin.pixels.begin(), skin.pixels.begin() + static_cast<std::ptrdiff_t>(w) * skin.height * 4, square.begin());
+        std::copy(skin.pixels.begin(), skin.pixels.begin() + static_cast<std::ptrdiff_t>(w) * skin.height * 4,
+                  square.begin());
         // copy a face (64-unit skin coords) right limb -> left limb, mirrored: legacy format only stores the right side
         const auto face = [&](int sx, int sy, int dx, int dy, int fw, int fh) {
             for (int y = 0; y < fh * s; y++)
                 for (int x = 0; x < fw * s; x++) {
-                    const size_t from = (static_cast<size_t>(sy * s + y) * static_cast<size_t>(w) + static_cast<size_t>(sx * s + fw * s - 1 - x)) * 4;
-                    const size_t to = (static_cast<size_t>(dy * s + y) * static_cast<size_t>(w) + static_cast<size_t>(dx * s + x)) * 4;
-                    std::copy(square.begin() + static_cast<std::ptrdiff_t>(from), square.begin() + static_cast<std::ptrdiff_t>(from) + 4,
+                    const size_t from = (static_cast<size_t>(sy * s + y) * static_cast<size_t>(w) +
+                                         static_cast<size_t>(sx * s + fw * s - 1 - x)) *
+                                        4;
+                    const size_t to = (static_cast<size_t>(dy * s + y) * static_cast<size_t>(w) +
+                                       static_cast<size_t>(dx * s + x)) *
+                                      4;
+                    std::copy(square.begin() + static_cast<std::ptrdiff_t>(from),
+                              square.begin() + static_cast<std::ptrdiff_t>(from) + 4,
                               square.begin() + static_cast<std::ptrdiff_t>(to));
                 }
         };

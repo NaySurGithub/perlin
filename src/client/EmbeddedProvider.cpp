@@ -18,7 +18,8 @@ namespace perlin {
             for (size_t i = 0; i < perlin_embedded_count; i++) {
                 if (std::strcmp(perlin_embedded_names[i], name) != 0)
                     continue;
-                HRSRC res = FindResourceA(nullptr, MAKEINTRESOURCEA(i + 1), reinterpret_cast<LPCSTR>(RT_RCDATA));
+                HRSRC res =
+                    FindResourceA(nullptr, MAKEINTRESOURCEA(i + 1), reinterpret_cast<LPCSTR>(RT_RCDATA));
                 if (!res)
                     return false;
                 HGLOBAL handle = LoadResource(nullptr, res);
@@ -31,7 +32,9 @@ namespace perlin {
             return false;
         }
     }
-    void RegisterEmbeddedResources() { resources::SetProvider(&Find); }
+    void RegisterEmbeddedResources() {
+        resources::SetProvider(&Find);
+    }
 }
 #else
 struct PerlinEmbeddedFile {
@@ -48,13 +51,16 @@ namespace perlin {
             for (size_t i = 0; i < perlin_embedded_count; i++) {
                 if (std::strcmp(perlin_embedded_files[i].name, name) == 0) {
                     *data = perlin_embedded_files[i].begin;
-                    *size = static_cast<size_t>(perlin_embedded_files[i].end - perlin_embedded_files[i].begin);
+                    *size =
+                        static_cast<size_t>(perlin_embedded_files[i].end - perlin_embedded_files[i].begin);
                     return true;
                 }
             }
             return false;
         }
     }
-    void RegisterEmbeddedResources() { resources::SetProvider(&Find); }
+    void RegisterEmbeddedResources() {
+        resources::SetProvider(&Find);
+    }
 }
 #endif

@@ -6,11 +6,11 @@
 #include <vector>
 
 namespace perlin::physics::bds {
-    inline std::vector<CollisionBox> CacheRegionDifference(const CollisionBox& query, const CollisionBox& cached) {
+    inline std::vector<CollisionBox> CacheRegionDifference(const CollisionBox& query,
+                                                           const CollisionBox& cached) {
         const CollisionVector origin{query[0], query[1], query[2]};
-        const CollisionVector extent{detail::Round(query[3] - origin[0]),
-                                      detail::Round(query[4] - origin[1]),
-                                      detail::Round(query[5] - origin[2])};
+        const CollisionVector extent{detail::Round(query[3] - origin[0]), detail::Round(query[4] - origin[1]),
+                                     detail::Round(query[5] - origin[2])};
         std::array<float, 7> planes{};
         for (int axis = 0; axis < 3; ++axis) {
             planes[axis * 2] = detail::Round(cached[axis] - origin[axis]);
@@ -31,8 +31,8 @@ namespace perlin::physics::bds {
             return first;
         };
         std::vector<CollisionVector> pending{{detail::Round(query[0] - origin[0]),
-                                               detail::Round(query[1] - origin[1]),
-                                               detail::Round(query[2] - origin[2])}};
+                                              detail::Round(query[1] - origin[1]),
+                                              detail::Round(query[2] - origin[2])}};
         std::vector<CollisionBox> candidates;
         for (size_t current = 0; current < pending.size(); ++current) {
             const auto point = pending[current];
@@ -70,9 +70,9 @@ namespace perlin::physics::bds {
                 candidates.push_back(candidate);
         }
         const auto volume = [](const CollisionBox& box) {
-            return detail::Round(detail::Round(detail::Round(box[3] - box[0]) *
-                                               detail::Round(box[4] - box[1])) *
-                                 detail::Round(box[5] - box[2]));
+            return detail::Round(
+                detail::Round(detail::Round(box[3] - box[0]) * detail::Round(box[4] - box[1])) *
+                detail::Round(box[5] - box[2]));
         };
         std::vector<CollisionBox> result;
         for (auto candidate : candidates) {
@@ -91,7 +91,8 @@ namespace perlin::physics::bds {
                     combined[axis] = std::min(previous[axis], candidate[axis]);
                     combined[axis + 3] = std::max(previous[axis + 3], candidate[axis + 3]);
                 }
-                const float error = detail::Round(volume(combined) - detail::Round(volume(previous) + volume(candidate)));
+                const float error =
+                    detail::Round(volume(combined) - detail::Round(volume(previous) + volume(candidate)));
                 if (std::fabs(error) <= 0.001f) {
                     previous = combined;
                     merged = true;

@@ -29,7 +29,8 @@ namespace perlin::server::vanilla {
     // perlin noise whose y coordinate snaps to steps of `fudgeYScale` near the origin (the old terrain noise's vertical smearing)
     class SmearedPerlinNoise : public PerlinNoise {
     public:
-        SmearedPerlinNoise(Xoroshiro& random, double fudgeYScale) : PerlinNoise(random), fudgeYScale(fudgeYScale) {}
+        SmearedPerlinNoise(Xoroshiro& random, double fudgeYScale)
+            : PerlinNoise(random), fudgeYScale(fudgeYScale) {}
         float Get(double x, double y, double z) const;
         double FudgeYScale() const { return fudgeYScale; }
 
@@ -40,7 +41,8 @@ namespace perlin::server::vanilla {
     // the old_blended_noise density function: two limit noises blended by a third
     class BlendedNoise {
     public:
-        BlendedNoise(double xzScale, double yScale, double xzFactor, double yFactor, double smearScaleMultiplier, Xoroshiro random);
+        BlendedNoise(double xzScale, double yScale, double xzFactor, double yFactor,
+                     double smearScaleMultiplier, Xoroshiro random);
         float Get(int x, int y, int z) const;
 
         struct Layer {
@@ -57,7 +59,8 @@ namespace perlin::server::vanilla {
         double YFactor() const { return yFactor; }
 
     private:
-        static std::vector<Layer> Fbm(Xoroshiro& random, int firstOctave, double smearScale, double amplitude);
+        static std::vector<Layer> Fbm(Xoroshiro& random, int firstOctave, double smearScale,
+                                      double amplitude);
         static float Sum(const std::vector<Layer>& stack, double x, double y, double z);
         std::vector<Layer> minLimit, maxLimit, main;
         double xzMultiplier, yMultiplier, xzFactor, yFactor;

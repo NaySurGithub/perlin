@@ -53,32 +53,37 @@ namespace perlin::ui {
         }
 
         Rml::ColourbPremultiplied Colour(float r, float g, float b, float a) {
-            const auto byte = [](float v) { return static_cast<Rml::byte>(std::clamp(static_cast<int>(std::lround(v * 255.0f)), 0, 255)); };
+            const auto byte = [](float v) {
+                return static_cast<Rml::byte>(std::clamp(static_cast<int>(std::lround(v * 255.0f)), 0, 255));
+            };
             return Rml::ColourbPremultiplied(byte(r * a), byte(g * a), byte(b * a), byte(a));
         }
     }
 
     class BgfxRenderInterface final : public Rml::RenderInterface {
     public:
-        static constexpr Rml::CompiledGeometryHandle kEmptyGeometry = ~static_cast<Rml::CompiledGeometryHandle>(0);
+        static constexpr Rml::CompiledGeometryHandle kEmptyGeometry =
+            ~static_cast<Rml::CompiledGeometryHandle>(0);
 
-        Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices) override {
+        Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<const Rml::Vertex> vertices,
+                                                    Rml::Span<const int> indices) override {
             std::vector<UiVertex> v(vertices.size());
             for (size_t i = 0; i < vertices.size(); i++) {
-                v[i] = {vertices[i].position.x, vertices[i].position.y, 0.0f, Pack(vertices[i].colour),
-                        vertices[i].tex_coord.x, vertices[i].tex_coord.y};
+                v[i] = {vertices[i].position.x,   vertices[i].position.y,  0.0f,
+                        Pack(vertices[i].colour), vertices[i].tex_coord.x, vertices[i].tex_coord.y};
             }
             std::vector<uint32_t> idx(indices.size());
             for (size_t i = 0; i < indices.size(); i++)
                 idx[i] = static_cast<uint32_t>(indices[i]);
-            const uint32_t mesh = gRenderer->UiCreateMesh(v.data(), static_cast<uint32_t>(v.size()), idx.data(),
-                                                          static_cast<uint32_t>(idx.size()));
+            const uint32_t mesh = gRenderer->UiCreateMesh(v.data(), static_cast<uint32_t>(v.size()),
+                                                          idx.data(), static_cast<uint32_t>(idx.size()));
             if (!mesh && !v.empty() && !idx.empty())
                 gMeshStarved = true;
             return mesh ? static_cast<Rml::CompiledGeometryHandle>(mesh) : kEmptyGeometry;
         }
 
-        void RenderGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture) override {
+        void RenderGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation,
+                            Rml::TextureHandle texture) override {
             if (geometry == kEmptyGeometry)
                 return;
             UiDraw draw;
@@ -140,10 +145,13 @@ namespace perlin::ui {
                 if (TexturePack::Instance().Active() && stem.starts_with("ui_menu_btn")) {
                     if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, ".png") == 0)
                         stem.resize(stem.size() - 4);
-                    fromPack = TexturePack::Instance().Load("textures/ui/screen_" + stem.substr(3) + ".png", t) && t.width > 0;
+                    fromPack =
+                        TexturePack::Instance().Load("textures/ui/screen_" + stem.substr(3) + ".png", t) &&
+                        t.width > 0;
                 }
                 if (!fromPack && (!resources::Read(source.substr(6), bytes) ||
-                    !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t)))
+                                  !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()),
+                                                     bytes.size(), t)))
                     return 0;
             } else if (source.starts_with("mcurl:")) {
                 std::string bytes;
@@ -176,7 +184,8 @@ namespace perlin::ui {
             return Upload(t);
         }
 
-        Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2i dimensions) override {
+        Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte> source,
+                                           Rml::Vector2i dimensions) override {
             Texture t;
             t.width = dimensions.x;
             t.height = dimensions.y;
@@ -210,7 +219,8 @@ namespace perlin::ui {
         }
 
         static Rml::TextureHandle Upload(const Texture& t) {
-            return static_cast<Rml::TextureHandle>(gRenderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false));
+            return static_cast<Rml::TextureHandle>(
+                gRenderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false));
         }
 
         bool scissorOn = false;
@@ -225,7 +235,9 @@ namespace perlin::ui {
             return std::chrono::duration<double>(Clock::now() - start).count();
         }
 
-        void JoinPath(Rml::String& translated, const Rml::String&, const Rml::String& path) override { translated = path; }
+        void JoinPath(Rml::String& translated, const Rml::String&, const Rml::String& path) override {
+            translated = path;
+        }
 
         bool LogMessage(Rml::Log::Type type, const Rml::String& message) override {
             if (type > Rml::Log::LT_WARNING)
@@ -233,7 +245,8 @@ namespace perlin::ui {
             static std::unordered_map<std::string, uint64_t> seen;
             const uint64_t n = ++seen[message];
             if (n <= 3 || n % 100000 == 0)
-                Log("rml", "{}{}", message, (n > 3 ? " (repeated " + std::to_string(n) + " times)" : std::string()));
+                Log("rml", "{}{}", message,
+                    (n > 3 ? " (repeated " + std::to_string(n) + " times)" : std::string()));
             return true;
         }
     };
@@ -241,13 +254,13 @@ namespace perlin::ui {
     class McFontEngine final : public Rml::FontEngineInterface {
     public:
         bool LoadFontFace(const Rml::String&, int, bool, Rml::Style::FontWeight) override { return true; }
-        bool LoadFontFace(Rml::Span<const Rml::byte>, int, const Rml::String&, Rml::Style::FontStyle, Rml::Style::FontWeight,
-                          bool) override {
+        bool LoadFontFace(Rml::Span<const Rml::byte>, int, const Rml::String&, Rml::Style::FontStyle,
+                          Rml::Style::FontWeight, bool) override {
             return true;
         }
 
-        Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle style, Rml::Style::FontWeight weight,
-                                              int size) override {
+        Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle style,
+                                              Rml::Style::FontWeight weight, int size) override {
             Face face;
             face.ten = family.find("ten") != Rml::String::npos;
             face.shadow = family.find("shadow") != Rml::String::npos;
@@ -262,14 +275,17 @@ namespace perlin::ui {
                     face.size = requested;
             }
             for (size_t i = 0; i < faces.size(); i++)
-                if (faces[i].ten == face.ten && faces[i].shadow == face.shadow && faces[i].outline == face.outline &&
-                    faces[i].bold == face.bold && faces[i].italic == face.italic && faces[i].size == face.size)
+                if (faces[i].ten == face.ten && faces[i].shadow == face.shadow &&
+                    faces[i].outline == face.outline && faces[i].bold == face.bold &&
+                    faces[i].italic == face.italic && faces[i].size == face.size)
                     return static_cast<Rml::FontFaceHandle>(i + 1);
             faces.push_back(face);
             return static_cast<Rml::FontFaceHandle>(faces.size());
         }
 
-        Rml::FontEffectsHandle PrepareFontEffects(Rml::FontFaceHandle, const Rml::FontEffectList&) override { return 0; }
+        Rml::FontEffectsHandle PrepareFontEffects(Rml::FontFaceHandle, const Rml::FontEffectList&) override {
+            return 0;
+        }
 
         const Rml::FontMetrics& GetFontMetrics(Rml::FontFaceHandle handle) override {
             Face& f = faces[handle - 1];
@@ -316,9 +332,10 @@ namespace perlin::ui {
             return static_cast<int>(std::lround(width * s));
         }
 
-        int GenerateString(Rml::RenderManager& renderManager, Rml::FontFaceHandle handle, Rml::FontEffectsHandle,
-                           Rml::StringView string, Rml::Vector2f position, Rml::ColourbPremultiplied colour, float opacity,
-                           const Rml::TextShapingContext&, Rml::TexturedMeshList& meshes) override {
+        int GenerateString(Rml::RenderManager& renderManager, Rml::FontFaceHandle handle,
+                           Rml::FontEffectsHandle, Rml::StringView string, Rml::Vector2f position,
+                           Rml::ColourbPremultiplied colour, float opacity, const Rml::TextShapingContext&,
+                           Rml::TexturedMeshList& meshes) override {
             const Face& f = faces[handle - 1];
             if (f.ten)
                 return GenerateTenString(renderManager, f, string, position, colour, opacity, meshes);
@@ -330,13 +347,15 @@ namespace perlin::ui {
             // dynamic glyphs must be rasterized before the atlas texture is uploaded
             while (McFont::Next(text, glyphIndex, glyphCode))
                 font.Get(glyphCode);
-            Rml::Texture texture = renderManager.LoadTexture("mcfont:atlas#" + std::to_string(font.Version()));
+            Rml::Texture texture =
+                renderManager.LoadTexture("mcfont:atlas#" + std::to_string(font.Version()));
             meshes.resize(meshes.size() + 1);
             Rml::TexturedMesh& out = meshes.back();
             out.texture = texture;
 
             const Rml::ColourbPremultiplied main = Fade(colour, opacity);
-            const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4), static_cast<Rml::byte>(main.green / 4),
+            const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4),
+                                                  static_cast<Rml::byte>(main.green / 4),
                                                   static_cast<Rml::byte>(main.blue / 4), main.alpha);
 
             // geometry and advances must use the same scale as text measurement
@@ -357,16 +376,19 @@ namespace perlin::ui {
                         const float x = g.colored ? snap(position.x + pen + ox + g.left * kGeo)
                                                   : position.x + pen + ox + g.left * kGeo;
                         const float y = (g.colored ? snap(position.y - 7.0f * kGeo + oy)
-                                                  : position.y - 7.0f * kGeo + oy) + g.top * kGeo;
+                                                   : position.y - 7.0f * kGeo + oy) +
+                                        g.top * kGeo;
                         const float w = g.width * kGeo, h = g.height * kGeo;
-                        const Rml::ColourbPremultiplied ink = g.colored
-                            ? Rml::ColourbPremultiplied(c.alpha, c.alpha, c.alpha, c.alpha) : c;
+                        const Rml::ColourbPremultiplied ink =
+                            g.colored ? Rml::ColourbPremultiplied(c.alpha, c.alpha, c.alpha, c.alpha) : c;
                         for (int pass = 0; pass < (f.bold ? 2 : 1); pass++) {
                             if (!f.italic) {
-                                Rml::MeshUtilities::GenerateQuad(out.mesh, {x + pass * kGeo, y}, {w, h}, ink, {g.u0, g.v0}, {g.u1, g.v1});
+                                Rml::MeshUtilities::GenerateQuad(out.mesh, {x + pass * kGeo, y}, {w, h}, ink,
+                                                                 {g.u0, g.v0}, {g.u1, g.v1});
                                 continue;
                             }
-                            const float top = (1.0f - 0.25f * g.top) * kGeo, bottom = (1.0f - 0.25f * (g.top + g.height)) * kGeo;
+                            const float top = (1.0f - 0.25f * g.top) * kGeo,
+                                        bottom = (1.0f - 0.25f * (g.top + g.height)) * kGeo;
                             const int base = static_cast<int>(out.mesh.vertices.size());
                             const float bx = x + pass * kGeo;
                             out.mesh.vertices.push_back({{bx + top, y}, ink, {g.u0, g.v0}});
@@ -395,7 +417,9 @@ namespace perlin::ui {
             return static_cast<int>(std::lround(width));
         }
 
-        int GetVersion(Rml::FontFaceHandle) override { return static_cast<int>(McFont::Instance().Version()); }
+        int GetVersion(Rml::FontFaceHandle) override {
+            return static_cast<int>(McFont::Instance().Version());
+        }
         void ReleaseFontResources() override {}
 
     private:
@@ -428,7 +452,8 @@ namespace perlin::ui {
             ten.EnsureLoaded();
             const float s = static_cast<float>(f.size) / TenFont::kEm;
             const float device = static_cast<float>(std::max(1, gScale));
-            const int emPx = std::clamp(static_cast<int>(std::lround(static_cast<float>(f.size) * device)), 4, 160);
+            const int emPx =
+                std::clamp(static_cast<int>(std::lround(static_cast<float>(f.size) * device)), 4, 160);
             const TenFont::Page* page = ten.PageFor(emPx);
             if (!page || page->rgba.empty())
                 return 0;
@@ -445,10 +470,12 @@ namespace perlin::ui {
             Rml::TexturedMesh& out = meshes[meshes.size() - 2];
             out.texture = texture;
             Rml::TexturedMesh& fallback = meshes[meshes.size() - 1];
-            fallback.texture = renderManager.LoadTexture("mcfont:atlas#" + std::to_string(McFont::Instance().Version()));
+            fallback.texture =
+                renderManager.LoadTexture("mcfont:atlas#" + std::to_string(McFont::Instance().Version()));
 
             const Rml::ColourbPremultiplied main = Fade(colour, opacity);
-            const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4), static_cast<Rml::byte>(main.green / 4),
+            const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4),
+                                                  static_cast<Rml::byte>(main.green / 4),
                                                   static_cast<Rml::byte>(main.blue / 4), main.alpha);
             const auto snap = [&](float v) { return std::round(v * device) / device; };
             const auto quads = [&](float ox, float oy, const Rml::ColourbPremultiplied& c) {
@@ -466,9 +493,9 @@ namespace perlin::ui {
                         const float x = baseX + pen + static_cast<float>(g.x) * k;
                         const float y = baseY + static_cast<float>(g.y) * k;
                         if (g.w > 0 && g.h > 0)
-                            Rml::MeshUtilities::GenerateQuad(out.mesh, {x, y},
-                                                         {static_cast<float>(g.w) * k, static_cast<float>(g.h) * k}, c,
-                                                         {g.u0, g.v0}, {g.u1, g.v1});
+                            Rml::MeshUtilities::GenerateQuad(
+                                out.mesh, {x, y}, {static_cast<float>(g.w) * k, static_cast<float>(g.h) * k},
+                                c, {g.u0, g.v0}, {g.u1, g.v1});
                         pen += ten.Advance(cp, s);
                         continue;
                     }
@@ -478,10 +505,11 @@ namespace perlin::ui {
                         const float ks = s * (TenFont::kEm / 8.0f);
                         const float x = baseX + pen + mg.left * ks;
                         const float y = baseY - 7.0f * ks + mg.top * ks;
-                        Rml::MeshUtilities::GenerateQuad(fallback.mesh, {x, y},
-                                                         {static_cast<float>(mg.width) * ks, static_cast<float>(mg.height) * ks},
-                                                         mg.colored ? Rml::ColourbPremultiplied(c.alpha, c.alpha, c.alpha, c.alpha) : c,
-                                                         {mg.u0, mg.v0}, {mg.u1, mg.v1});
+                        Rml::MeshUtilities::GenerateQuad(
+                            fallback.mesh, {x, y},
+                            {static_cast<float>(mg.width) * ks, static_cast<float>(mg.height) * ks},
+                            mg.colored ? Rml::ColourbPremultiplied(c.alpha, c.alpha, c.alpha, c.alpha) : c,
+                            {mg.u0, mg.v0}, {mg.u1, mg.v1});
                         pen += static_cast<float>(mg.advance) * ks;
                         continue;
                     }
@@ -537,9 +565,7 @@ namespace perlin::ui {
                 loaded = false;
             }
 
-            void OnResize() override {
-                dirty = true;
-            }
+            void OnResize() override { dirty = true; }
 
             void OnRender() override {
                 Rml::RenderManager* manager = GetRenderManager();
@@ -574,7 +600,11 @@ namespace perlin::ui {
                 float cr = 1, cg = 1, cb = 1, ca = 1;
                 if (HasAttribute("color")) {
                     const auto c = Floats(GetAttribute<Rml::String>("color", ""));
-                    if (c.size() >= 3) { cr = c[0]; cg = c[1]; cb = c[2]; }
+                    if (c.size() >= 3) {
+                        cr = c[0];
+                        cg = c[1];
+                        cb = c[2];
+                    }
                 }
                 if (HasAttribute("alpha"))
                     ca = GetAttribute<float>("alpha", 1.0f);
@@ -583,15 +613,23 @@ namespace perlin::ui {
                 float su = 0, sv = 0, sw = tw, sh = th;
                 if (HasAttribute("uv")) {
                     const auto uv = Floats(GetAttribute<Rml::String>("uv", ""));
-                    if (uv.size() >= 2) { su = uv[0]; sv = uv[1]; sw = tw - su; sh = th - sv; }
+                    if (uv.size() >= 2) {
+                        su = uv[0];
+                        sv = uv[1];
+                        sw = tw - su;
+                        sh = th - sv;
+                    }
                     if (uv.size() >= 4) {
-                        if (uv[2] >= 0) sw = uv[2];
-                        if (uv[3] >= 0) sh = uv[3];
+                        if (uv[2] >= 0)
+                            sw = uv[2];
+                        if (uv[3] >= 0)
+                            sh = uv[3];
                     }
                 }
 
                 float dx = 0, dy = 0, dw = size.x, dh = size.y;
-                if (GetAttribute<int>("keep", 0) && !HasAttribute("nine") && !UiAssets::Instance().Sidecar(source).nine) {
+                if (GetAttribute<int>("keep", 0) && !HasAttribute("nine") &&
+                    !UiAssets::Instance().Sidecar(source).nine) {
                     const float ratio = sw / std::max(sh, 1.0f);
                     if (dw / dh > ratio) {
                         const float w = dh * ratio;
@@ -611,17 +649,26 @@ namespace perlin::ui {
                     float ratio = 1;
                     in >> dir >> ratio;
                     ratio = std::clamp(ratio, 0.0f, 1.0f);
-                    if (dir == "left") cu1 = ratio;
-                    else if (dir == "right") cu0 = 1 - ratio;
-                    else if (dir == "up") cv1 = ratio;
-                    else if (dir == "down") cv0 = 1 - ratio;
-                    else if (dir == "center") { cu0 = (1 - ratio) * 0.5f; cu1 = 1 - cu0; }
+                    if (dir == "left")
+                        cu1 = ratio;
+                    else if (dir == "right")
+                        cu0 = 1 - ratio;
+                    else if (dir == "up")
+                        cv1 = ratio;
+                    else if (dir == "down")
+                        cv0 = 1 - ratio;
+                    else if (dir == "center") {
+                        cu0 = (1 - ratio) * 0.5f;
+                        cu1 = 1 - cu0;
+                    }
                 }
 
-                const auto quad = [&](float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
+                const auto quad = [&](float x, float y, float w, float h, float u0, float v0, float u1,
+                                      float v1) {
                     if (w <= 0 || h <= 0)
                         return;
-                    const float vx0 = dx + dw * cu0, vx1 = dx + dw * cu1, vy0 = dy + dh * cv0, vy1 = dy + dh * cv1;
+                    const float vx0 = dx + dw * cu0, vx1 = dx + dw * cu1, vy0 = dy + dh * cv0,
+                                vy1 = dy + dh * cv1;
                     float x0 = std::max(x, vx0), x1 = std::min(x + w, vx1);
                     float y0 = std::max(y, vy0), y1 = std::min(y + h, vy1);
                     if (x1 <= x0 || y1 <= y0)
@@ -637,21 +684,28 @@ namespace perlin::ui {
                 float sliceScale = 1.0f;
                 if (HasAttribute("nine")) {
                     const auto n = Floats(GetAttribute<Rml::String>("nine", ""));
-                    if (n.size() >= 4) { nine = true; for (int i = 0; i < 4; i++) slice[i] = n[i]; }
+                    if (n.size() >= 4) {
+                        nine = true;
+                        for (int i = 0; i < 4; i++)
+                            slice[i] = n[i];
+                    }
                 } else {
                     const TextureSidecar sc = UiAssets::Instance().Sidecar(source);
                     if (sc.nine) {
                         nine = true;
-                        for (int i = 0; i < 4; i++) slice[i] = sc.slice[i];
+                        for (int i = 0; i < 4; i++)
+                            slice[i] = sc.slice[i];
                         if (sc.baseW > 0)
                             sliceScale = tw / static_cast<float>(sc.baseW);
                     }
                 }
                 const int tiled = GetAttribute<int>("tiled", 0);
-                const float tileScale = HasAttribute("tilescale") ? GetAttribute<float>("tilescale", 1.0f) : 1.0f;
+                const float tileScale =
+                    HasAttribute("tilescale") ? GetAttribute<float>("tilescale", 1.0f) : 1.0f;
 
                 if (nine && !tiled) {
-                    const float l = slice[0] * sliceScale, t = slice[1] * sliceScale, r = slice[2] * sliceScale, b = slice[3] * sliceScale;
+                    const float l = slice[0] * sliceScale, t = slice[1] * sliceScale,
+                                r = slice[2] * sliceScale, b = slice[3] * sliceScale;
                     const float dl = slice[0], dt = slice[1], dr = slice[2], db = slice[3];
                     const float xs[4] = {dx, dx + dl, dx + dw - dr, dx + dw};
                     const float ys[4] = {dy, dy + dt, dy + dh - db, dy + dh};
@@ -659,7 +713,8 @@ namespace perlin::ui {
                     const float vs[4] = {sv, sv + t, sv + sh - b, sv + sh};
                     for (int j = 0; j < 3; j++)
                         for (int i = 0; i < 3; i++)
-                            quad(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], us[i], vs[j], us[i + 1], vs[j + 1]);
+                            quad(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], us[i], vs[j], us[i + 1],
+                                 vs[j + 1]);
                 } else if (tiled) {
                     const float cellW = sw * tileScale, cellH = sh * tileScale;
                     const bool tx = tiled == 1 || tiled == 2, ty = tiled == 1 || tiled == 3;
@@ -710,7 +765,8 @@ namespace perlin::ui {
                     mesh.indices.clear();
                     const Rml::Vector2f size = GetBox().GetSize(Rml::BoxArea::Border);
                     const float alpha = HasAttribute("alpha") ? GetAttribute<float>("alpha", 1.0f) : 1.0f;
-                    Rml::MeshUtilities::GenerateQuad(mesh, {0, 0}, size, Colour(1, 1, 1, alpha), {0, 0}, {1, 1});
+                    Rml::MeshUtilities::GenerateQuad(mesh, {0, 0}, size, Colour(1, 1, 1, alpha), {0, 0},
+                                                     {1, 1});
                     geometry = manager->MakeGeometry(std::move(mesh));
                 }
                 if (geometry) {
@@ -889,7 +945,8 @@ namespace perlin::ui {
     void RmlBackend::SetOverlayAttribute(const char* id, const char* name, const std::string& value) {
         if (!overlay)
             return;
-        if (Rml::Element* e = overlay->GetElementById(id); e && e->GetAttribute<Rml::String>(name, "") != value)
+        if (Rml::Element* e = overlay->GetElementById(id);
+            e && e->GetAttribute<Rml::String>(name, "") != value)
             e->SetAttribute(name, value);
     }
 
@@ -910,8 +967,10 @@ namespace perlin::ui {
     bool RmlBackend::OverlayHoverIsButton() const {
         if (!context || !overlay)
             return false;
-        static const char* const kClickable[] = {"btn", "sbtn", "rbtn", "pg", "row", "ticon", "go", "acc", "bt"};
-        for (Rml::Element* e = context->GetHoverElement(); e && e->GetOwnerDocument() == overlay; e = e->GetParentNode()) {
+        static const char* const kClickable[] = {"btn",   "sbtn", "rbtn", "pg", "row",
+                                                 "ticon", "go",   "acc",  "bt"};
+        for (Rml::Element* e = context->GetHoverElement(); e && e->GetOwnerDocument() == overlay;
+             e = e->GetParentNode()) {
             if (e->IsClassSet("off"))
                 return false;
             for (const char* name : kClickable)
@@ -924,7 +983,8 @@ namespace perlin::ui {
     bool RmlBackend::OverlayHoverSound(std::string& name, float& volume, float& pitch) const {
         if (!context || !overlay)
             return false;
-        for (Rml::Element* e = context->GetHoverElement(); e && e->GetOwnerDocument() == overlay; e = e->GetParentNode()) {
+        for (Rml::Element* e = context->GetHoverElement(); e && e->GetOwnerDocument() == overlay;
+             e = e->GetParentNode()) {
             if (!e->HasAttribute("snd"))
                 continue;
             name = e->GetAttribute<Rml::String>("snd", "");
@@ -960,7 +1020,8 @@ namespace perlin::ui {
             if (++frameCounter - lastRelease > (gMeshStarved ? 20 : 120)) {
                 gMeshStarved = false;
                 lastRelease = frameCounter;
-                Log("render", "{} UI meshes alive; releasing RmlUi's compiled geometry", gRenderer->UiLiveMeshes());
+                Log("render", "{} UI meshes alive; releasing RmlUi's compiled geometry",
+                    gRenderer->UiLiveMeshes());
                 Rml::ReleaseCompiledGeometry();
             }
         } else {

@@ -13,7 +13,9 @@ namespace perlin::server {
 
     struct ChunkPosHash {
         size_t operator()(const ChunkPos& p) const {
-            return static_cast<size_t>((static_cast<uint64_t>(static_cast<uint32_t>(p.x)) << 32) | static_cast<uint32_t>(p.z)) * 0x9E3779B97F4A7C15ull;
+            return static_cast<size_t>((static_cast<uint64_t>(static_cast<uint32_t>(p.x)) << 32) |
+                                       static_cast<uint32_t>(p.z)) *
+                   0x9E3779B97F4A7C15ull;
         }
     };
 
@@ -25,7 +27,9 @@ namespace perlin::server {
     constexpr uint8_t kDefaultBiome = 1;
 
     // cell index inside a section, the order the wire uses: x outermost, y innermost
-    constexpr int CellIndex(int x, int y, int z) { return (x << 8) | (z << 4) | (y & 15); }
+    constexpr int CellIndex(int x, int y, int z) {
+        return (x << 8) | (z << 4) | (y & 15);
+    }
 
     class ChunkColumn {
     public:

@@ -206,7 +206,7 @@ namespace perlin {
         if (e.drag == 0 && !replayCtl.Paused() && (t > e.viewStart + e.viewSpan || t < e.viewStart))
             e.viewStart = std::clamp(t - e.viewSpan * 0.1, 0.0, std::max(0.0, dur - e.viewSpan));
 
-        if (replayUi.status.size() && now > replayUi.statusUntil)
+        if (!replayUi.status.empty() && now > replayUi.statusUntil)
             replayUi.status.clear();
         ui::EditorModel m;
         m.timeMs = t;

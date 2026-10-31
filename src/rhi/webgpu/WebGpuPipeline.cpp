@@ -5,10 +5,14 @@ namespace rhi::webgpu {
     namespace {
         WGPUPrimitiveTopology ToTopology(Topology t) {
             switch (t) {
-            case Topology::TriangleList: return WGPUPrimitiveTopology_TriangleList;
-            case Topology::TriangleStrip: return WGPUPrimitiveTopology_TriangleStrip;
-            case Topology::LineList: return WGPUPrimitiveTopology_LineList;
-            case Topology::PointList: return WGPUPrimitiveTopology_PointList;
+            case Topology::TriangleList:
+                return WGPUPrimitiveTopology_TriangleList;
+            case Topology::TriangleStrip:
+                return WGPUPrimitiveTopology_TriangleStrip;
+            case Topology::LineList:
+                return WGPUPrimitiveTopology_LineList;
+            case Topology::PointList:
+                return WGPUPrimitiveTopology_PointList;
             }
             return WGPUPrimitiveTopology_TriangleList;
         }
@@ -76,7 +80,8 @@ namespace rhi::webgpu {
         }
         std::array<WGPUVertexBufferLayout, kMaxVertexStreams> streams{};
         for (uint32_t i = 0; i < desc.streamCount; i++) {
-            streams[i].stepMode = desc.streams[i].step == VertexStep::Instance ? WGPUVertexStepMode_Instance : WGPUVertexStepMode_Vertex;
+            streams[i].stepMode = desc.streams[i].step == VertexStep::Instance ? WGPUVertexStepMode_Instance
+                                                                               : WGPUVertexStepMode_Vertex;
             streams[i].arrayStride = desc.streams[i].stride;
             streams[i].attributeCount = attributes[i].size();
             streams[i].attributes = attributes[i].data();
@@ -93,23 +98,26 @@ namespace rhi::webgpu {
         rd.vertex.buffers = streams.data();
 
         rd.primitive.topology = ToTopology(desc.topology);
-        rd.primitive.frontFace = desc.raster.frontFace == FrontFace::Clockwise ? WGPUFrontFace_CW : WGPUFrontFace_CCW;
-        rd.primitive.cullMode = desc.raster.cull == CullMode::None ? WGPUCullMode_None
+        rd.primitive.frontFace =
+            desc.raster.frontFace == FrontFace::Clockwise ? WGPUFrontFace_CW : WGPUFrontFace_CCW;
+        rd.primitive.cullMode = desc.raster.cull == CullMode::None   ? WGPUCullMode_None
                                 : desc.raster.cull == CullMode::Back ? WGPUCullMode_Back
-                                                                      : WGPUCullMode_Front;
+                                                                     : WGPUCullMode_Front;
         rd.primitive.unclippedDepth = !desc.raster.depthClip && caps.features.depthClipControl;
 
         WGPUDepthStencilState ds{};
         if (desc.depthFormat != Format::Unknown) {
             ds.format = ToTextureFormat(desc.depthFormat);
-            ds.depthWriteEnabled = desc.depthStencil.depthWrite ? WGPUOptionalBool_True : WGPUOptionalBool_False;
-            ds.depthCompare = desc.depthStencil.depthTest ? ToCompare(desc.depthStencil.depthCompare) : WGPUCompareFunction_Always;
+            ds.depthWriteEnabled =
+                desc.depthStencil.depthWrite ? WGPUOptionalBool_True : WGPUOptionalBool_False;
+            ds.depthCompare = desc.depthStencil.depthTest ? ToCompare(desc.depthStencil.depthCompare)
+                                                          : WGPUCompareFunction_Always;
             if (desc.depthStencil.stencilTest) {
                 ds.stencilFront = Face(desc.depthStencil.front);
                 ds.stencilBack = Face(desc.depthStencil.back);
             } else {
-                ds.stencilFront = ds.stencilBack = {WGPUCompareFunction_Always, WGPUStencilOperation_Keep, WGPUStencilOperation_Keep,
-                                                    WGPUStencilOperation_Keep};
+                ds.stencilFront = ds.stencilBack = {WGPUCompareFunction_Always, WGPUStencilOperation_Keep,
+                                                    WGPUStencilOperation_Keep, WGPUStencilOperation_Keep};
             }
             ds.stencilReadMask = desc.depthStencil.stencilReadMask;
             ds.stencilWriteMask = desc.depthStencil.stencilTest ? desc.depthStencil.stencilWriteMask : 0;

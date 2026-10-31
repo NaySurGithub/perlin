@@ -16,7 +16,8 @@ namespace perlin::audio {
             float age = 0;
         };
 
-        void Add(const std::string& soundDefinition, const glm::dvec3& position, float volume, bool global, double now);
+        void Add(const std::string& soundDefinition, const glm::dvec3& position, float volume, bool global,
+                 double now);
         std::vector<Line> Visible(const glm::dvec3& listener, float listenerYawDegrees, double now);
         void Clear() { entries.clear(); }
         size_t Count() const { return entries.size(); }

@@ -209,23 +209,29 @@ int main(int argc, char** argv) {
         RunClock(60, 2, still, [](double t) { return float(std::min(t, 1.0) * 40); }, off);
         CHECK(Near(off, 40, .01f));
         // walking backward (+z is yaw 0, so -z is behind): body keeps facing the head
-        const float back = RunClock(60, 3, [](double t) { return std::pair{0.0, -t * 4.3}; }, [](double) { return 0.0f; }, off);
+        const float back = RunClock(
+            60, 3, [](double t) { return std::pair{0.0, -t * 4.3}; }, [](double) { return 0.0f; }, off);
         CHECK(std::abs(Wrap(back)) < .01f);
         // strafing left (+x is yaw -90): body turns toward the movement, capped 50 from the head
-        const float strafe = RunClock(60, 3, [](double t) { return std::pair{t * 4.3, 0.0}; }, [](double) { return 0.0f; }, off);
+        const float strafe = RunClock(
+            60, 3, [](double t) { return std::pair{t * 4.3, 0.0}; }, [](double) { return 0.0f; }, off);
         CHECK(Near(strafe, -50, .01f));
         CHECK(off <= 50.01f);
         // diagonal forward-left: body follows the movement direction, under the cap
-        const float diag = RunClock(60, 3, [](double t) { return std::pair{t * 3.0, t * 3.0}; }, [](double) { return 0.0f; }, off);
+        const float diag = RunClock(
+            60, 3, [](double t) { return std::pair{t * 3.0, t * 3.0}; }, [](double) { return 0.0f; }, off);
         CHECK(Near(diag, -45, .05f));
         // swinging snaps the body back to the head while moving sideways
-        const float swing = RunClock(60, 3, [](double t) { return std::pair{t * 4.3, 0.0}; }, [](double) { return 0.0f; }, off, true);
+        const float swing = RunClock(
+            60, 3, [](double t) { return std::pair{t * 4.3, 0.0}; }, [](double) { return 0.0f; }, off, true);
         CHECK(std::abs(Wrap(swing)) < .01f);
         // head crossing +-180: no full spin, offset bounded
         RunClock(144, 3, still, [](double t) { return float(170 + t * 20); }, off);
         CHECK(off <= 50.01f);
         // same trajectory, every frame rate: same body
-        const auto walk = [](double t) { return std::pair{std::sin(t) * 3.0, std::min(t, 2.0) * 2.0 - std::max(t - 3.0, 0.0) * 3.0}; };
+        const auto walk = [](double t) {
+            return std::pair{std::sin(t) * 3.0, std::min(t, 2.0) * 2.0 - std::max(t - 3.0, 0.0) * 3.0};
+        };
         const auto look = [](double t) { return float(t * 37.0); };
         const float ref = RunClock(20, 6, walk, look, off);
         for (int fps : {10, 15, 30, 60, 144, 240})
@@ -323,10 +329,9 @@ int main(int argc, char** argv) {
                     glm::mat4 actual;
                     glm::vec3 pivot;
                     CHECK(attachable::BoneWorld(*g, pose, name, actual, pivot));
-                    const glm::mat4 expected =
-                        glm::translate(glm::mat4(1), part->offset + pivot) *
-                        JavaRotation(part->rotation) *
-                        glm::translate(glm::mat4(1), -pivot);
+                    const glm::mat4 expected = glm::translate(glm::mat4(1), part->offset + pivot) *
+                                               JavaRotation(part->rotation) *
+                                               glm::translate(glm::mat4(1), -pivot);
                     for (int i = 0; i < 4; ++i)
                         for (int j = 0; j < 4; ++j)
                             CHECK(Near(actual[i][j], expected[i][j], .003f));
@@ -347,8 +352,7 @@ int main(int argc, char** argv) {
     glm::mat4 actual;
     glm::vec3 pivot;
     attachable::BoneWorld(*baseGeometry, singularPose, "head", actual, pivot);
-    auto expected = glm::translate(glm::mat4(1), pivot) *
-                    JavaRotation(p.head.rotation) *
+    auto expected = glm::translate(glm::mat4(1), pivot) * JavaRotation(p.head.rotation) *
                     glm::translate(glm::mat4(1), -pivot);
     for (int i = 0; i < 4; ++i)
         for (int j = 0; j < 4; ++j)

@@ -10,7 +10,8 @@ namespace perlin::ui {
             "<mcimg class=\"jw jw-d\" src=\"mcres:ui_menu_btn_off.png\" nine=\"3 3 3 3\"/>";
 
         const char* kStyle =
-            ".btn, .btn:hover, .btn.off, .btn.off:hover, .btn.track, .btn.track:hover { background-color: transparent; }\n"
+            ".btn, .btn:hover, .btn.off, .btn.off:hover, .btn.track, .btn.track:hover { background-color: "
+            "transparent; }\n"
             ".jw { display: block; position: absolute; left: 0px; top: 0px; width: 100%; height: 100%; }\n"
             ".jw-h, .jw-d { display: none; }\n"
             ".btn:hover .jw-h { display: block; }\n"
@@ -28,8 +29,10 @@ namespace perlin::ui {
     std::string WithJavaWidgets(const std::string& rml) {
         if (!rml.contains("class=\"rim\"") && !rml.contains("class=\"krim\""))
             return rml;
-        static const std::regex button(R"(<div class="rim"[^>]*></div>\s*<div class="face"[^>]*></div>\s*(<div class="shade"[^>]*></div>)?\s*(<div class="edge"[^>]*></div>)?)");
-        static const std::regex knob(R"(<div class="krim"[^>]*></div>\s*<div class="kface"[^>]*></div>\s*(<div class="kshade"[^>]*></div>)?)");
+        static const std::regex button(
+            R"(<div class="rim"[^>]*></div>\s*<div class="face"[^>]*></div>\s*(<div class="shade"[^>]*></div>)?\s*(<div class="edge"[^>]*></div>)?)");
+        static const std::regex knob(
+            R"(<div class="krim"[^>]*></div>\s*<div class="kface"[^>]*></div>\s*(<div class="kshade"[^>]*></div>)?)");
         std::string out = std::regex_replace(rml, button, kSprites);
         out = std::regex_replace(out, knob, kSprites);
         if (const size_t style = out.find("</style>"); style != std::string::npos)

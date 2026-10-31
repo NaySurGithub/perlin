@@ -148,7 +148,7 @@ namespace perlin::str {
     }
 
     template <class T>
-        requires std::integral<T>  // floating from_chars needs macOS 13.3
+        requires std::integral<T> // floating from_chars needs macOS 13.3
     bool Parse(std::string_view s, T& out) {
         s = TrimView(s);
         const auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), out);

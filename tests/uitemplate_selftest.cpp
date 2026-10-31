@@ -10,12 +10,12 @@ namespace fs = std::filesystem;
 using perlin::ui::LoadUiTemplate;
 
 static int failures = 0;
-#define CHECK(c)                                                                                                       \
-    do {                                                                                                               \
-        if (!(c)) {                                                                                                    \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c);                                                   \
-            failures++;                                                                                                \
-        }                                                                                                              \
+#define CHECK(c)                                                                                             \
+    do {                                                                                                     \
+        if (!(c)) {                                                                                          \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c);                                         \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 static std::string Slurp(const fs::path& p) {

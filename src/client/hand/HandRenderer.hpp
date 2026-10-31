@@ -67,15 +67,17 @@ namespace perlin {
         void Render(const FrameIn& in, const HandSettings& settings);
 
         void BeginWorldItems();
-        void DrawWorldItem(const ui::HudItem& item, const glm::dvec3& feet, float age, uint64_t seed, const glm::vec3& light);
+        void DrawWorldItem(const ui::HudItem& item, const glm::dvec3& feet, float age, uint64_t seed,
+                           const glm::vec3& light);
 
         void DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light,
                           float bowUseTicks = -1.0f);
         void SetWorldShadowOnly(bool on) { worldShadowOnly = on; }
         void SetDollClip(const int* clip) { dollClip = clip; }
 
-        bool ThirdPersonAttachable(const std::string& item, bool left, bool firstPerson, bool sneaking, bool using_, float usedTicks,
-                                   bool blocking, double life, const std::string& mainItem, const std::string& offItem,
+        bool ThirdPersonAttachable(const std::string& item, bool left, bool firstPerson, bool sneaking,
+                                   bool using_, float usedTicks, bool blocking, double life,
+                                   const std::string& mainItem, const std::string& offItem,
                                    attachable::Frame& out);
 
         struct RigState {
@@ -103,9 +105,10 @@ namespace perlin {
             std::vector<Quad> base, sleeve;
         };
 
-        bool DrawGeometryItem(const ui::HudItem& item, const glm::mat4& base, bool leftHand, bool firstPerson, const glm::vec3& light);
-        void DrawModel(const std::vector<Quad>& quads, uint32_t texture, const glm::mat4& model, const glm::vec3& light,
-                       float alphaCutoff, bool glint = false, float redTint = 0.0f);
+        bool DrawGeometryItem(const ui::HudItem& item, const glm::mat4& base, bool leftHand, bool firstPerson,
+                              const glm::vec3& light);
+        void DrawModel(const std::vector<Quad>& quads, uint32_t texture, const glm::mat4& model,
+                       const glm::vec3& light, float alphaCutoff, bool glint = false, float redTint = 0.0f);
         void EnsureSleeves3d(const FrameIn& in);
         std::vector<Quad> sleeve3d[2];
         uint64_t sleeve3dSerial = ~0ull;
@@ -114,10 +117,10 @@ namespace perlin {
         void EnsureSkin(const FrameIn& in);
         void BuildArms(bool slim);
         void RenderArm(const FrameIn& in, const HandSettings& s, bool rightArm, float swing, float equip);
-        void RenderItem(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm, float swing,
-                        float equip);
-        bool RenderAttachable(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,
-                              const glm::mat4& hand);
+        void RenderItem(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,
+                        float swing, float equip);
+        bool RenderAttachable(const FrameIn& in, const HandSettings& s, const ui::HudItem& item,
+                              bool rightArm, const glm::mat4& hand);
         uint32_t AttachableTexture(const std::string& path);
         void RenderShield(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,
                           const glm::mat4& hand);
@@ -151,7 +154,8 @@ namespace perlin {
         std::unordered_map<std::string, uint32_t> attachableTextures;
         std::chrono::steady_clock::time_point startedAt = std::chrono::steady_clock::now();
         bool useHeld = false;
-        int eatTicks = 0; bool eatLatched = false;
+        int eatTicks = 0;
+        bool eatLatched = false;
         int usedTicks = 0;
         bool blocking = false;
         bool scoping = false;

@@ -63,8 +63,8 @@ namespace perlin::server::vanilla {
 
         // blocks of a chunk from [(x * 16 + z) * kHeight + y] densities and one biome per column [x * 16 + z]
         // `features`, when given, places its ores into the blocks of chunk (chunkX, chunkZ) before they are stored
-        void Fill(const float* density, const uint8_t* biomes, ChunkColumn& column, const class VanillaFeatures* features = nullptr, int chunkX = 0,
-                  int chunkZ = 0) const;
+        void Fill(const float* density, const uint8_t* biomes, ChunkColumn& column,
+                  const class VanillaFeatures* features = nullptr, int chunkX = 0, int chunkZ = 0) const;
         // block ids already laid out [(x * 16 + z) * kHeight + y] into the chunk's sections (what the gpu surface stage returns)
         static void Store(const uint16_t* blocks, ChunkColumn& column);
 

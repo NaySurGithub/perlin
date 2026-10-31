@@ -222,7 +222,8 @@ namespace perlin {
         for (auto& slot : memo)
             slot.store(kUnresolved, std::memory_order_relaxed);
         if (!packEmission.empty() || !packOpacity.empty())
-            Log("light", "behavior pack: {} emitters, {} opacity overrides", packEmission.size(), packOpacity.size());
+            Log("light", "behavior pack: {} emitters, {} opacity overrides", packEmission.size(),
+                packOpacity.size());
     }
 
     bool LightRegistry::Matches(const Rule& rule, const std::string& name) {

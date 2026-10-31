@@ -13,7 +13,8 @@
 
 namespace perlin {
     namespace {
-        rhi::TextureHandle MakeShadowTarget(gpu::Gpu& gpu, uint32_t size, rhi::Format format, rhi::TextureUsage usage, const char* name) {
+        rhi::TextureHandle MakeShadowTarget(gpu::Gpu& gpu, uint32_t size, rhi::Format format,
+                                            rhi::TextureUsage usage, const char* name) {
             rhi::TextureDesc td;
             td.format = format;
             td.width = td.height = std::max(1u, size);
@@ -25,8 +26,10 @@ namespace perlin {
             return t;
         }
 
-        constexpr rhi::TextureUsage kSampledTarget = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled;
-        constexpr RenderLayer kShadowLayers[5] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull, RenderLayer::Translucent,
+        constexpr rhi::TextureUsage kSampledTarget =
+            rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled;
+        constexpr RenderLayer kShadowLayers[5] = {RenderLayer::Solid, RenderLayer::Cutout,
+                                                  RenderLayer::CutoutCull, RenderLayer::Translucent,
                                                   RenderLayer::TranslucentCull};
 
         struct Basis {
@@ -80,7 +83,8 @@ namespace perlin {
         shadow.distance = std::clamp(distance > 0 ? static_cast<float>(distance) : 80.0f, 24.0f, 256.0f);
 
         const uint32_t s = static_cast<uint32_t>(size);
-        shadow.buildDepth = MakeShadowTarget(gpu, s, rhi::Format::D32Float, rhi::TextureUsage::DepthTarget, "shadow depth");
+        shadow.buildDepth =
+            MakeShadowTarget(gpu, s, rhi::Format::D32Float, rhi::TextureUsage::DepthTarget, "shadow depth");
         bool ok = static_cast<bool>(shadow.buildDepth);
         for (ShadowMap& m : shadow.maps) {
             if (!ok)
@@ -97,7 +101,8 @@ namespace perlin {
         if (ProgramIndex(Program::ShadowGlass) >= 0) {
             bool tintOk = true;
             for (ShadowMap& m : shadow.maps) {
-                m.tint = MakeShadowTarget(gpu, std::max(1u, s / 2), rhi::Format::RGBA16Float, kSampledTarget, "shadow tint");
+                m.tint = MakeShadowTarget(gpu, std::max(1u, s / 2), rhi::Format::RGBA16Float, kSampledTarget,
+                                          "shadow tint");
                 tintOk = tintOk && m.tint;
             }
             if (!tintOk)
@@ -109,7 +114,8 @@ namespace perlin {
             shadow.tintEnabled = tintOk;
         }
         shadow.enabled = true;
-        Log("shadows", "{}x{} map, {} blocks{}", size, size, shadow.distance, (shadow.tintEnabled ? ", coloured light through glass" : ""));
+        Log("shadows", "{}x{} map, {} blocks{}", size, size, shadow.distance,
+            (shadow.tintEnabled ? ", coloured light through glass" : ""));
     }
 
     bool RenderContext_rhi::EnsureEntityShadowMap() {
@@ -118,8 +124,10 @@ namespace perlin {
         if (shadow.entityFailed)
             return false;
         const uint32_t s = static_cast<uint32_t>(shadow.size);
-        shadow.entityColor = MakeShadowTarget(gpu, s, rhi::Format::R32Float, kSampledTarget, "mob shadow map");
-        shadow.entityDepth = MakeShadowTarget(gpu, s, rhi::Format::D32Float, rhi::TextureUsage::DepthTarget, "mob shadow depth");
+        shadow.entityColor =
+            MakeShadowTarget(gpu, s, rhi::Format::R32Float, kSampledTarget, "mob shadow map");
+        shadow.entityDepth = MakeShadowTarget(gpu, s, rhi::Format::D32Float, rhi::TextureUsage::DepthTarget,
+                                              "mob shadow depth");
         if (!shadow.entityColor || !shadow.entityDepth) {
             for (rhi::TextureHandle* t : {&shadow.entityColor, &shadow.entityDepth})
                 if (*t) {
@@ -150,7 +158,8 @@ namespace perlin {
         uni.Mat4("u_shadowMtxB", b.sample);
         uni.Vec4("u_shadowInfoB", b.info[0], b.info[1], b.info[2], fading ? shadow.fadeWeight : 0.0f);
         uni.Mat4("u_shadowMtxE", shadow.sampleE);
-        uni.Vec4("u_shadowInfoE", shadow.infoE[0], shadow.infoE[1], shadow.infoE[2], shadow.entities ? 1.0f : 0.0f);
+        uni.Vec4("u_shadowInfoE", shadow.infoE[0], shadow.infoE[1], shadow.infoE[2],
+                 shadow.entities ? 1.0f : 0.0f);
         BindTexture("s_shadow", f.color, point);
         BindTexture("s_shadowTint", shadow.tintEnabled ? f.tint : white, point);
         BindTexture("s_shadowB", b.color, point);
@@ -170,9 +179,12 @@ namespace perlin {
         // sun below the horizon: the moon uses the same direction mirrored; too flat a light gives useless maps
         if (L.y < 0.03f)
             return;
-        const int64_t lightKey[2] = {static_cast<int64_t>(std::llround(L.x * 300.0f)), static_cast<int64_t>(std::llround(L.y * 300.0f))};
-        const glm::vec3 Lq = glm::normalize(glm::vec3(static_cast<float>(lightKey[0]), static_cast<float>(lightKey[1]),
-                                                      std::round(L.z * 300.0f)) / 300.0f);
+        const int64_t lightKey[2] = {static_cast<int64_t>(std::llround(L.x * 300.0f)),
+                                     static_cast<int64_t>(std::llround(L.y * 300.0f))};
+        const glm::vec3 Lq =
+            glm::normalize(glm::vec3(static_cast<float>(lightKey[0]), static_cast<float>(lightKey[1]),
+                                     std::round(L.z * 300.0f)) /
+                           300.0f);
 
         const float R = shadow.distance;
         const float D = R + 80.0f;
@@ -180,7 +192,8 @@ namespace perlin {
         const float step = texel * 32.0f;
         const glm::vec3 cam(camX, camY, camZ);
 
-        const auto fillMatrices = [&](const Basis& b, float cx, float cy, float cz, float* sample, float* raster, float* info) {
+        const auto fillMatrices = [&](const Basis& b, float cx, float cy, float cz, float* sample,
+                                      float* raster, float* info) {
             float S[16] = {};
             auto col = [&](int c, int r) -> float& { return S[c * 4 + r]; };
             for (int j = 0; j < 3; j++) {
@@ -208,14 +221,19 @@ namespace perlin {
         };
 
         const double nowSeconds = frame.timeSeconds;
-        const float dtFrame = shadow.lastTime > 0.0 ? static_cast<float>(std::clamp(nowSeconds - shadow.lastTime, 0.0, 0.1)) : 0.0f;
+        const float dtFrame = shadow.lastTime > 0.0
+                                  ? static_cast<float>(std::clamp(nowSeconds - shadow.lastTime, 0.0, 0.1))
+                                  : 0.0f;
         shadow.lastTime = nowSeconds;
 
         const Basis kb = BasisOf(Lq);
-        const int64_t key[6] = {static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.right) / step))),
-                                static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.up) / step))),
-                                static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.fwd) / step))),
-                                lightKey[0], lightKey[1], static_cast<int64_t>(meshes.Generation())};
+        const int64_t key[6] = {
+            static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.right) / step))),
+            static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.up) / step))),
+            static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.fwd) / step))),
+            lightKey[0],
+            lightKey[1],
+            static_cast<int64_t>(meshes.Generation())};
         shadow.framesSince++;
         const bool keyChanged = !shadow.haveKey || std::memcmp(key, shadow.key, 5 * sizeof(int64_t)) != 0;
         const bool meshOnly = !keyChanged && key[5] != shadow.key[5];
@@ -246,7 +264,8 @@ namespace perlin {
                     continue;
                 const glm::vec3 centre(g.cx * 16.0f + 8.0f, (g.minY + g.maxY) * 0.5f, g.cz * 16.0f + 8.0f);
                 const float radius = std::sqrt(128.0f + 0.25f * (g.maxY - g.minY) * (g.maxY - g.minY));
-                if (std::abs(glm::dot(centre, eb.right) - cx) > R + radius || std::abs(glm::dot(centre, eb.up) - cy) > R + radius ||
+                if (std::abs(glm::dot(centre, eb.right) - cx) > R + radius ||
+                    std::abs(glm::dot(centre, eb.up) - cy) > R + radius ||
                     std::abs(glm::dot(centre, eb.fwd) - cz) > D + radius)
                     continue;
                 const glm::vec3 rel = centre - cam;
@@ -257,7 +276,8 @@ namespace perlin {
             }
             // opaque first so the glass pass can test against the finished depth; near to far inside a pass
             std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) {
-                return a.second.second != b.second.second ? a.second.second < b.second.second : a.first < b.first;
+                return a.second.second != b.second.second ? a.second.second < b.second.second
+                                                          : a.first < b.first;
             });
             shadow.buildList.clear();
             shadow.buildList.reserve(found.size());
@@ -286,13 +306,15 @@ namespace perlin {
         if (shadow.building) {
             ShadowMap& m = shadow.maps[shadow.front == 0 ? 1 : 0];
             const bool firstSlice = shadow.buildSlice == 0;
-            const size_t remainingSlices = static_cast<size_t>(std::max(1, shadow.buildSlices - shadow.buildSlice));
+            const size_t remainingSlices =
+                static_cast<size_t>(std::max(1, shadow.buildSlices - shadow.buildSlice));
             const size_t left = shadow.buildList.size() - shadow.buildCursor;
             const size_t count = (left + remainingSlices - 1) / remainingSlices;
 
             const auto prime = [&](int pass, DrawCall& templ) {
                 const bool glass = pass >= 3;
-                const Program program = glass ? Program::ShadowGlass : (pass == 0 ? Program::Shadow : Program::ShadowCutout);
+                const Program program =
+                    glass ? Program::ShadowGlass : (pass == 0 ? Program::Shadow : Program::ShadowCutout);
                 DrawState state = Base(program, !glass, !glass, rhi::CompareOp::Less);
                 state.layout = gpu::VertexLayout::Terrain;
                 state.cull = rhi::CullMode::None;
@@ -309,7 +331,8 @@ namespace perlin {
                 SetMatrix(m.raster);
                 uni.Mat4("u_shadowMtx", m.sample);
                 uni.Set("u_shadowInfo", m.info, 4);
-                BindTexture("s_atlas", atlas.used ? atlas.handle : gpu.WhiteArray(), gpu::SamplerKind::PointMipClamp);
+                BindTexture("s_atlas", atlas.used ? atlas.handle : gpu.WhiteArray(),
+                            gpu::SamplerKind::PointMipClamp);
                 BindTexture("s_lightmap", lightmap.handle, gpu::SamplerKind::LinearClamp);
                 if (!tileFlagsTex.used)
                     UploadTileFlags({});
@@ -343,8 +366,8 @@ namespace perlin {
                     continue;
                 const Source vertices{meshes.Vertices(static_cast<uint32_t>(g.page)), 0};
                 const Source indices{meshes.Indices(static_cast<uint32_t>(g.page), layer), 0};
-                Push(pass >= 3 ? View::ShadowGlass : View::ShadowBuild, templ, vertices, &indices, rhi::IndexType::U32, g.iOff[slot],
-                     g.layerCount[slot]);
+                Push(pass >= 3 ? View::ShadowGlass : View::ShadowBuild, templ, vertices, &indices,
+                     rhi::IndexType::U32, g.iOff[slot], g.layerCount[slot]);
             }
 
             const float one[4] = {1, 1, 1, 1};

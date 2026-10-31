@@ -11,11 +11,10 @@ namespace perlin {
 
         class SingleThreadedRandom {
         public:
-            explicit SingleThreadedRandom(int64_t seed) : state((static_cast<uint64_t>(seed) ^ 0x5DEECE66DULL) & kMask) {}
+            explicit SingleThreadedRandom(int64_t seed)
+                : state((static_cast<uint64_t>(seed) ^ 0x5DEECE66DULL) & kMask) {}
 
-            float NextFloat() {
-                return static_cast<float>(Next(24)) * 5.9604645E-8f;
-            }
+            float NextFloat() { return static_cast<float>(Next(24)) * 5.9604645E-8f; }
 
             double NextDouble() {
                 const int64_t upper = Next(26);
@@ -147,8 +146,8 @@ namespace perlin {
         return out;
     }
 
-    CloudFrame ComputeCloudFrame(double cameraX, double cameraY, double cameraZ, float bottomY, double gameTicks,
-                                 const CloudTexture& texture) {
+    CloudFrame ComputeCloudFrame(double cameraX, double cameraY, double cameraZ, float bottomY,
+                                 double gameTicks, const CloudTexture& texture) {
         CloudFrame frame;
         if (texture.width <= 0 || texture.height <= 0)
             return frame;
@@ -193,7 +192,8 @@ namespace perlin {
             CloudMesh& mesh;
 
             bool Empty(int x, int y) const {
-                return !texture.solid[static_cast<size_t>(FloorMod(x, texture.width)) + static_cast<size_t>(FloorMod(y, texture.height)) * texture.width];
+                return !texture.solid[static_cast<size_t>(FloorMod(x, texture.width)) +
+                                      static_cast<size_t>(FloorMod(y, texture.height)) * texture.width];
             }
 
             void Face(int cellX, int cellZ, Direction direction, bool inside, bool topColor) {
@@ -204,8 +204,10 @@ namespace perlin {
                     const float fx = static_cast<float>((kPackedX >> index) & 1);
                     const float fy = static_cast<float>((kPackedY >> index) & 1);
                     const float fz = static_cast<float>((kPackedZ >> index) & 1);
-                    mesh.vertices.push_back({fx * kCloudCellSize + static_cast<float>(cellX) * kCloudCellSize, fy * kCloudCellHeight,
-                                             fz * kCloudCellSize + static_cast<float>(cellZ) * kCloudCellSize, shade, 0.0f});
+                    mesh.vertices.push_back({fx * kCloudCellSize + static_cast<float>(cellX) * kCloudCellSize,
+                                             fy * kCloudCellHeight,
+                                             fz * kCloudCellSize + static_cast<float>(cellZ) * kCloudCellSize,
+                                             shade, 0.0f});
                 }
                 for (uint32_t k : {0u, 1u, 2u, 2u, 3u, 0u})
                     mesh.indices.push_back(base + k);
@@ -213,9 +215,11 @@ namespace perlin {
         };
     }
 
-    CloudMesh BuildCloudMesh(const CloudTexture& texture, const CloudFrame& frame, bool fancy, int rangeChunks) {
+    CloudMesh BuildCloudMesh(const CloudTexture& texture, const CloudFrame& frame, bool fancy,
+                             int rangeChunks) {
         CloudMesh mesh;
-        if (texture.width <= 0 || texture.height <= 0 || texture.solid.size() < static_cast<size_t>(texture.width) * texture.height)
+        if (texture.width <= 0 || texture.height <= 0 ||
+            texture.solid.size() < static_cast<size_t>(texture.width) * texture.height)
             return mesh;
 
         CloudBuilder builder{texture, mesh};

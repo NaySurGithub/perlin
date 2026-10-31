@@ -43,48 +43,93 @@ namespace perlin {
 
     float CameraEffects::EaseValue(int type, float t) {
         t = std::clamp(t, 0.0f, 1.0f);
-        const float c1 = 1.70158f, c2 = c1 * 1.525f, c3 = c1 + 1.0f, c4 = 2.0f * kPi / 3.0f, c5 = 2.0f * kPi / 4.5f;
+        const float c1 = 1.70158f, c2 = c1 * 1.525f, c3 = c1 + 1.0f, c4 = 2.0f * kPi / 3.0f,
+                    c5 = 2.0f * kPi / 4.5f;
         switch (type) {
-            case 0:
-            case 32: return t;
-            case 1: return 1.0f - std::cos(t * kPi * 4.5f) * std::exp(-t * 6.0f);
-            case 2: return t * t;
-            case 3: return 1.0f - (1.0f - t) * (1.0f - t);
-            case 4: return t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) / 2.0f;
-            case 5: return t * t * t;
-            case 6: return 1.0f - std::pow(1.0f - t, 3.0f);
-            case 7: return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
-            case 8: return t * t * t * t;
-            case 9: return 1.0f - std::pow(1.0f - t, 4.0f);
-            case 10: return t < 0.5f ? 8.0f * t * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 4.0f) / 2.0f;
-            case 11: return t * t * t * t * t;
-            case 12: return 1.0f - std::pow(1.0f - t, 5.0f);
-            case 13: return t < 0.5f ? 16.0f * std::pow(t, 5.0f) : 1.0f - std::pow(-2.0f * t + 2.0f, 5.0f) / 2.0f;
-            case 14: return 1.0f - std::cos(t * kPi / 2.0f);
-            case 15: return std::sin(t * kPi / 2.0f);
-            case 16: return -(std::cos(kPi * t) - 1.0f) / 2.0f;
-            case 17: return t == 0.0f ? 0.0f : std::pow(2.0f, 10.0f * t - 10.0f);
-            case 18: return t == 1.0f ? 1.0f : 1.0f - std::pow(2.0f, -10.0f * t);
-            case 19:
-                return t == 0.0f ? 0.0f : t == 1.0f ? 1.0f : t < 0.5f ? std::pow(2.0f, 20.0f * t - 10.0f) / 2.0f : (2.0f - std::pow(2.0f, -20.0f * t + 10.0f)) / 2.0f;
-            case 20: return 1.0f - std::sqrt(1.0f - t * t);
-            case 21: return std::sqrt(1.0f - (t - 1.0f) * (t - 1.0f));
-            case 22:
-                return t < 0.5f ? (1.0f - std::sqrt(1.0f - std::pow(2.0f * t, 2.0f))) / 2.0f : (std::sqrt(1.0f - std::pow(-2.0f * t + 2.0f, 2.0f)) + 1.0f) / 2.0f;
-            case 23: return 1.0f - Bounce(1.0f - t);
-            case 24: return Bounce(t);
-            case 25: return t < 0.5f ? (1.0f - Bounce(1.0f - 2.0f * t)) / 2.0f : (1.0f + Bounce(2.0f * t - 1.0f)) / 2.0f;
-            case 26: return c3 * t * t * t - c1 * t * t;
-            case 27: return 1.0f + c3 * std::pow(t - 1.0f, 3.0f) + c1 * std::pow(t - 1.0f, 2.0f);
-            case 28:
-                return t < 0.5f ? (std::pow(2.0f * t, 2.0f) * ((c2 + 1.0f) * 2.0f * t - c2)) / 2.0f
-                                : (std::pow(2.0f * t - 2.0f, 2.0f) * ((c2 + 1.0f) * (t * 2.0f - 2.0f) + c2) + 2.0f) / 2.0f;
-            case 29: return t == 0.0f ? 0.0f : t == 1.0f ? 1.0f : -std::pow(2.0f, 10.0f * t - 10.0f) * std::sin((t * 10.0f - 10.75f) * c4);
-            case 30: return t == 0.0f ? 0.0f : t == 1.0f ? 1.0f : std::pow(2.0f, -10.0f * t) * std::sin((t * 10.0f - 0.75f) * c4) + 1.0f;
-            case 31:
-                return t == 0.0f ? 0.0f : t == 1.0f ? 1.0f : t < 0.5f ? -(std::pow(2.0f, 20.0f * t - 10.0f) * std::sin((20.0f * t - 11.125f) * c5)) / 2.0f
-                                                                       : (std::pow(2.0f, -20.0f * t + 10.0f) * std::sin((20.0f * t - 11.125f) * c5)) / 2.0f + 1.0f;
-            default: return t;
+        case 0:
+        case 32:
+            return t;
+        case 1:
+            return 1.0f - std::cos(t * kPi * 4.5f) * std::exp(-t * 6.0f);
+        case 2:
+            return t * t;
+        case 3:
+            return 1.0f - (1.0f - t) * (1.0f - t);
+        case 4:
+            return t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) / 2.0f;
+        case 5:
+            return t * t * t;
+        case 6:
+            return 1.0f - std::pow(1.0f - t, 3.0f);
+        case 7:
+            return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
+        case 8:
+            return t * t * t * t;
+        case 9:
+            return 1.0f - std::pow(1.0f - t, 4.0f);
+        case 10:
+            return t < 0.5f ? 8.0f * t * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 4.0f) / 2.0f;
+        case 11:
+            return t * t * t * t * t;
+        case 12:
+            return 1.0f - std::pow(1.0f - t, 5.0f);
+        case 13:
+            return t < 0.5f ? 16.0f * std::pow(t, 5.0f) : 1.0f - std::pow(-2.0f * t + 2.0f, 5.0f) / 2.0f;
+        case 14:
+            return 1.0f - std::cos(t * kPi / 2.0f);
+        case 15:
+            return std::sin(t * kPi / 2.0f);
+        case 16:
+            return -(std::cos(kPi * t) - 1.0f) / 2.0f;
+        case 17:
+            return t == 0.0f ? 0.0f : std::pow(2.0f, 10.0f * t - 10.0f);
+        case 18:
+            return t == 1.0f ? 1.0f : 1.0f - std::pow(2.0f, -10.0f * t);
+        case 19:
+            return t == 0.0f   ? 0.0f
+                   : t == 1.0f ? 1.0f
+                   : t < 0.5f  ? std::pow(2.0f, 20.0f * t - 10.0f) / 2.0f
+                               : (2.0f - std::pow(2.0f, -20.0f * t + 10.0f)) / 2.0f;
+        case 20:
+            return 1.0f - std::sqrt(1.0f - t * t);
+        case 21:
+            return std::sqrt(1.0f - (t - 1.0f) * (t - 1.0f));
+        case 22:
+            return t < 0.5f ? (1.0f - std::sqrt(1.0f - std::pow(2.0f * t, 2.0f))) / 2.0f
+                            : (std::sqrt(1.0f - std::pow(-2.0f * t + 2.0f, 2.0f)) + 1.0f) / 2.0f;
+        case 23:
+            return 1.0f - Bounce(1.0f - t);
+        case 24:
+            return Bounce(t);
+        case 25:
+            return t < 0.5f ? (1.0f - Bounce(1.0f - 2.0f * t)) / 2.0f
+                            : (1.0f + Bounce(2.0f * t - 1.0f)) / 2.0f;
+        case 26:
+            return c3 * t * t * t - c1 * t * t;
+        case 27:
+            return 1.0f + c3 * std::pow(t - 1.0f, 3.0f) + c1 * std::pow(t - 1.0f, 2.0f);
+        case 28:
+            return t < 0.5f
+                       ? (std::pow(2.0f * t, 2.0f) * ((c2 + 1.0f) * 2.0f * t - c2)) / 2.0f
+                       : (std::pow(2.0f * t - 2.0f, 2.0f) * ((c2 + 1.0f) * (t * 2.0f - 2.0f) + c2) + 2.0f) /
+                             2.0f;
+        case 29:
+            return t == 0.0f   ? 0.0f
+                   : t == 1.0f ? 1.0f
+                               : -std::pow(2.0f, 10.0f * t - 10.0f) * std::sin((t * 10.0f - 10.75f) * c4);
+        case 30:
+            return t == 0.0f   ? 0.0f
+                   : t == 1.0f ? 1.0f
+                               : std::pow(2.0f, -10.0f * t) * std::sin((t * 10.0f - 0.75f) * c4) + 1.0f;
+        case 31:
+            return t == 0.0f   ? 0.0f
+                   : t == 1.0f ? 1.0f
+                   : t < 0.5f
+                       ? -(std::pow(2.0f, 20.0f * t - 10.0f) * std::sin((20.0f * t - 11.125f) * c5)) / 2.0f
+                       : (std::pow(2.0f, -20.0f * t + 10.0f) * std::sin((20.0f * t - 11.125f) * c5)) / 2.0f +
+                             1.0f;
+        default:
+            return t;
         }
     }
 
@@ -211,7 +256,8 @@ namespace perlin {
             if (elapsed >= shakeDuration)
                 shakeActive = false;
             else {
-                const float fade = std::min(1.0f, (shakeDuration - elapsed) / std::max(0.25f, shakeDuration * 0.35f));
+                const float fade =
+                    std::min(1.0f, (shakeDuration - elapsed) / std::max(0.25f, shakeDuration * 0.35f));
                 const float amp = shakeIntensity * fade;
                 const float t = elapsed * 22.0f;
                 const float nx = Noise(t), ny = Noise(t + 31.7f), nz = Noise(t + 77.3f);
@@ -278,8 +324,10 @@ namespace perlin {
                 poseNow = target;
             else {
                 float dyaw = target.yaw - from.yaw;
-                while (dyaw > 180.0f) dyaw -= 360.0f;
-                while (dyaw < -180.0f) dyaw += 360.0f;
+                while (dyaw > 180.0f)
+                    dyaw -= 360.0f;
+                while (dyaw < -180.0f)
+                    dyaw += 360.0f;
                 poseNow.position = from.position + (target.position - from.position) * e;
                 poseNow.yaw = from.yaw + dyaw * e;
                 poseNow.pitch = from.pitch + (target.pitch - from.pitch) * e;

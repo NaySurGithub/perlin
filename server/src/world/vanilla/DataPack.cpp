@@ -35,14 +35,17 @@ namespace perlin::server::vanilla {
         return pack;
     }
 
-    bool DataPack::Has(const std::string& relative) const { return impl->entries.count(relative) != 0; }
+    bool DataPack::Has(const std::string& relative) const {
+        return impl->entries.contains(relative);
+    }
 
     std::string DataPack::Read(const std::string& relative) const {
         const auto it = impl->entries.find(relative);
         if (it == impl->entries.end())
             return {};
         size_t size = 0;
-        void* data = mz_zip_reader_extract_to_heap(const_cast<mz_zip_archive*>(&impl->zip), it->second, &size, 0);
+        void* data =
+            mz_zip_reader_extract_to_heap(const_cast<mz_zip_archive*>(&impl->zip), it->second, &size, 0);
         if (!data)
             return {};
         std::string out(static_cast<const char*>(data), size);

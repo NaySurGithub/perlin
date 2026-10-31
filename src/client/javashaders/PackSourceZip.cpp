@@ -49,14 +49,17 @@ namespace perlin::jshader {
                 return !files.empty();
             }
 
-            bool Exists(const std::string& path) const override { return files.count(NormalizePath(path)) != 0; }
+            bool Exists(const std::string& path) const override {
+                return files.contains(NormalizePath(path));
+            }
 
             bool Read(const std::string& path, std::string& out) const override {
                 const auto it = files.find(NormalizePath(path));
                 if (it == files.end())
                     return false;
                 size_t size = 0;
-                void* data = mz_zip_reader_extract_to_heap(const_cast<mz_zip_archive*>(&zip), it->second, &size, 0);
+                void* data =
+                    mz_zip_reader_extract_to_heap(const_cast<mz_zip_archive*>(&zip), it->second, &size, 0);
                 if (!data)
                     return false;
                 out.assign(static_cast<const char*>(data), size);

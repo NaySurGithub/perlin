@@ -36,11 +36,14 @@ int main(int argc, char** argv) {
     int port = 0;
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
-        if (a == "--data" && i + 1 < argc) dir = argv[++i];
-        else if (a == "--port" && i + 1 < argc) port = std::atoi(argv[++i]);
+        if (a == "--data" && i + 1 < argc)
+            dir = argv[++i];
+        else if (a == "--port" && i + 1 < argc)
+            port = std::atoi(argv[++i]);
         else if (a == "--help" || a == "-h") {
             std::cout << "perlin-server [--data <dir>] [--port <n>]\n"
-                         "  reads <dir>/server.properties (written with defaults on first run; the bds file format), allowlist.json,\n"
+                         "  reads <dir>/server.properties (written with defaults on first run; the bds file "
+                         "format), allowlist.json,\n"
                          "  permissions.json and plugins from <dir>/plugins\n";
             return 0;
         }

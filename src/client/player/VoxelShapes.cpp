@@ -14,15 +14,19 @@ namespace perlin {
             std::vector<physics::Box> out;
             const int nx = shape.cells.xSize, ny = shape.cells.ySize, nz = shape.cells.zSize;
             if (nx <= 0 || ny <= 0 || nz <= 0 || shape.xCoordinates.size() < static_cast<size_t>(nx) + 1 ||
-                shape.yCoordinates.size() < static_cast<size_t>(ny) + 1 || shape.zCoordinates.size() < static_cast<size_t>(nz) + 1)
+                shape.yCoordinates.size() < static_cast<size_t>(ny) + 1 ||
+                shape.zCoordinates.size() < static_cast<size_t>(nz) + 1)
                 return out;
             const auto filled = [&](int x, int y, int z) {
                 const size_t bit = (static_cast<size_t>(x) * ny + y) * nz + z;
                 const size_t byte = bit >> 3;
-                return byte < shape.cells.storage.size() && ((shape.cells.storage[byte] >> (bit & 7)) & 1) != 0;
+                return byte < shape.cells.storage.size() &&
+                       ((shape.cells.storage[byte] >> (bit & 7)) & 1) != 0;
             };
             std::vector<uint8_t> used(static_cast<size_t>(nx) * ny * nz, 0);
-            const auto at = [&](int x, int y, int z) -> uint8_t& { return used[(static_cast<size_t>(x) * ny + y) * nz + z]; };
+            const auto at = [&](int x, int y, int z) -> uint8_t& {
+                return used[(static_cast<size_t>(x) * ny + y) * nz + z];
+            };
             for (int x = 0; x < nx; x++)
                 for (int y = 0; y < ny; y++)
                     for (int z = 0; z < nz; z++) {
@@ -54,8 +58,9 @@ namespace perlin {
                             for (int yy = y; yy <= y1; yy++)
                                 for (int zz = z; zz <= z1; zz++)
                                     at(xx, yy, zz) = 1;
-                        out.push_back({shape.xCoordinates[x], shape.yCoordinates[y], shape.zCoordinates[z], shape.xCoordinates[x1 + 1],
-                                       shape.yCoordinates[y1 + 1], shape.zCoordinates[z1 + 1]});
+                        out.push_back({shape.xCoordinates[x], shape.yCoordinates[y], shape.zCoordinates[z],
+                                       shape.xCoordinates[x1 + 1], shape.yCoordinates[y1 + 1],
+                                       shape.zCoordinates[z1 + 1]});
                     }
             return out;
         }

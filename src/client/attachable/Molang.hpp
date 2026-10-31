@@ -10,17 +10,35 @@ namespace perlin::molang {
         double n = 0;
         std::string s;
         bool isString = false;
-        static Value Num(double v) { Value r; r.n = v; return r; }
-        static Value Str(std::string v) { Value r; r.s = std::move(v); r.isString = true; return r; }
+        static Value Num(double v) {
+            Value r;
+            r.n = v;
+            return r;
+        }
+        static Value Str(std::string v) {
+            Value r;
+            r.s = std::move(v);
+            r.isString = true;
+            return r;
+        }
         bool Truthy() const { return isString ? !s.empty() : n != 0.0; }
     };
     using Args = std::vector<Value>;
 
     struct Host {
         virtual ~Host() = default;
-        virtual bool Query(const std::string& name, const Args& args, Value& out) { (void)name; (void)args; (void)out; return false; }
+        virtual bool Query(const std::string& name, const Args& args, Value& out) {
+            (void)name;
+            (void)args;
+            (void)out;
+            return false;
+        }
         virtual bool Volatile(const std::string&) const { return true; }
-        virtual bool Context(const std::string& name, Value& out) { (void)name; (void)out; return false; }
+        virtual bool Context(const std::string& name, Value& out) {
+            (void)name;
+            (void)out;
+            return false;
+        }
     };
 
     struct Scope {

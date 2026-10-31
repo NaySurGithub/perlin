@@ -91,8 +91,9 @@ namespace perlin::replay {
     public:
         ~Recorder();
         using SnapshotProvider = std::function<std::vector<Record>()>;
-        bool Start(const std::string& workDir, Metadata meta, const std::vector<Record>& snapshot, std::string& error,
-                   SnapshotProvider provider = nullptr, uint32_t periodicMs = 0, size_t maxSnapshotBytes = 0);
+        bool Start(const std::string& workDir, Metadata meta, const std::vector<Record>& snapshot,
+                   std::string& error, SnapshotProvider provider = nullptr, uint32_t periodicMs = 0,
+                   size_t maxSnapshotBytes = 0);
         void Push(Dir dir, uint32_t id, const std::vector<uint8_t>& body);
         void AddMarker(const std::string& name);
         bool Stop(const std::string& outPath, const std::vector<uint8_t>& thumbnailPng, std::string& error);
@@ -121,7 +122,8 @@ namespace perlin::replay {
     class Reader {
     public:
         bool Open(const std::string& path, std::string& error);
-        static bool ReadMetadata(const std::string& path, Metadata& out, std::vector<uint8_t>* thumbnail, std::string& error);
+        static bool ReadMetadata(const std::string& path, Metadata& out, std::vector<uint8_t>* thumbnail,
+                                 std::string& error);
         const Metadata& Meta() const { return meta; }
         bool LoadChunk(size_t index, std::vector<Record>& out, std::string& error);
         std::string ReadFile(const std::string& name);
@@ -133,9 +135,10 @@ namespace perlin::replay {
         std::shared_ptr<void> zip;
     };
 
-    bool PackArchive(const std::string& dir, const Metadata& meta, const std::vector<uint8_t>& thumbnail, const std::string& outPath,
-                     std::string& error);
-    bool UpdateArchiveFile(const std::string& path, const std::string& name, const std::string& content, std::string& error);
+    bool PackArchive(const std::string& dir, const Metadata& meta, const std::vector<uint8_t>& thumbnail,
+                     const std::string& outPath, std::string& error);
+    bool UpdateArchiveFile(const std::string& path, const std::string& name, const std::string& content,
+                           std::string& error);
     struct ArchiveAdd {
         std::string name;
         std::string diskPath;

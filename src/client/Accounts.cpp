@@ -40,7 +40,8 @@ namespace perlin {
                         }
                         if (const ui::Json* v = a.Find("cape"))
                             e.cape = v->StringOr("");
-                        if (e.id.empty() || (e.microsoft && e.authFile.empty()) || (!e.microsoft && e.name.empty()))
+                        if (e.id.empty() || (e.microsoft && e.authFile.empty()) ||
+                            (!e.microsoft && e.name.empty()))
                             continue;
                         entries.push_back(std::move(e));
                     }

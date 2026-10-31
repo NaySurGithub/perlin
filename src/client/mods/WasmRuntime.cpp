@@ -13,7 +13,9 @@ namespace perlin::mods {
         constexpr uint32_t kMaxArgs = 16;
         constexpr uint32_t kMaxResults = 4;
 
-        std::string ToString(WasmEdge_String s) { return std::string(s.Buf, s.Length); }
+        std::string ToString(WasmEdge_String s) {
+            return std::string(s.Buf, s.Length);
+        }
 
         std::string Message(WasmEdge_Result r) {
             const char* m = WasmEdge_ResultGetMessage(r);
@@ -39,7 +41,8 @@ namespace perlin::mods {
             return WasmEdge_ValueGenI32(static_cast<int32_t>(static_cast<uint32_t>(v)));
         }
 
-        bool IntegerSignature(const WasmEdge_FunctionTypeContext* type, std::vector<WasmEdge_ValType>& params, std::vector<WasmEdge_ValType>& results) {
+        bool IntegerSignature(const WasmEdge_FunctionTypeContext* type, std::vector<WasmEdge_ValType>& params,
+                              std::vector<WasmEdge_ValType>& results) {
             params.resize(WasmEdge_FunctionTypeGetParametersLength(type));
             results.resize(WasmEdge_FunctionTypeGetReturnsLength(type));
             WasmEdge_FunctionTypeGetParameters(type, params.data(), static_cast<uint32_t>(params.size()));
@@ -108,7 +111,8 @@ namespace perlin::mods {
                 WasmEdge_ConfigureDelete(config);
         }
 
-        static WasmEdge_Result Trampoline(void* data, const WasmEdge_CallingFrameContext* frame, const WasmEdge_Value* params, WasmEdge_Value* returns) {
+        static WasmEdge_Result Trampoline(void* data, const WasmEdge_CallingFrameContext* frame,
+                                          const WasmEdge_Value* params, WasmEdge_Value* returns) {
             auto* imp = static_cast<Import*>(data);
             Impl& impl = *imp->owner;
             uint64_t args[kMaxArgs] = {};
@@ -120,7 +124,8 @@ namespace perlin::mods {
                 impl.frameMemory = m;
             std::string error;
             HostContext ctx{*impl.self, error};
-            const bool ok = imp->fn(ctx, args, imp->argCount, results, static_cast<uint32_t>(imp->results.size()));
+            const bool ok =
+                imp->fn(ctx, args, imp->argCount, results, static_cast<uint32_t>(imp->results.size()));
             impl.frameMemory = previous;
             if (!ok) {
                 impl.hostError = error.empty() ? imp->label + " failed" : error;
@@ -132,7 +137,9 @@ namespace perlin::mods {
         }
     };
 
-    WasmInstance::WasmInstance() : impl(std::make_unique<Impl>()) { impl->self = this; }
+    WasmInstance::WasmInstance() : impl(std::make_unique<Impl>()) {
+        impl->self = this;
+    }
 
     WasmInstance::~WasmInstance() = default;
 
@@ -155,7 +162,8 @@ namespace perlin::mods {
             return false;
         }
 
-        WasmEdge_Result r = WasmEdge_LoaderParseFromBuffer(m.loader, &m.ast, bytes, static_cast<uint32_t>(size));
+        WasmEdge_Result r =
+            WasmEdge_LoaderParseFromBuffer(m.loader, &m.ast, bytes, static_cast<uint32_t>(size));
         if (!WasmEdge_ResultOK(r)) {
             error = "parse: " + Message(r);
             return false;
@@ -226,7 +234,8 @@ namespace perlin::mods {
                     if (h.first == modName)
                         host = h.second;
                 if (!host) {
-                    WasmEdge_String s = WasmEdge_StringCreateByBuffer(modName.data(), static_cast<uint32_t>(modName.size()));
+                    WasmEdge_String s =
+                        WasmEdge_StringCreateByBuffer(modName.data(), static_cast<uint32_t>(modName.size()));
                     host = WasmEdge_ModuleInstanceCreate(s);
                     WasmEdge_StringDelete(s);
                     if (!host) {
@@ -236,12 +245,14 @@ namespace perlin::mods {
                     hosts.emplace_back(modName, host);
                     m.hostModules.push_back(host);
                 }
-                WasmEdge_FunctionInstanceContext* f = WasmEdge_FunctionInstanceCreate(type, &Impl::Trampoline, entry.get(), 0);
+                WasmEdge_FunctionInstanceContext* f =
+                    WasmEdge_FunctionInstanceCreate(type, &Impl::Trampoline, entry.get(), 0);
                 if (!f) {
                     error = "could not create " + label;
                     return false;
                 }
-                WasmEdge_String s = WasmEdge_StringCreateByBuffer(name.data(), static_cast<uint32_t>(name.size()));
+                WasmEdge_String s =
+                    WasmEdge_StringCreateByBuffer(name.data(), static_cast<uint32_t>(name.size()));
                 r = WasmEdge_ModuleInstanceAddFunction(host, s, f);
                 WasmEdge_StringDelete(s);
                 if (!WasmEdge_ResultOK(r)) {
@@ -294,7 +305,8 @@ namespace perlin::mods {
         return found;
     }
 
-    bool WasmInstance::Call(const char* name, std::initializer_list<uint64_t> args, uint64_t* result, std::string& error) {
+    bool WasmInstance::Call(const char* name, std::initializer_list<uint64_t> args, uint64_t* result,
+                            std::string& error) {
         Impl& m = *impl;
         if (!m.module) {
             error = "not loaded";
@@ -306,7 +318,8 @@ namespace perlin::mods {
             WasmEdge_String s = WasmEdge_StringCreateByCString(name);
             e.fn = WasmEdge_ModuleInstanceFindFunction(m.module, s);
             WasmEdge_StringDelete(s);
-            e.ok = e.fn && IntegerSignature(WasmEdge_FunctionInstanceGetFunctionType(e.fn), e.params, e.results);
+            e.ok =
+                e.fn && IntegerSignature(WasmEdge_FunctionInstanceGetFunctionType(e.fn), e.params, e.results);
             it = m.exports.emplace(name, std::move(e)).first;
         }
         const Impl::Export& e = it->second;
@@ -329,7 +342,9 @@ namespace perlin::mods {
             i++;
         }
         m.hostError.clear();
-        const WasmEdge_Result r = WasmEdge_ExecutorInvoke(m.executor, fn, in, static_cast<uint32_t>(args.size()), out, static_cast<uint32_t>(results.size()));
+        const WasmEdge_Result r =
+            WasmEdge_ExecutorInvoke(m.executor, fn, in, static_cast<uint32_t>(args.size()), out,
+                                    static_cast<uint32_t>(results.size()));
         if (!WasmEdge_ResultOK(r)) {
             if (!m.hostError.empty())
                 error = m.hostError;
@@ -364,5 +379,7 @@ namespace perlin::mods {
             PerlinWasmEdgeStop(impl->executor);
     }
 
-    std::string WasmEngineName() { return std::string("WasmEdge ") + WasmEdge_VersionGet(); }
+    std::string WasmEngineName() {
+        return std::string("WasmEdge ") + WasmEdge_VersionGet();
+    }
 }

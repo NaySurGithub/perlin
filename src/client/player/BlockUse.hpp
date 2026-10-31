@@ -23,6 +23,6 @@ namespace perlin::blockuse {
         int dest[3] = {0, 0, 0};
     };
 
-    Result Classify(const std::string& clickedName, const std::string& neighbourName, int clicked[3], int face, bool holdsItem,
-                    bool holdsBlock, bool sneaking);
+    Result Classify(const std::string& clickedName, const std::string& neighbourName, int clicked[3],
+                    int face, bool holdsItem, bool holdsBlock, bool sneaking);
 }

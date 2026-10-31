@@ -46,7 +46,8 @@ namespace perlin {
                 return false;
             out.assign(n + 16, 0);
             int len = 0, total = 0;
-            bool ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_cfb8(), nullptr, reinterpret_cast<const uint8_t*>(key.data()),
+            bool ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_cfb8(), nullptr,
+                                         reinterpret_cast<const uint8_t*>(key.data()),
                                          reinterpret_cast<const uint8_t*>(key.data())) == 1 &&
                       EVP_DecryptUpdate(ctx, out.data(), &len, in, static_cast<int>(n)) == 1;
             total = len;
@@ -64,7 +65,8 @@ namespace perlin {
         }
 
         std::string LowerName(std::string s) {
-            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             return s;
         }
 
@@ -94,7 +96,8 @@ namespace perlin {
             ui::Json doc;
             std::string error;
             if (!ui::Json::Parse(std::string(plain.begin(), plain.end()), doc, error)) {
-                Log("packs", "contents.json is not valid after decrypting (wrong content key?) in {}", dir.string());
+                Log("packs", "contents.json is not valid after decrypting (wrong content key?) in {}",
+                    dir.string());
                 return;
             }
             const ui::Json* list = doc.Find("content");
@@ -104,7 +107,8 @@ namespace perlin {
             for (const ui::Json& entry : list->array) {
                 const ui::Json* path = entry.Find("path");
                 const ui::Json* key = entry.Find("key");
-                if (!path || !path->IsString() || !key || !key->IsString() || key->string.empty() || !SafeRel(path->string))
+                if (!path || !path->IsString() || !key || !key->IsString() || key->string.empty() ||
+                    !SafeRel(path->string))
                     continue;
                 const fs::path file = dir / path->string;
                 std::vector<uint8_t> enc, dec;
@@ -117,7 +121,8 @@ namespace perlin {
         }
     }
 
-    bool ServerPacks::Mount(const std::string& zipPath, const std::string& id, const std::string& contentKey) {
+    bool ServerPacks::Mount(const std::string& zipPath, const std::string& id,
+                            const std::string& contentKey) {
         std::string base;
         {
             std::lock_guard lock(mutex);
@@ -129,7 +134,12 @@ namespace perlin {
                     return true;
         }
         std::error_code ec;
-        const fs::path out = fs::path(base) / (LowerName(id) + "_" + std::to_string(std::hash<std::string>{}(zipPath + contentKey + std::to_string(fs::file_size(zipPath, ec))) & 0xffffff));
+        const fs::path out =
+            fs::path(base) /
+            (LowerName(id) + "_" +
+             std::to_string(
+                 std::hash<std::string>{}(zipPath + contentKey + std::to_string(fs::file_size(zipPath, ec))) &
+                 0xffffff));
         const fs::path ready = out / ".mounted";
         if (!fs::exists(ready, ec)) {
             fs::remove_all(out, ec);
@@ -157,7 +167,8 @@ namespace perlin {
                     continue;
                 }
                 extracted++;
-                WriteFileBytes(out / name, std::vector<uint8_t>(static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size));
+                WriteFileBytes(out / name, std::vector<uint8_t>(static_cast<uint8_t*>(data),
+                                                                static_cast<uint8_t*>(data) + size));
                 mz_free(data);
             }
             mz_zip_reader_end(&zip);
@@ -167,7 +178,8 @@ namespace perlin {
                 std::error_code ls;
                 std::string top;
                 for (const auto& e : fs::directory_iterator(packRoot, ls))
-                    top += (top.empty() ? "" : ", ") + e.path().filename().string() + (e.is_directory() ? "/" : "");
+                    top += (top.empty() ? "" : ", ") + e.path().filename().string() +
+                           (e.is_directory() ? "/" : "");
                 Log("packs", "pack root holds: {}", top);
             }
             if (!contentKey.empty())

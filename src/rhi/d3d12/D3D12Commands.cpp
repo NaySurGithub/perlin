@@ -7,8 +7,8 @@
 
 namespace rhi::d3d12 {
     namespace {
-        D3D12_RESOURCE_BARRIER MakeTransition(ID3D12Resource* resource, UINT subresource, D3D12_RESOURCE_STATES before,
-                                              D3D12_RESOURCE_STATES after) {
+        D3D12_RESOURCE_BARRIER MakeTransition(ID3D12Resource* resource, UINT subresource,
+                                              D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after) {
             D3D12_RESOURCE_BARRIER b{};
             b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             b.Transition.pResource = resource;
@@ -19,13 +19,17 @@ namespace rhi::d3d12 {
         }
 
         // moves the tracked state of a range to `after`, appending the transitions that need recording
-        void TransitionTexture(std::vector<D3D12_RESOURCE_BARRIER>& out, TextureRec& t, const SubresourceRange& r, D3D12_RESOURCE_STATES after) {
+        void TransitionTexture(std::vector<D3D12_RESOURCE_BARRIER>& out, TextureRec& t,
+                               const SubresourceRange& r, D3D12_RESOURCE_STATES after) {
             if (t.simultaneous)
                 return;
-            const bool whole = r.baseMip == 0 && r.mipCount == t.mips && r.baseLayer == 0 && r.layerCount == t.layers;
-            if (whole && std::all_of(t.states.begin(), t.states.end(), [&](D3D12_RESOURCE_STATES s) { return s == t.states[0]; })) {
+            const bool whole =
+                r.baseMip == 0 && r.mipCount == t.mips && r.baseLayer == 0 && r.layerCount == t.layers;
+            if (whole && std::all_of(t.states.begin(), t.states.end(),
+                                     [&](D3D12_RESOURCE_STATES s) { return s == t.states[0]; })) {
                 if (t.states[0] != after) {
-                    out.push_back(MakeTransition(t.resource.get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, t.states[0], after));
+                    out.push_back(MakeTransition(t.resource.get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                                 t.states[0], after));
                     std::fill(t.states.begin(), t.states.end(), after);
                 }
                 return;
@@ -42,19 +46,25 @@ namespace rhi::d3d12 {
                     }
         }
 
-        void TransitionBuffer(std::vector<D3D12_RESOURCE_BARRIER>& out, BufferRec& b, D3D12_RESOURCE_STATES after) {
+        void TransitionBuffer(std::vector<D3D12_RESOURCE_BARRIER>& out, BufferRec& b,
+                              D3D12_RESOURCE_STATES after) {
             if (b.state == after)
                 return;
             out.push_back(MakeTransition(b.resource.get(), 0, b.state, after));
             b.state = after;
         }
 
-        SubresourceRange WholeTexture(const TextureRec& t) { return {0, t.mips, 0, t.layers}; }
+        SubresourceRange WholeTexture(const TextureRec& t) {
+            return {0, t.mips, 0, t.layers};
+        }
     }
 
-    void CmdList::Fail(const std::string& message) { device.ReportError(message); }
+    void CmdList::Fail(const std::string& message) {
+        device.ReportError(message);
+    }
 
-    void CmdList::Transition(ID3D12Resource* resource, UINT subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after) {
+    void CmdList::Transition(ID3D12Resource* resource, UINT subresource, D3D12_RESOURCE_STATES before,
+                             D3D12_RESOURCE_STATES after) {
         const D3D12_RESOURCE_BARRIER b = MakeTransition(resource, subresource, before, after);
         list->ResourceBarrier(1, &b);
     }
@@ -123,7 +133,8 @@ namespace rhi::d3d12 {
             // d3d12 wants the real previous state: Undefined means "don't care" here, so the tracked state is used
             const bool handoff = tb.srcQueue != tb.dstQueue;
             // queue handoff goes through common: the releasing list parks the resource there, the acquiring one moves it on
-            const D3D12_RESOURCE_STATES target = handoff && queue == tb.srcQueue ? D3D12_RESOURCE_STATE_COMMON : ToStates(tb.after, queue);
+            const D3D12_RESOURCE_STATES target =
+                handoff && queue == tb.srcQueue ? D3D12_RESOURCE_STATE_COMMON : ToStates(tb.after, queue);
             TransitionTexture(out, *tex, ResolveRange(tb.range, tex->desc), target);
         }
 
@@ -136,10 +147,12 @@ namespace rhi::d3d12 {
             if (device.useValidator)
                 device.validator.Barrier(bb);
             // cpu-visible classes stay in one state on every api; shared buffers promote and decay on their own
-            if (buf->desc.memory == MemoryClass::Upload || buf->desc.memory == MemoryClass::Readback || buf->desc.crossQueue)
+            if (buf->desc.memory == MemoryClass::Upload || buf->desc.memory == MemoryClass::Readback ||
+                buf->desc.crossQueue)
                 continue;
             const bool handoff = bb.srcQueue != bb.dstQueue;
-            const D3D12_RESOURCE_STATES target = handoff && queue == bb.srcQueue ? D3D12_RESOURCE_STATE_COMMON : ToStates(bb.after, queue);
+            const D3D12_RESOURCE_STATES target =
+                handoff && queue == bb.srcQueue ? D3D12_RESOURCE_STATE_COMMON : ToStates(bb.after, queue);
             TransitionBuffer(out, *buf, target);
         }
 
@@ -175,7 +188,8 @@ namespace rhi::d3d12 {
         device.barrierCount++;
     }
 
-    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) {
+    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                             uint64_t size) {
         BufferRec* d = device.buffers.Get(dst);
         BufferRec* s = device.buffers.Get(src);
         if (!d || !s) {
@@ -191,10 +205,12 @@ namespace rhi::d3d12 {
 
     namespace {
         // the footprint for one region; false when the buffer layout breaks d3d12's placement rules
-        bool Footprint(const TextureRec& t, const BufferTextureCopy& r, D3D12_PLACED_SUBRESOURCE_FOOTPRINT& out, std::string& why) {
+        bool Footprint(const TextureRec& t, const BufferTextureCopy& r,
+                       D3D12_PLACED_SUBRESOURCE_FOOTPRINT& out, std::string& why) {
             uint32_t pitch = r.bufferRowPitch ? r.bufferRowPitch : RowBytes(t.desc.format, r.width);
             if (pitch % D3D12_TEXTURE_DATA_PITCH_ALIGNMENT != 0) {
-                why = "row pitch " + std::to_string(pitch) + " is not a multiple of 256 (caps.limits.copyRowPitchAlignment)";
+                why = "row pitch " + std::to_string(pitch) +
+                      " is not a multiple of 256 (caps.limits.copyRowPitchAlignment)";
                 return false;
             }
             if (r.bufferOffset % D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT != 0) {
@@ -211,7 +227,8 @@ namespace rhi::d3d12 {
         }
     }
 
-    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         TextureRec* t = device.textures.Get(dst);
         BufferRec* b = device.buffers.Get(src);
         if (!t || !b) {
@@ -221,7 +238,8 @@ namespace rhi::d3d12 {
         for (const BufferTextureCopy& r : regions) {
             if (device.useValidator) {
                 device.validator.ExpectBuffer(src, State::CopySrc, "CopyBufferToTexture src");
-                device.validator.ExpectTexture(dst, {r.mip, 1, r.layer, 1}, State::CopyDst, "CopyBufferToTexture dst");
+                device.validator.ExpectTexture(dst, {r.mip, 1, r.layer, 1}, State::CopyDst,
+                                               "CopyBufferToTexture dst");
             }
             D3D12_TEXTURE_COPY_LOCATION s{};
             s.pResource = b->resource.get();
@@ -239,7 +257,8 @@ namespace rhi::d3d12 {
         }
     }
 
-    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         TextureRec* t = device.textures.Get(src);
         BufferRec* b = device.buffers.Get(dst);
         if (!t || !b) {
@@ -249,7 +268,8 @@ namespace rhi::d3d12 {
         for (const BufferTextureCopy& r : regions) {
             if (device.useValidator) {
                 device.validator.ExpectBuffer(dst, State::CopyDst, "CopyTextureToBuffer dst");
-                device.validator.ExpectTexture(src, {r.mip, 1, r.layer, 1}, State::CopySrc, "CopyTextureToBuffer src");
+                device.validator.ExpectTexture(src, {r.mip, 1, r.layer, 1}, State::CopySrc,
+                                               "CopyTextureToBuffer src");
             }
             D3D12_TEXTURE_COPY_LOCATION d{};
             d.pResource = b->resource.get();
@@ -277,8 +297,10 @@ namespace rhi::d3d12 {
         }
         for (const TextureCopy& r : regions) {
             if (device.useValidator) {
-                device.validator.ExpectTexture(src, {r.srcMip, 1, r.srcLayer, 1}, State::CopySrc, "CopyTexture src");
-                device.validator.ExpectTexture(dst, {r.dstMip, 1, r.dstLayer, 1}, State::CopyDst, "CopyTexture dst");
+                device.validator.ExpectTexture(src, {r.srcMip, 1, r.srcLayer, 1}, State::CopySrc,
+                                               "CopyTexture src");
+                device.validator.ExpectTexture(dst, {r.dstMip, 1, r.dstLayer, 1}, State::CopyDst,
+                                               "CopyTexture dst");
             }
             D3D12_TEXTURE_COPY_LOCATION dl{};
             dl.pResource = d->resource.get();
@@ -315,7 +337,8 @@ namespace rhi::d3d12 {
         ad.HeapType = D3D12_HEAP_TYPE_UPLOAD;
         winrt::com_ptr<ID3D12Resource> res;
         winrt::com_ptr<D3D12MA::Allocation> alloc;
-        if (FAILED(device.allocator->CreateResource(&ad, &rd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, alloc.put(), winrt::guid_of<ID3D12Resource>(),
+        if (FAILED(device.allocator->CreateResource(&ad, &rd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                                    alloc.put(), winrt::guid_of<ID3D12Resource>(),
                                                     res.put_void()))) {
             Fail("FillBuffer: staging allocation failed");
             return;
@@ -372,7 +395,8 @@ namespace rhi::d3d12 {
             if (!Has(t->desc.usage, TextureUsage::ColorTarget))
                 Fail("BeginRendering: '" + t->name + "' lacks ColorTarget usage");
             if (device.useValidator)
-                device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, State::ColorTarget, "BeginRendering colour");
+                device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, State::ColorTarget,
+                                               "BeginRendering colour");
             rtvs[i] = device.RenderView(*t, a.mip, a.layer, false);
             if (a.load == LoadOp::Clear)
                 list->ClearRenderTargetView(rtvs[i], a.clear.data(), 0, nullptr);
@@ -395,7 +419,8 @@ namespace rhi::d3d12 {
                 if (!Has(t->desc.usage, TextureUsage::DepthTarget))
                     Fail("BeginRendering: '" + t->name + "' lacks DepthTarget usage");
                 if (device.useValidator)
-                    device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1}, a.readOnly ? State::DepthRead : State::DepthWrite,
+                    device.validator.ExpectTexture(a.texture, {a.mip, 1, a.layer, 1},
+                                                   a.readOnly ? State::DepthRead : State::DepthWrite,
                                                    "BeginRendering depth");
                 dsv = device.RenderView(*t, a.mip, a.layer, true, a.readOnly);
                 haveDepth = true;
@@ -463,12 +488,14 @@ namespace rhi::d3d12 {
             list->ResolveSubresource(d->resource.get(), 0, s->resource.get(), 0, d->viewFormat);
             for (size_t i = 0; i < savedSrc.size(); i++)
                 if (s->states[i] != savedSrc[i]) {
-                    back.push_back(MakeTransition(s->resource.get(), static_cast<UINT>(i), s->states[i], savedSrc[i]));
+                    back.push_back(
+                        MakeTransition(s->resource.get(), static_cast<UINT>(i), s->states[i], savedSrc[i]));
                     s->states[i] = savedSrc[i];
                 }
             for (size_t i = 0; i < savedDst.size(); i++)
                 if (d->states[i] != savedDst[i]) {
-                    back.push_back(MakeTransition(d->resource.get(), static_cast<UINT>(i), d->states[i], savedDst[i]));
+                    back.push_back(
+                        MakeTransition(d->resource.get(), static_cast<UINT>(i), d->states[i], savedDst[i]));
                     d->states[i] = savedDst[i];
                 }
             if (!back.empty())
@@ -486,7 +513,8 @@ namespace rhi::d3d12 {
         if (passBroken)
             return;
         if (p->compute == inRendering)
-            Fail(p->compute ? "compute pipeline set inside a rendering pass" : "graphics pipeline set outside a rendering pass");
+            Fail(p->compute ? "compute pipeline set inside a rendering pass"
+                            : "graphics pipeline set outside a rendering pass");
         pipeline = *p;
         layoutHandle = p->layoutHandle;
         havePipeline = true;
@@ -523,7 +551,8 @@ namespace rhi::d3d12 {
             return;
         }
         if (offsets.size() != g->dynamicCount)
-            Fail("SetBindGroup: expected " + std::to_string(g->dynamicCount) + " dynamic offsets, got " + std::to_string(offsets.size()));
+            Fail("SetBindGroup: expected " + std::to_string(g->dynamicCount) + " dynamic offsets, got " +
+                 std::to_string(offsets.size()));
         if (device.useValidator)
             device.validator.ExpectAll(g->bound, "SetBindGroup");
         groups[set] = group;
@@ -692,7 +721,8 @@ namespace rhi::d3d12 {
         }
     }
 
-    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
+    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                       uint32_t firstInstance) {
         if (!havePipeline || !inRendering) {
             Fail("Draw without a pipeline or outside a rendering pass");
             return;
@@ -702,7 +732,8 @@ namespace rhi::d3d12 {
         device.drawCount++;
     }
 
-    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                              int32_t vertexOffset, uint32_t firstInstance) {
         if (!havePipeline || !inRendering || !haveIndex) {
             Fail("DrawIndexed without a pipeline, index buffer or rendering pass");
             return;
@@ -712,7 +743,8 @@ namespace rhi::d3d12 {
         device.drawCount++;
     }
 
-    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) {
+    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                      uint32_t stride) {
         BufferRec* a = device.buffers.Get(args);
         if (!a || !havePipeline || !inRendering || !haveIndex) {
             Fail("DrawIndexedIndirect: missing buffer, pipeline, index buffer or rendering pass");
@@ -731,8 +763,8 @@ namespace rhi::d3d12 {
         device.indirectCount++;
     }
 
-    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset, uint32_t maxDraws,
-                                           uint32_t stride) {
+    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                           uint64_t countOffset, uint32_t maxDraws, uint32_t stride) {
         BufferRec* a = device.buffers.Get(args);
         BufferRec* c = device.buffers.Get(countBuffer);
         if (!a || !c || !havePipeline || !inRendering || !haveIndex) {
@@ -741,7 +773,8 @@ namespace rhi::d3d12 {
         }
         if (device.useValidator) {
             device.validator.ExpectBuffer(args, State::IndirectArgument, "DrawIndexedIndirectCount args");
-            device.validator.ExpectBuffer(countBuffer, State::IndirectArgument, "DrawIndexedIndirectCount count");
+            device.validator.ExpectBuffer(countBuffer, State::IndirectArgument,
+                                          "DrawIndexedIndirectCount count");
         }
         ID3D12CommandSignature* sig = device.Signature(false, stride);
         if (!sig) {
@@ -790,14 +823,16 @@ namespace rhi::d3d12 {
         list->EndQuery(q->heap.get(), D3D12_QUERY_TYPE_TIMESTAMP, index);
     }
 
-    void CmdList::ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) {
+    void CmdList::ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                                 uint64_t dstOffset) {
         QueryRec* q = device.queries.Get(set);
         BufferRec* b = device.buffers.Get(dst);
         if (!q || !b || first + count > q->count) {
             Fail("ResolveQueries: bad query set or buffer");
             return;
         }
-        list->ResolveQueryData(q->heap.get(), D3D12_QUERY_TYPE_TIMESTAMP, first, count, b->resource.get(), dstOffset);
+        list->ResolveQueryData(q->heap.get(), D3D12_QUERY_TYPE_TIMESTAMP, first, count, b->resource.get(),
+                               dstOffset);
     }
 
     void CmdList::BeginDebugLabel(const char* name, uint32_t) {

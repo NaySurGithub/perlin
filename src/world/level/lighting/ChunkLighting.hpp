@@ -32,7 +32,8 @@ namespace perlin {
         };
 
         // tryLock: give up (false) instead of waiting when the level is busy
-        static bool Compute(Level& level, const ChunkPos& pos, int yLo, int yHi, Result& out, bool tryLock = false);
+        static bool Compute(Level& level, const ChunkPos& pos, int yLo, int yHi, Result& out,
+                            bool tryLock = false);
 
         struct Grid {
             int yBase = 0;

@@ -13,8 +13,7 @@
 
 namespace winrt {
     namespace impl {
-        template <class T>
-        GUID IidOf() {
+        template <class T> GUID IidOf() {
 #ifndef _MSC_VER
             // directx-headers interfaces carry no declspec(uuid) off msvc: their ids come from dxguids.h
 #ifdef RHI_HAS_DXGUIDS
@@ -29,13 +28,11 @@ namespace winrt {
         }
     }
 
-    template <class T>
-    GUID guid_of() {
+    template <class T> GUID guid_of() {
         return impl::IidOf<T>();
     }
 
-    template <class T>
-    class com_ptr {
+    template <class T> class com_ptr {
     public:
         com_ptr() noexcept = default;
         com_ptr(std::nullptr_t) noexcept {}
@@ -88,8 +85,7 @@ namespace winrt {
             p = nullptr;
             return out;
         }
-        template <class U>
-        com_ptr<U> try_as() const noexcept {
+        template <class U> com_ptr<U> try_as() const noexcept {
             com_ptr<U> out;
             if (p)
                 p->QueryInterface(guid_of<U>(), out.put_void());

@@ -4,8 +4,7 @@
 #include <cmath>
 
 namespace perlin {
-    float MovementFovTarget(float movementSpeed, float walkSpeed, bool flying,
-                            int slownessAmplifier) {
+    float MovementFovTarget(float movementSpeed, float walkSpeed, bool flying, int slownessAmplifier) {
         if (!std::isfinite(movementSpeed) || !std::isfinite(walkSpeed) || walkSpeed <= 0.0f)
             return 1.0f;
         float movement;
@@ -23,7 +22,8 @@ namespace perlin {
 
     void PlayerFov::Tick(float target) {
         previous = current;
-        if (!std::isfinite(target)) target = 1.0f;
+        if (!std::isfinite(target))
+            target = 1.0f;
         current += (target - current) * 0.5f;
     }
 

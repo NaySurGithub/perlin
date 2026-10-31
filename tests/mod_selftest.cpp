@@ -21,8 +21,7 @@ static int failures = 0;
         }                                                                                                    \
     } while (0)
 
-template <typename F>
-static bool WaitFor(F&& f, int ms = 8000) {
+template <typename F> static bool WaitFor(F&& f, int ms = 8000) {
     const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
     while (std::chrono::steady_clock::now() < end) {
         ModManager::Instance().Update();
@@ -102,7 +101,8 @@ int main(int argc, char** argv) {
         for (int i = 0; i < frames; i++)
             mm.Dispatch(abi::Event::Frame, 300.0);
         std::printf("  %.1f us per frame event (all plugins)\n",
-                    std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / frames);
+                    std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() /
+                        frames);
     }
     for (int t = 0; t < 4; t++)
         mm.Dispatch(abi::Event::Tick, 300.0);
@@ -134,7 +134,8 @@ int main(int argc, char** argv) {
 
     const auto stopAt = std::chrono::steady_clock::now();
     mm.Stop();
-    std::printf("  stopped in %.0f ms\n", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - stopAt).count());
+    std::printf("  stopped in %.0f ms\n",
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - stopAt).count());
     fs::remove_all(dir);
     std::printf(failures ? "mod_selftest FAILED\n" : "mod_selftest ok\n");
     return failures ? 1 : 0;

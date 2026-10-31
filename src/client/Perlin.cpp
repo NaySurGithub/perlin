@@ -1,4 +1,5 @@
 #include "client/PerlinInternal.hpp"
+#include "client/update/Updater.hpp"
 #include "util/Log.hpp"
 
 namespace perlin {
@@ -43,6 +44,8 @@ namespace perlin {
                                    });
         options = Options::Load();
         runningRenderer = options.renderer;
+        // headless runs (tests, control port) never touch the installation
+        update::Start(options.autoUpdate && !std::getenv("PERLIN_NO_UPDATE") && !args.hidden);
         i18n::Lang::Get().Configure(std::string(), paths::DataDir(), options.language);
         // dev/test: PERLIN_TEST_SERVER_PACKS=dir1:dir2: extracted pack folders act as the server's packs
         if (const char* test = PERLIN_ENV("PERLIN_TEST_SERVER_PACKS")) {
@@ -98,7 +101,8 @@ namespace perlin {
             player.ObserveTicks([this](auto tick, const auto& state, const auto& movement) {
                 TraceControlTick(tick, state, movement);
             });
-            Log("control", "http://127.0.0.1:{}/?token={} (send X-Perlin-Token: {} with API requests)", args.controlPort, control->Token(), control->Token());
+            Log("control", "http://127.0.0.1:{}/?token={} (send X-Perlin-Token: {} with API requests)",
+                args.controlPort, control->Token(), control->Token());
         }
 
         workers = std::make_unique<ThreadPool>(4);
@@ -116,6 +120,7 @@ namespace perlin {
         if (PERLIN_ENV("PERLIN_PREVIEW_TITLE"))
             titleScreen.active = true;
 
+        RegisterScreens();
         renderRunning = true;
 #ifdef __EMSCRIPTEN__
         RenderThreadMain();
@@ -240,7 +245,10 @@ namespace perlin {
             skinConfig.capePath.clear();
             LoadSkinConfig(skinConfig, loadedSkin, skinError);
         } else if (loadedSkin.hasSkin() || loadedSkin.hasCape()) {
-            Log("perlin", "skin {}{}{}", (loadedSkin.hasSkin() ? skinConfig.skinPath : std::string("(default)")), (loadedSkin.hasCape() ? ", cape " + skinConfig.capePath : std::string()), (loadedSkin.slimArms ? ", slim arms" : ""));
+            Log("perlin", "skin {}{}{}",
+                (loadedSkin.hasSkin() ? skinConfig.skinPath : std::string("(default)")),
+                (loadedSkin.hasCape() ? ", cape " + skinConfig.capePath : std::string()),
+                (loadedSkin.slimArms ? ", slim arms" : ""));
         }
         session->SetSkin(std::move(loadedSkin));
         session->SetPackDirectory(paths::DataDir() + "/server_packs");

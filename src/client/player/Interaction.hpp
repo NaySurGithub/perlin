@@ -19,10 +19,11 @@ namespace perlin {
         std::vector<std::pair<glm::dvec3, glm::dvec3>> shape;
     };
 
-    glm::vec3 EntityClickOffset(const glm::dvec3& eye, const glm::dvec3& direction, const glm::dvec3& feet, double halfWidth,
-                                double height, const glm::dvec3& fallback);
+    glm::vec3 EntityClickOffset(const glm::dvec3& eye, const glm::dvec3& direction, const glm::dvec3& feet,
+                                double halfWidth, double height, const glm::dvec3& fallback);
 
-    AimHit Raycast(const Level& level, const BlockLibrary* blocks, const std::vector<entity::Entity>& entities,
+    AimHit Raycast(const Level& level, const BlockLibrary* blocks,
+                   const std::vector<entity::Entity>& entities,
                    const std::function<glm::vec2(const entity::Entity&)>& bounds, const glm::dvec3& eye,
                    const glm::dvec3& direction, double reach, double entityReach = -1.0);
 

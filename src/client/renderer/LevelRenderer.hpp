@@ -85,8 +85,7 @@ namespace perlin {
         };
 
         using PosSet = std::unordered_set<ChunkPos, ChunkPosHash>;
-        template <class T>
-        using PosMap = std::unordered_map<ChunkPos, T, ChunkPosHash>;
+        template <class T> using PosMap = std::unordered_map<ChunkPos, T, ChunkPosHash>;
 
         void UploadFinishedMeshes();
         void ResetAll(Level& level);
@@ -95,14 +94,18 @@ namespace perlin {
         bool Ready(const ChunkPos& pos, uint64_t now) const;
         void Schedule(Level& level, float camX, float camZ, const Frustum& frustum);
         void InvalidateMeshes();
-        std::chrono::steady_clock::time_point firstWaitAt{};
-    size_t captured = 0;
-    double captureMs = 0;
-    void ProcessLod(Level& level, float camX, float camZ);
+        std::chrono::steady_clock::time_point firstWaitAt;
+        size_t captured = 0;
+        double captureMs = 0;
+        void ProcessLod(Level& level, float camX, float camZ);
         void MarkLodTile(const ChunkPos& chunk);
         void ResetLod();
-        bool LodEnabled() const { return options.enableLods && options.renderDistance > LodStore::kRealChunks; }
-        static int64_t TileKey(int tx, int tz) { return (static_cast<int64_t>(tx) << 32) | static_cast<uint32_t>(tz); }
+        bool LodEnabled() const {
+            return options.enableLods && options.renderDistance > LodStore::kRealChunks;
+        }
+        static int64_t TileKey(int tx, int tz) {
+            return (static_cast<int64_t>(tx) << 32) | static_cast<uint32_t>(tz);
+        }
         void ConfigureLighting(const std::string& packDir);
         void LoadSkyTextures();
 
@@ -149,6 +152,6 @@ namespace perlin {
         bool crosshairLoaded = false;
         bool tintsWereReady = false;
         int uploadedTiles = 0;
-        std::chrono::steady_clock::time_point lastAssetAttempt{};
+        std::chrono::steady_clock::time_point lastAssetAttempt;
     };
 }

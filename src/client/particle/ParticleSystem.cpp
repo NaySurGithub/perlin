@@ -9,12 +9,22 @@ namespace perlin::particle {
 
     namespace {
         enum Ambient : int8_t {
-            kNone = -1, kUnknown = 0, kTorch = 1, kSoulTorch = 2, kRedstoneTorch = 3, kLava = 4, kFire = 5, kCandle = 6,
-            kBubbleUp = 7, kBubbleDown = 8
+            kNone = -1,
+            kUnknown = 0,
+            kTorch = 1,
+            kSoulTorch = 2,
+            kRedstoneTorch = 3,
+            kLava = 4,
+            kFire = 5,
+            kCandle = 6,
+            kBubbleUp = 7,
+            kBubbleDown = 8
         };
 
         uint32_t Pack(const glm::vec3& c, float a) {
-            const auto b = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+            const auto b = [](float v) {
+                return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
+            };
             return (b(a) << 24) | (b(c.z) << 16) | (b(c.y) << 8) | b(c.x);
         }
 
@@ -65,15 +75,29 @@ namespace perlin::particle {
         if (!tileFor || !tileFor(id, x, y, z, choice))
             return;
         const float r = 0.1f;
-        double px = x + Rand() * (1.0 - 2 * r) + r, py = y + Rand() * (1.0 - 2 * r) + r, pz = z + Rand() * (1.0 - 2 * r) + r;
+        double px = x + Rand() * (1.0 - 2 * r) + r, py = y + Rand() * (1.0 - 2 * r) + r,
+               pz = z + Rand() * (1.0 - 2 * r) + r;
         switch (face) {
-        case 0: py = y - r; break;
-        case 1: py = y + 1.0 + r; break;
-        case 2: pz = z - r; break;
-        case 3: pz = z + 1.0 + r; break;
-        case 4: px = x - r; break;
-        case 5: px = x + 1.0 + r; break;
-        default: break;
+        case 0:
+            py = y - r;
+            break;
+        case 1:
+            py = y + 1.0 + r;
+            break;
+        case 2:
+            pz = z - r;
+            break;
+        case 3:
+            pz = z + 1.0 + r;
+            break;
+        case 4:
+            px = x - r;
+            break;
+        case 5:
+            px = x + 1.0 + r;
+            break;
+        default:
+            break;
         }
         Particle p;
         p.kind = Kind::Terrain;
@@ -91,7 +115,8 @@ namespace perlin::particle {
         particles.push_back(p);
     }
 
-    void ParticleSystem::Spawn(Kind kind, const glm::dvec3& at, const glm::dvec3& velocity, float scale, const glm::vec3& colour) {
+    void ParticleSystem::Spawn(Kind kind, const glm::dvec3& at, const glm::dvec3& velocity, float scale,
+                               const glm::vec3& colour) {
         Particle p;
         p.kind = kind;
         switch (kind) {
@@ -274,23 +299,71 @@ namespace perlin::particle {
         const auto has = [&](const char* s) { return name.contains(s); };
         const auto burst = [&](Kind k, int n, double spread, float scale = 1.0f) {
             for (int i = 0; i < n; i++)
-                Spawn(k, at + glm::dvec3((Rand() - 0.5) * spread, Rand() * spread * 0.5, (Rand() - 0.5) * spread), glm::dvec3(0.0), scale);
+                Spawn(k,
+                      at +
+                          glm::dvec3((Rand() - 0.5) * spread, Rand() * spread * 0.5, (Rand() - 0.5) * spread),
+                      glm::dvec3(0.0), scale);
         };
-        if (has("heart")) { burst(Kind::Heart, 1, 0.6); return true; }
-        if (has("villager_angry") || has("angry")) { burst(Kind::Angry, 1, 0.6); return true; }
-        if (has("villager_happy") || has("crop_growth") || has("happy")) { burst(Kind::Happy, 6, 1.2); return true; }
-        if (has("critical_hit") || has("crit")) { burst(Kind::Crit, 8, 0.6); return true; }
-        if (has("large_smoke") || has("campfire")) { burst(Kind::LargeSmoke, 1, 0.3); return true; }
-        if (has("explosion") || has("death_smoke") || has("evaporation") || has("poof")) { burst(Kind::Poof, 8, 1.2); return true; }
-        if (has("smoke")) { burst(Kind::Smoke, 1, 0.2); return true; }
-        if (has("lava")) { burst(Kind::Lava, 1, 0.3); return true; }
-        if (has("flame") || has("fire")) { burst(Kind::Flame, 1, 0.2); return true; }
-        if (has("splash")) { burst(Kind::Splash, 8, 0.8); return true; }
-        if (has("bubble")) { burst(Kind::Bubble, 2, 0.5); return true; }
-        if (has("note")) { burst(Kind::Note, 1, 0.2); return true; }
-        if (has("redstone") || has("dust")) { burst(Kind::Dust, 1, 0.2); return true; }
-        if (has("drip")) { burst(Kind::Drip, 1, 0.1); return true; }
-        if (has("totem")) { AddTotemEmitter(at); return true; }
+        if (has("heart")) {
+            burst(Kind::Heart, 1, 0.6);
+            return true;
+        }
+        if (has("villager_angry") || has("angry")) {
+            burst(Kind::Angry, 1, 0.6);
+            return true;
+        }
+        if (has("villager_happy") || has("crop_growth") || has("happy")) {
+            burst(Kind::Happy, 6, 1.2);
+            return true;
+        }
+        if (has("critical_hit") || has("crit")) {
+            burst(Kind::Crit, 8, 0.6);
+            return true;
+        }
+        if (has("large_smoke") || has("campfire")) {
+            burst(Kind::LargeSmoke, 1, 0.3);
+            return true;
+        }
+        if (has("explosion") || has("death_smoke") || has("evaporation") || has("poof")) {
+            burst(Kind::Poof, 8, 1.2);
+            return true;
+        }
+        if (has("smoke")) {
+            burst(Kind::Smoke, 1, 0.2);
+            return true;
+        }
+        if (has("lava")) {
+            burst(Kind::Lava, 1, 0.3);
+            return true;
+        }
+        if (has("flame") || has("fire")) {
+            burst(Kind::Flame, 1, 0.2);
+            return true;
+        }
+        if (has("splash")) {
+            burst(Kind::Splash, 8, 0.8);
+            return true;
+        }
+        if (has("bubble")) {
+            burst(Kind::Bubble, 2, 0.5);
+            return true;
+        }
+        if (has("note")) {
+            burst(Kind::Note, 1, 0.2);
+            return true;
+        }
+        if (has("redstone") || has("dust")) {
+            burst(Kind::Dust, 1, 0.2);
+            return true;
+        }
+        if (has("drip")) {
+            burst(Kind::Drip, 1, 0.1);
+            return true;
+        }
+        if (has("totem")) {
+            AddTotemEmitter(at);
+            return true;
+        }
         return false;
     }
 
@@ -298,29 +371,78 @@ namespace perlin::particle {
         (void)data;
         const auto burst = [&](Kind k, int n, double spread, float scale = 1.0f) {
             for (int i = 0; i < n; i++)
-                Spawn(k, at + glm::dvec3((Rand() - 0.5) * spread, Rand() * spread, (Rand() - 0.5) * spread), glm::dvec3(0.0), scale);
+                Spawn(k, at + glm::dvec3((Rand() - 0.5) * spread, Rand() * spread, (Rand() - 0.5) * spread),
+                      glm::dvec3(0.0), scale);
         };
         switch (event) {
-        case 2005: burst(Kind::Happy, 15, 1.5); return true;
-        case 2007: burst(Kind::Poof, 20, 1.2); return true;
-        case 2012: burst(Kind::Crit, 16, 0.8); return true;
-        case 2015: burst(Kind::Bubble, 8, 0.8); return true;
-        case 2016: case 2020: burst(Kind::Smoke, 6, 0.6); return true;
-        case 20065: AddTotemEmitter(at); return true;
-        case 2025: case 2026: burst(Kind::Poof, 24, 3.0, 1.5f); return true;
-        case 16385: case 16386: burst(Kind::Bubble, 1, 0.1); return true;
-        case 16387: burst(Kind::Crit, 1, 0.1); return true;
-        case 16389: burst(Kind::Smoke, 1, 0.1); return true;
-        case 16390: burst(Kind::Poof, 1, 0.1); return true;
-        case 16391: burst(Kind::Smoke, 1, 0.1); return true;
-        case 16392: case 16393: case 16402: burst(Kind::Flame, 1, 0.1); return true;
-        case 16394: burst(Kind::Lava, 1, 0.1); return true;
-        case 16395: burst(Kind::LargeSmoke, 1, 0.1); return true;
-        case 16396: case 16397: burst(Kind::Dust, 1, 0.1); return true;
-        case 16403: burst(Kind::Heart, 1, 0.1); return true;
-        case 16408: case 16409: case 16410: burst(Kind::Splash, 4, 0.4); return true;
-        case 16411: case 16412: burst(Kind::Drip, 1, 0.1); return true;
-        default: return false;
+        case 2005:
+            burst(Kind::Happy, 15, 1.5);
+            return true;
+        case 2007:
+            burst(Kind::Poof, 20, 1.2);
+            return true;
+        case 2012:
+            burst(Kind::Crit, 16, 0.8);
+            return true;
+        case 2015:
+            burst(Kind::Bubble, 8, 0.8);
+            return true;
+        case 2016:
+        case 2020:
+            burst(Kind::Smoke, 6, 0.6);
+            return true;
+        case 20065:
+            AddTotemEmitter(at);
+            return true;
+        case 2025:
+        case 2026:
+            burst(Kind::Poof, 24, 3.0, 1.5f);
+            return true;
+        case 16385:
+        case 16386:
+            burst(Kind::Bubble, 1, 0.1);
+            return true;
+        case 16387:
+            burst(Kind::Crit, 1, 0.1);
+            return true;
+        case 16389:
+            burst(Kind::Smoke, 1, 0.1);
+            return true;
+        case 16390:
+            burst(Kind::Poof, 1, 0.1);
+            return true;
+        case 16391:
+            burst(Kind::Smoke, 1, 0.1);
+            return true;
+        case 16392:
+        case 16393:
+        case 16402:
+            burst(Kind::Flame, 1, 0.1);
+            return true;
+        case 16394:
+            burst(Kind::Lava, 1, 0.1);
+            return true;
+        case 16395:
+            burst(Kind::LargeSmoke, 1, 0.1);
+            return true;
+        case 16396:
+        case 16397:
+            burst(Kind::Dust, 1, 0.1);
+            return true;
+        case 16403:
+            burst(Kind::Heart, 1, 0.1);
+            return true;
+        case 16408:
+        case 16409:
+        case 16410:
+            burst(Kind::Splash, 4, 0.4);
+            return true;
+        case 16411:
+        case 16412:
+            burst(Kind::Drip, 1, 0.1);
+            return true;
+        default:
+            return false;
         }
     }
 
@@ -332,11 +454,13 @@ namespace perlin::particle {
         }
         if (p.kind == Kind::Lava) {
             if (Rand() > static_cast<float>(p.age) / static_cast<float>(p.lifetime))
-                pendingSmoke.push_back({p.pos, p.vel});
+                pendingSmoke.emplace_back(p.pos, p.vel);
         }
         p.vel.y -= 0.04 * p.gravity;
         const auto blocked = [&](double x, double y, double z) {
-            return world.solid && world.solid(static_cast<int>(std::floor(x)), static_cast<int>(std::floor(y)), static_cast<int>(std::floor(z)));
+            return world.solid &&
+                   world.solid(static_cast<int>(std::floor(x)), static_cast<int>(std::floor(y)),
+                               static_cast<int>(std::floor(z)));
         };
         const double half = 0.1;
         if (p.physics && world.solid) {
@@ -364,7 +488,8 @@ namespace perlin::particle {
                 glm::dvec3 probe = p.pos;
                 probe[axis] = nv + (d[axis] > 0 ? half : -half);
                 if (blocked(probe.x, p.pos.y + 0.1, probe.z)) {
-                    p.pos[axis] = d[axis] > 0 ? std::floor(probe[axis]) - half : std::floor(probe[axis]) + 1.0 + half;
+                    p.pos[axis] =
+                        d[axis] > 0 ? std::floor(probe[axis]) - half : std::floor(probe[axis]) + 1.0 + half;
                     p.vel[axis] = 0;
                 } else {
                     p.pos[axis] = nv;
@@ -396,21 +521,25 @@ namespace perlin::particle {
                 const double dx = Rand() * 2.0 - 1.0, dy = Rand() * 2.0 - 1.0, dz = Rand() * 2.0 - 1.0;
                 if (dx * dx + dy * dy + dz * dz > 1.0)
                     continue;
-                Spawn(Kind::Totem, e.at + glm::dvec3(dx / 4.0, dy / 4.0, dz / 4.0) * 1.8, glm::dvec3(dx, dy + 0.2, dz));
+                Spawn(Kind::Totem, e.at + glm::dvec3(dx / 4.0, dy / 4.0, dz / 4.0) * 1.8,
+                      glm::dvec3(dx, dy + 0.2, dz));
             }
             e.age++;
         }
-        emitters.erase(std::remove_if(emitters.begin(), emitters.end(), [](const Emitter& e) { return e.age >= e.lifetime; }),
+        emitters.erase(std::remove_if(emitters.begin(), emitters.end(),
+                                      [](const Emitter& e) { return e.age >= e.lifetime; }),
                        emitters.end());
         for (Particle& p : particles)
             Step(p, world);
         for (const auto& [at, vel] : pendingSmoke)
             Spawn(Kind::Smoke, at, vel);
         pendingSmoke.clear();
-        particles.erase(std::remove_if(particles.begin(), particles.end(), [](const Particle& p) { return p.age > p.lifetime; }),
+        particles.erase(std::remove_if(particles.begin(), particles.end(),
+                                       [](const Particle& p) { return p.age > p.lifetime; }),
                         particles.end());
         if (particles.size() > 6000)
-            particles.erase(particles.begin(), particles.begin() + static_cast<long>(particles.size() - 6000));
+            particles.erase(particles.begin(),
+                            particles.begin() + static_cast<long>(particles.size() - 6000));
         Ambient(world, around);
     }
 
@@ -421,7 +550,8 @@ namespace perlin::particle {
         const int cx = static_cast<int>(std::floor(around.x)), cy = static_cast<int>(std::floor(around.y)),
                   cz = static_cast<int>(std::floor(around.z));
         for (int i = 0; i < 667; i++) {
-            const int x = cx + RandInt(16) - RandInt(16), y = cy + RandInt(16) - RandInt(16), z = cz + RandInt(16) - RandInt(16);
+            const int x = cx + RandInt(16) - RandInt(16), y = cy + RandInt(16) - RandInt(16),
+                      z = cz + RandInt(16) - RandInt(16);
             const uint16_t id = world.block(x, y, z);
             if (id == 0)
                 continue;
@@ -467,7 +597,8 @@ namespace perlin::particle {
                 break;
             }
             case kRedstoneTorch: {
-                Spawn(Kind::Dust, {bx + (Rand() - 0.5) * 0.2, y + 0.7 + (Rand() - 0.5) * 0.2, bz + (Rand() - 0.5) * 0.2});
+                Spawn(Kind::Dust,
+                      {bx + (Rand() - 0.5) * 0.2, y + 0.7 + (Rand() - 0.5) * 0.2, bz + (Rand() - 0.5) * 0.2});
                 break;
             }
             case kLava: {
@@ -504,7 +635,8 @@ namespace perlin::particle {
         for (const Particle& p : particles) {
             Quad q;
             q.centre = p.prev + (p.pos - p.prev) * static_cast<double>(partial);
-            const float t = (static_cast<float>(p.age) + partial) / static_cast<float>(std::max(p.lifetime, 1));
+            const float t =
+                (static_cast<float>(p.age) + partial) / static_cast<float>(std::max(p.lifetime, 1));
             float size = p.quadSize;
             switch (p.kind) {
             case Kind::Flame:

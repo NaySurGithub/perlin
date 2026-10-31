@@ -51,8 +51,8 @@ namespace perlin::i18n {
 
     void Lang::Parse(const std::string& text, std::unordered_map<std::string, std::string>& out) {
         size_t pos = 0;
-        if (text.size() >= 3 && static_cast<uint8_t>(text[0]) == 0xEF && static_cast<uint8_t>(text[1]) == 0xBB &&
-            static_cast<uint8_t>(text[2]) == 0xBF)
+        if (text.size() >= 3 && static_cast<uint8_t>(text[0]) == 0xEF &&
+            static_cast<uint8_t>(text[1]) == 0xBB && static_cast<uint8_t>(text[2]) == 0xBF)
             pos = 3;
         while (pos < text.size()) {
             size_t end = text.find('\n', pos);
@@ -74,7 +74,8 @@ namespace perlin::i18n {
         }
     }
 
-    void Lang::Configure(const std::string& resourceRoot, const std::string& dataDir, const std::string& language) {
+    void Lang::Configure(const std::string& resourceRoot, const std::string& dataDir,
+                         const std::string& language) {
         std::lock_guard lock(mutex);
         const std::string wanted = language.empty() ? std::string("en_US") : language;
         if (configured && root == resourceRoot && data == dataDir && configuredCode == wanted)
@@ -106,13 +107,15 @@ namespace perlin::i18n {
             std::string error;
             if (ui::Json::Parse(text, doc, error) && doc.IsArray())
                 for (const ui::Json& entry : doc.array)
-                    if (entry.IsArray() && entry.array.size() >= 2 && entry.array[0].IsString() && entry.array[1].IsString())
+                    if (entry.IsArray() && entry.array.size() >= 2 && entry.array[0].IsString() &&
+                        entry.array[1].IsString())
                         languages.push_back({entry.array[0].string, entry.array[1].string});
         }
         if (languages.empty())
             languages.push_back({"en_US", "English (United States)"});
         version++;
-        Log("lang", "language {}: {} strings ({} file(s)), {} languages available", code, primary.size() + fallback.size(), files, languages.size());
+        Log("lang", "language {}: {} strings ({} file(s)), {} languages available", code,
+            primary.size() + fallback.size(), files, languages.size());
     }
 
     void Lang::LoadFromText(const std::string& primaryText, const std::string& fallbackText) {
@@ -177,7 +180,8 @@ namespace perlin::i18n {
                 size_t index = 0;
                 while (j < pattern.size() && std::isdigit(static_cast<unsigned char>(pattern[j])))
                     index = index * 10 + static_cast<size_t>(pattern[j++] - '0');
-                if (j + 1 < pattern.size() && pattern[j] == '$' && (pattern[j + 1] == 's' || pattern[j + 1] == 'd')) {
+                if (j + 1 < pattern.size() && pattern[j] == '$' &&
+                    (pattern[j + 1] == 's' || pattern[j + 1] == 'd')) {
                     if (index >= 1 && index <= args.size())
                         out += args[index - 1];
                     i = j + 1;

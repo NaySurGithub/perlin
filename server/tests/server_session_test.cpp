@@ -26,17 +26,23 @@ namespace {
         std::string out;
         for (size_t i = 0; i < s.size(); i += 3) {
             uint32_t v = static_cast<unsigned char>(s[i]) << 16;
-            if (i + 1 < s.size()) v |= static_cast<unsigned char>(s[i + 1]) << 8;
-            if (i + 2 < s.size()) v |= static_cast<unsigned char>(s[i + 2]);
+            if (i + 1 < s.size())
+                v |= static_cast<unsigned char>(s[i + 1]) << 8;
+            if (i + 2 < s.size())
+                v |= static_cast<unsigned char>(s[i + 2]);
             out += t[(v >> 18) & 63];
             out += t[(v >> 12) & 63];
-            if (i + 1 < s.size()) out += t[(v >> 6) & 63];
-            if (i + 2 < s.size()) out += t[v & 63];
+            if (i + 1 < s.size())
+                out += t[(v >> 6) & 63];
+            if (i + 2 < s.size())
+                out += t[v & 63];
         }
         return out;
     }
 
-    std::string Jwt(const std::string& payload) { return B64Url("{\"alg\":\"none\"}") + "." + B64Url(payload) + ".sig"; }
+    std::string Jwt(const std::string& payload) {
+        return B64Url("{\"alg\":\"none\"}") + "." + B64Url(payload) + ".sig";
+    }
 
     struct Received {
         uint32_t id;
@@ -226,7 +232,8 @@ int main(int argc, char** argv) {
     for (const auto& c : chunks) {
         std::vector<std::pair<int, perlin::SubChunkData>> subs;
         size_t used = 0;
-        CHECK(perlin::ChunkCodec::ParseColumn(c.payload.data(), c.payload.size(), c.subChunkCount, -4, 24, subs, used));
+        CHECK(perlin::ChunkCodec::ParseColumn(c.payload.data(), c.payload.size(), c.subChunkCount, -4, 24,
+                                              subs, used));
         CHECK(subs.size() == 24);
     }
     const auto spawn = alice.Take<proto::PlayStatusPacket>();
@@ -274,7 +281,8 @@ int main(int argc, char** argv) {
     auto bobChat = bob.Take<proto::TextPacket>();
     CHECK(aliceChat.size() == 1 && bobChat.size() == 1);
     if (!bobChat.empty())
-        CHECK(bobChat[0].sourceName == "Alice" && bobChat[0].message == "hi bob" && bobChat[0].type == proto::TextPacketType::Chat);
+        CHECK(bobChat[0].sourceName == "Alice" && bobChat[0].message == "hi bob" &&
+              bobChat[0].type == proto::TextPacketType::Chat);
 
     // the example plugin swallows one word
     if (argc > 1) {
@@ -295,13 +303,15 @@ int main(int argc, char** argv) {
     bob.Send(cmd);
     bob.Settle();
     auto listReply = bob.Take<proto::TextPacket>();
-    CHECK(listReply.size() == 1 && listReply[0].message.contains("There are 2 of a max of 20 players online"));
+    CHECK(listReply.size() == 1 &&
+          listReply[0].message.contains("There are 2 of a max of 20 players online"));
     cmd.command = "/say nope";
     bob.Send(cmd);
     bob.Settle();
     listReply = bob.Take<proto::TextPacket>();
     // java answers a command you may not use exactly like one that does not exist
-    CHECK(listReply.size() == 2 && listReply[0].message.contains("Unknown or incomplete command") && listReply[1].message.contains("/say<--[HERE]"));
+    CHECK(listReply.size() == 2 && listReply[0].message.contains("Unknown or incomplete command") &&
+          listReply[1].message.contains("/say<--[HERE]"));
     cmd.command = "/say server notice";
     alice.Send(cmd);
     alice.Settle();
@@ -399,7 +409,8 @@ int main(int argc, char** argv) {
         std::string name;
         CHECK(server.GetBlock(2, -60, 2, name) == 0 && name == "minecraft:stone");
         const auto updates = bob.Take<proto::UpdateBlockPacket>();
-        CHECK(updates.size() == 1 && updates[0].position.y == -60 && static_cast<int32_t>(updates[0].blockRuntimeId) == stoneHash);
+        CHECK(updates.size() == 1 && updates[0].position.y == -60 &&
+              static_cast<int32_t>(updates[0].blockRuntimeId) == stoneHash);
         CHECK(alice.Take<proto::UpdateBlockPacket>().size() == 1);
 
         // placing into an occupied cell is refused and the client is corrected
@@ -457,13 +468,11 @@ int main(int argc, char** argv) {
         CHECK(alice.Take<proto::InventoryContentPacket>().size() >= 1);
     }
 
-
     // leaving removes the player for the others
     bob.endpoint->Close();
     alice.Settle();
     CHECK(alice.Take<proto::RemoveEntityPacket>().size() == 1);
     CHECK(server.InGamePlayers().size() == 1);
-
 
     // commands: gamemode, give, op/deop, tick, whitelist
     {
@@ -488,8 +497,10 @@ int main(int argc, char** argv) {
             CHECK(ab.size() == 1 && !ab[0].abilities.empty());
             if (!ab.empty() && !ab[0].abilities.empty()) {
                 const auto& layer = ab[0].abilities[0];
-                CHECK((layer.enabled & F::NoClip) && (layer.enabled & F::Flying) && (layer.enabled & F::MayFly) && (layer.enabled & F::Invulnerable));
-                CHECK(!(layer.enabled & (F::Build | F::Mine | F::AttackMobs | F::AttackPlayers | F::OpenContainers)));
+                CHECK((layer.enabled & F::NoClip) && (layer.enabled & F::Flying) &&
+                      (layer.enabled & F::MayFly) && (layer.enabled & F::Invulnerable));
+                CHECK(!(layer.enabled &
+                        (F::Build | F::Mine | F::AttackMobs | F::AttackPlayers | F::OpenContainers)));
                 CHECK(layer.flySpeed == 0.05f && layer.verticalFlySpeed == 1.0f);
             }
             for (const int level : {2, 5, 10, 20, 1}) {
@@ -503,7 +514,8 @@ int main(int argc, char** argv) {
                 const auto bar = alice.Take<proto::TextPacket>();
                 bool shown = false;
                 for (const auto& t : bar)
-                    shown = shown || (t.type == proto::TextPacketType::JukeboxPopup && t.message == "Flying speed: " + std::to_string(level) + "x");
+                    shown = shown || (t.type == proto::TextPacketType::JukeboxPopup &&
+                                      t.message == "Flying speed: " + std::to_string(level) + "x");
                 CHECK(shown);
             }
             // "5x" works too; 3 is refused and nothing is resent
@@ -537,7 +549,8 @@ int main(int argc, char** argv) {
             alice.inbox.clear();
             run("/tp 10 80 10");
             auto moved = alice.Take<proto::MovePlayerPacket>();
-            CHECK(moved.size() == 1 && moved[0].position.x == 10.5f && moved[0].position.y == 80.0f + 1.62f && moved[0].position.z == 10.5f);
+            CHECK(moved.size() == 1 && moved[0].position.x == 10.5f && moved[0].position.y == 80.0f + 1.62f &&
+                  moved[0].position.z == 10.5f);
             run("/tp ~ ~5 ~");
             moved = alice.Take<proto::MovePlayerPacket>();
             CHECK(moved.size() == 1 && moved[0].position.x == 10.5f && moved[0].position.y == 85.0f + 1.62f);
@@ -558,7 +571,8 @@ int main(int argc, char** argv) {
             CHECK(out.contains("Incorrect argument for command") && out.contains("/gamemode foo<--[HERE]"));
             run("/give");
             out = texts();
-            CHECK(out.contains("Unknown or incomplete command, see below for error") && out.contains("/give<--[HERE]"));
+            CHECK(out.contains("Unknown or incomplete command, see below for error") &&
+                  out.contains("/give<--[HERE]"));
             run("/give @s minecraft:not_an_item");
             CHECK(texts().contains("Unknown item 'minecraft:not_an_item'"));
             run("/give @s stone abc");
@@ -598,7 +612,8 @@ int main(int argc, char** argv) {
             run("/weather clear");
             CHECK(!server.Raining());
             run("/gamerule doDaylightCycle false");
-            CHECK(server.RuleValue("dodaylightcycle") == 0 && !alice.Take<proto::GameRulesChangedPacket>().empty());
+            CHECK(server.RuleValue("dodaylightcycle") == 0 &&
+                  !alice.Take<proto::GameRulesChangedPacket>().empty());
             run("/gamerule dodaylightcycle");
             CHECK(texts().contains("Game rule doDaylightCycle is currently set to: false"));
             run("/gamerule doDaylightCycle true");
@@ -647,20 +662,36 @@ int main(int argc, char** argv) {
             const proto::AvailableCommandsPacketCommandDataEntry* give = nullptr;
             const proto::AvailableCommandsPacketCommandDataEntry* gamemode = nullptr;
             for (const auto& e : packet.commandData) {
-                if (e.name == "give") give = &e;
-                if (e.name == "gamemode") gamemode = &e;
+                if (e.name == "give")
+                    give = &e;
+                if (e.name == "gamemode")
+                    gamemode = &e;
             }
             CHECK(give && give->overloads.size() == 1 && give->overloads[0].parameters.size() == 3);
             if (give && give->overloads[0].parameters.size() == 3) {
                 const auto& p = give->overloads[0].parameters;
-                CHECK(p[0].parameterName == "targets" && p[0].valueType == proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::Target);
-                CHECK(p[1].valueType == proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::String && !p[1].optional);
-                CHECK(p[2].valueType == proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::Int && p[2].optional);
+                CHECK(
+                    p[0].parameterName == "targets" &&
+                    p[0].valueType ==
+                        proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::
+                            Target);
+                CHECK(
+                    p[1].valueType ==
+                        proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::
+                            String &&
+                    !p[1].optional);
+                CHECK(
+                    p[2].valueType ==
+                        proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::
+                            Int &&
+                    p[2].optional);
             }
             CHECK(gamemode && gamemode->overloads.size() == 1);
             if (gamemode && !gamemode->overloads.empty()) {
                 const auto& first = gamemode->overloads[0].parameters[0];
-                CHECK(first.enumType == proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType::Enum);
+                CHECK(first.enumType ==
+                      proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType::
+                          Enum);
                 const size_t index = static_cast<size_t>(first.valueType);
                 CHECK(index < packet.enums.size() && packet.enums[index].values.size() == 4);
             }
@@ -704,7 +735,8 @@ int main(int argc, char** argv) {
         // the old command name still works
         server.RunConsoleCommand("whitelist add Carol");
         CHECK(server.IsWhitelisted("carol", ""));
-        CHECK(fs::exists(config.dataDir + "/permissions.json") && fs::exists(config.dataDir + "/allowlist.json"));
+        CHECK(fs::exists(config.dataDir + "/permissions.json") &&
+              fs::exists(config.dataDir + "/allowlist.json"));
         CHECK(!fs::exists(config.dataDir + "/ops.json") && !fs::exists(config.dataDir + "/whitelist.json"));
     }
 

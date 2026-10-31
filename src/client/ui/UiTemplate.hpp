@@ -4,8 +4,8 @@
 #include <string>
 
 namespace perlin::ui {
-    std::string LoadUiTemplate(const std::string& dataDir, const std::string& fileName, const std::string& defaultText,
-                               uint64_t& version);
+    std::string LoadUiTemplate(const std::string& dataDir, const std::string& fileName,
+                               const std::string& defaultText, uint64_t& version);
     void ReplaceAll(std::string& text, const std::string& key, const std::string& value);
     std::string ScreenTemplate(const std::string& fileName, const std::string& defaultText);
 
@@ -18,7 +18,7 @@ namespace perlin::ui {
     struct TemplateSlot {
         std::string text;
         uint64_t version = 0;
-        std::chrono::steady_clock::time_point checkAt{};
+        std::chrono::steady_clock::time_point checkAt;
 
         // true when the text changed; logLabel names the screen in the log, null for a quiet reload
         bool Refresh(const char* fileName, const std::string& defaultText, std::chrono::milliseconds every,

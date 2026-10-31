@@ -3,15 +3,13 @@
 #include "client/mods/WasmRuntime.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include "util/FileIo.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <random>
-#include <set>
-#include <sstream>
 
 namespace perlin::server {
     namespace fs = std::filesystem;
@@ -21,11 +19,9 @@ namespace perlin::server {
         Info info;
         std::vector<uint8_t> wasm;
         std::unique_ptr<WasmInstance> instance;
-        uint32_t subscriptions = 0;
+        uint64_t subscriptions = 0;
         bool hasAlloc = false, hasFree = false;
         std::set<std::string> commands;
-        // set while a call into the plugin is running so a trap can be pinned on it
-        bool inCall = false;
     };
 
     namespace {
@@ -122,253 +118,20 @@ namespace perlin::server {
             return status(kWasiNoSys);
         }
 
-        std::string ReadManifestField(const json::Value& m, const char* key) { return m[key].String(); }
-    }
-
-    namespace {
-        bool CallEvent(WasmInstance& w, bool hasAlloc, bool hasFree, uint32_t id, const std::vector<uint8_t>& payload, uint32_t& result,
-                       std::string& error);
-    }
-
-    PluginHost::PluginHost(PluginApi& api) : api(api) {}
-    PluginHost::~PluginHost() { UnloadAll(); }
-
-    void PluginHost::LoadDirectory(const std::string& dir) {
-        std::error_code ec;
-        if (dir.empty() || !fs::is_directory(dir, ec))
-            return;
-        std::vector<fs::path> files;
-        for (const auto& entry : fs::directory_iterator(dir, ec))
-            if (entry.is_regular_file() && entry.path().extension() == ".wasm")
-                files.push_back(entry.path());
-        std::sort(files.begin(), files.end());
-        for (const fs::path& file : files) {
-            std::string error;
-            if (!LoadFile(file.string(), error))
-                LogWarn("plugin " + file.filename().string() + " not loaded: " + error);
-        }
-    }
-
-    bool PluginHost::LoadFile(const std::string& path, std::string& error) {
-        auto plugin = std::make_unique<Plugin>();
-        plugin->info.file = path;
-        plugin->info.name = fs::path(path).stem().string();
-        plugin->info.engine = mods::WasmEngineName();
-
-        std::ifstream in(path, std::ios::binary);
-        if (!in) {
-            error = "cannot read the file";
-            return false;
-        }
-        plugin->wasm.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-
-        // optional name.json beside the module
-        {
-            std::ifstream mf(fs::path(path).replace_extension(".json"), std::ios::binary);
-            if (mf) {
-                std::stringstream buf;
-                buf << mf.rdbuf();
-                json::Value manifest;
-                if (json::Parse(buf.str(), manifest)) {
-                    const std::string name = ReadManifestField(manifest, "name");
-                    if (!name.empty())
-                        plugin->info.name = name;
-                    plugin->info.version = ReadManifestField(manifest, "version");
-                    plugin->info.author = ReadManifestField(manifest, "author");
-                    plugin->info.description = ReadManifestField(manifest, "description");
-                }
-            }
+        // bits 0-31 from perlin_subscriptions, 32-63 from perlin_subscriptions_hi
+        uint64_t ReadSubscriptions(WasmInstance& w) {
+            std::string ignored;
+            uint64_t lo = 0, hi = 0;
+            if (w.HasExport("perlin_subscriptions"))
+                w.Call("perlin_subscriptions", {}, &lo, ignored);
+            if (w.HasExport("perlin_subscriptions_hi"))
+                w.Call("perlin_subscriptions_hi", {}, &hi, ignored);
+            return (lo & 0xFFFFFFFFu) | (hi << 32);
         }
 
-        Plugin* raw = plugin.get();
-        PluginApi* host = &api;
-        const std::string pluginName = plugin->info.name;
-        raw->instance = std::make_unique<WasmInstance>();
-        const auto resolver = [raw, host, pluginName](const std::string& module, const std::string& name) -> WasmInstance::HostFn {
-            if (module == "perlin" && name == "call")
-                return [raw, host](WasmInstance::HostContext& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t nr) {
-                    if (n != 5 || nr != 1) {
-                        c.error = "perlin.call has the wrong signature";
-                        return false;
-                    }
-                    const uint32_t op = static_cast<uint32_t>(a[0]);
-                    const uint8_t* in = c.instance.Memory(a[1], a[2]);
-                    uint8_t* out = c.instance.Memory(a[3], a[4]);
-                    if (!in || !out) {
-                        r[0] = static_cast<uint32_t>(PS_ERR_BAD_ARGUMENTS);
-                        return true;
-                    }
-                    PayloadReader rd(in, static_cast<size_t>(a[2]));
-                    PayloadWriter wr;
-                    int32_t rc = PS_OK;
-                    switch (op) {
-                    case PS_OP_LOG: {
-                        const uint8_t level = rd.U8();
-                        const std::string text = rd.Str();
-                        if (!rd.ok) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        Log(static_cast<LogLevel>(std::min<int>(level, 3)), "[" + raw->info.name + "] " + text);
-                        break;
-                    }
-                    case PS_OP_BROADCAST: {
-                        const std::string text = rd.Str();
-                        if (!rd.ok) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        host->Broadcast(text);
-                        break;
-                    }
-                    case PS_OP_MESSAGE: {
-                        const uint64_t id = rd.U64();
-                        const std::string text = rd.Str();
-                        if (!rd.ok) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        if (!host->Message(id, text)) rc = PS_ERR_NO_SUCH_PLAYER;
-                        break;
-                    }
-                    case PS_OP_KICK: {
-                        const uint64_t id = rd.U64();
-                        const std::string text = rd.Str();
-                        if (!rd.ok) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        if (!host->Kick(id, text)) rc = PS_ERR_NO_SUCH_PLAYER;
-                        break;
-                    }
-                    case PS_OP_REGISTER_COMMAND: {
-                        const std::string name = rd.Str();
-                        const std::string description = rd.Str();
-                        if (!rd.ok || name.empty()) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        raw->commands.insert(name);
-                        host->RegisterCommand(raw->info.name, name, description);
-                        break;
-                    }
-                    case PS_OP_PLAYERS: {
-                        const auto players = host->Players();
-                        wr.U32(static_cast<uint32_t>(players.size()));
-                        for (const auto& p : players) {
-                            wr.U64(p.id);
-                            wr.Str(p.name);
-                            wr.F64(p.x);
-                            wr.F64(p.y);
-                            wr.F64(p.z);
-                        }
-                        break;
-                    }
-                    case PS_OP_TELEPORT: {
-                        const uint64_t id = rd.U64();
-                        const double x = rd.F64(), y = rd.F64(), z = rd.F64();
-                        if (!rd.ok) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        if (!host->Teleport(id, x, y, z)) rc = PS_ERR_NO_SUCH_PLAYER;
-                        break;
-                    }
-                    case PS_OP_SET_BLOCK: {
-                        const int32_t x = rd.I32(), y = rd.I32(), z = rd.I32();
-                        const std::string block = rd.Str();
-                        if (!rd.ok) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        rc = host->SetBlock(x, y, z, block);
-                        break;
-                    }
-                    case PS_OP_GET_BLOCK: {
-                        const int32_t x = rd.I32(), y = rd.I32(), z = rd.I32();
-                        if (!rd.ok) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        std::string block;
-                        rc = host->GetBlock(x, y, z, block);
-                        if (rc == PS_OK) wr.Str(block);
-                        break;
-                    }
-                    case PS_OP_SERVER_INFO: {
-                        const auto s = host->GetStatus();
-                        wr.Str(s.name);
-                        wr.U32(s.players);
-                        wr.U32(s.maxPlayers);
-                        wr.U64(s.tick);
-                        wr.Str(s.backend);
-                        break;
-                    }
-                    case PS_OP_GIVE_ITEM: {
-                        const uint64_t id = rd.U64();
-                        const std::string item = rd.Str();
-                        const uint32_t count = rd.U32();
-                        if (!rd.ok || count == 0 || count > 4096) { rc = PS_ERR_BAD_ARGUMENTS; break; }
-                        const int left = host->GiveItem(id, item, static_cast<int>(count));
-                        if (left < 0) { rc = left; break; }
-                        wr.U32(static_cast<uint32_t>(left));
-                        break;
-                    }
-                    case PS_OP_TIME_MS:
-                        wr.I64(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-                        break;
-                    default: rc = PS_ERR_UNKNOWN_OP; break;
-                    }
-                    if (rc >= 0 && !wr.bytes.empty()) {
-                        if (wr.bytes.size() > a[4])
-                            rc = PS_ERR_BUFFER_TOO_SMALL;
-                        else {
-                            std::memcpy(out, wr.bytes.data(), wr.bytes.size());
-                            rc = static_cast<int32_t>(wr.bytes.size());
-                        }
-                    }
-                    r[0] = static_cast<uint32_t>(rc);
-                    return true;
-                };
-            if (module == "wasi_snapshot_preview1")
-                return WasiFunction(name, pluginName);
-            if (module == "env" && name == "emscripten_notify_memory_growth")
-                return [](WasmInstance::HostContext&, const uint64_t*, uint32_t, uint64_t* r, uint32_t nr) {
-                    if (nr) r[0] = 0;
-                    return true;
-                };
-            return {};
-        };
-
-        if (!raw->instance->Load(raw->wasm.data(), raw->wasm.size(), resolver, error))
-            return false;
-        if (!raw->instance->HasExport("perlin_event")) {
-            error = "not a Perlin server plugin (no perlin_event export)";
-            return false;
-        }
-        raw->hasAlloc = raw->instance->HasExport("perlin_alloc");
-        raw->hasFree = raw->instance->HasExport("perlin_free");
-        std::string ignored;
-        if (raw->instance->HasExport("_initialize"))
-            raw->instance->Call("_initialize", {}, nullptr, ignored);
-        uint64_t subs = 0;
-        if (raw->instance->HasExport("perlin_subscriptions") && raw->instance->Call("perlin_subscriptions", {}, &subs, ignored))
-            raw->subscriptions = static_cast<uint32_t>(subs);
-        raw->info.enabled = true;
-        LogInfo("plugin " + raw->info.name + (raw->info.version.empty() ? "" : " " + raw->info.version) + " loaded (" +
-                (raw->instance->Is64() ? "wasm64" : "wasm32") + " on " + raw->info.engine + ")");
-        plugins.push_back(std::move(plugin));
-        uint32_t ignoredResult = 0;
-        CallPlugin(*raw, PS_EVENT_ENABLE, {}, ignoredResult);
-        return true;
-    }
-
-    void PluginHost::UnloadAll() {
-        for (auto& p : plugins) {
-            uint32_t ignoredResult = 0;
-            if (p->info.enabled)
-                CallPlugin(*p, PS_EVENT_DISABLE, {}, ignoredResult);
-        }
-        plugins.clear();
-    }
-
-    bool PluginHost::CallPlugin(Plugin& p, uint32_t id, const std::vector<uint8_t>& payload, uint32_t& result) {
-        std::string error;
-        if (CallEvent(*p.instance, p.hasAlloc, p.hasFree, id, payload, result, error))
-            return true;
-        p.info.enabled = false;
-        p.info.error = error;
-        LogError("plugin " + p.info.name + " disabled after an error: " + error);
-        return false;
-    }
-
-    bool PluginHost::AnyoneListens(PsEvent event) const {
-        for (const auto& p : plugins)
-            if (p->info.enabled && (p->subscriptions & (1u << event)))
-                return true;
-        return false;
-    }
-
-    namespace {
         // calls perlin_event on one plugin; false when it trapped
-        bool CallEvent(WasmInstance& w, bool hasAlloc, bool hasFree, uint32_t id, const std::vector<uint8_t>& payload, uint32_t& result,
-                       std::string& error) {
+        bool CallEvent(WasmInstance& w, bool hasAlloc, bool hasFree, uint32_t id,
+                       std::span<const uint8_t> payload, uint32_t& result, std::string& error) {
             uint64_t ptr = 0;
             const uint64_t len = payload.size();
             if (len) {
@@ -396,37 +159,249 @@ namespace perlin::server {
         }
     }
 
-    uint32_t PluginHost::Dispatch(PsEvent event, const std::vector<uint8_t>& payload) {
-        uint32_t combined = 0;
-        for (auto& p : plugins) {
-            if (!p->info.enabled || !(p->subscriptions & (1u << event)) || event == PS_EVENT_COUNT)
-                continue;
-            uint32_t result = 0;
-            if (!CallPlugin(*p, static_cast<uint32_t>(event), payload, result))
-                continue;
-            combined |= result;
-            if (result & 1u)
-                break;
-        }
-        return combined;
+    PluginHost::PluginHost(PluginApi& api) : api(api) {
+        RegisterOps();
+    }
+    PluginHost::~PluginHost() {
+        UnloadAll();
     }
 
-    bool PluginHost::DispatchCommand(const std::string& plugin, uint64_t player, const std::string& command, const std::string& args) {
+    void PluginHost::RegisterOps() {
+        using abi::Op;
+        using abi::Status;
+        using Ctx = CallContext;
+        const auto found = [](bool ok) { return ok ? Status::Ok : Status::NotFound; };
+
+        ops.Raw(Op::Log, [](Ctx& c, abi::Reader& in, abi::Writer&) {
+            const int32_t level = in.get<int32_t>();
+            const std::string text = in.str();
+            if (!in.Ok())
+                return Status::BadArguments;
+            Log(static_cast<LogLevel>(std::clamp(level, 0, 3)), "[" + c.plugin.info.name + "] " + text);
+            return Status::Ok;
+        });
+        ops.Handle<Op::Clock>([](Ctx&) {
+            return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                            std::chrono::system_clock::now().time_since_epoch())
+                                            .count());
+        });
+        // name, usage, description: the SDK's command registration
+        ops.Raw(Op::CommandRegister, [](Ctx& c, abi::Reader& in, abi::Writer&) {
+            std::string name = in.str();
+            in.str();
+            const std::string description = in.str();
+            if (!in.Ok() || name.empty())
+                return Status::BadArguments;
+            if (name.starts_with('/'))
+                name.erase(0, 1);
+            c.plugin.commands.insert(name);
+            c.api.RegisterCommand(c.plugin.info.name, name, description);
+            return Status::Ok;
+        });
+        ops.Raw(Op::CommandUnregister, [](Ctx& c, abi::Reader& in, abi::Writer&) {
+            c.plugin.commands.erase(in.str());
+            return in.Ok() ? Status::Ok : Status::BadArguments;
+        });
+        ops.Handle<Op::Broadcast>([](Ctx& c, const abi::TextMessage& m) { c.api.Broadcast(m.text); });
+        ops.Handle<Op::PlayerMessage>(
+            [found](Ctx& c, const abi::PlayerText& m) { return found(c.api.Message(m.player, m.text)); });
+        ops.Handle<Op::Kick>(
+            [found](Ctx& c, const abi::PlayerText& m) { return found(c.api.Kick(m.player, m.text)); });
+        ops.Handle<Op::OnlinePlayers>([](Ctx& c) {
+            abi::OnlinePlayerList list;
+            for (const auto& p : c.api.Players())
+                list.players.push_back({p.id, p.name, p.x, p.y, p.z});
+            return list;
+        });
+        ops.Handle<Op::Teleport>([found](Ctx& c, const abi::ServerTeleport& t) {
+            return found(c.api.Teleport(t.player, t.x, t.y, t.z));
+        });
+        ops.Handle<Op::SetBlock>(
+            [](Ctx& c, const abi::BlockWrite& b) { return c.api.SetBlock(b.x, b.y, b.z, b.block); });
+        ops.Handle<Op::BlockName>(
+            [](Ctx& c, const abi::BlockCoord& at) -> abi::host::Result<abi::TextMessage> {
+                abi::TextMessage name;
+                if (const Status s = c.api.GetBlock(at.x, at.y, at.z, name.text); s != Status::Ok)
+                    return std::unexpected(s);
+                return name;
+            });
+        ops.Handle<Op::ServerInfo>([](Ctx& c) {
+            const PluginApi::Status s = c.api.GetStatus();
+            return abi::ServerStatus{s.name, s.players, s.maxPlayers, s.tick, s.backend};
+        });
+        ops.Handle<Op::GiveItem>(
+            [](Ctx& c, const abi::GiveItemRequest& r) -> abi::host::Result<abi::GiveItemResult> {
+                if (r.count == 0 || r.count > 4096)
+                    return std::unexpected(Status::BadArguments);
+                const auto left = c.api.GiveItem(r.player, r.item, static_cast<int>(r.count));
+                if (!left)
+                    return std::unexpected(left.error());
+                return abi::GiveItemResult{static_cast<uint32_t>(*left)};
+            });
+    }
+
+    void PluginHost::LoadDirectory(const std::string& dir) {
+        std::error_code ec;
+        if (dir.empty() || !fs::is_directory(dir, ec))
+            return;
+        std::vector<fs::path> files;
+        for (const auto& entry : fs::directory_iterator(dir, ec))
+            if (entry.is_regular_file() && entry.path().extension() == ".wasm")
+                files.push_back(entry.path());
+        std::ranges::sort(files);
+        for (const fs::path& file : files) {
+            std::string error;
+            if (!LoadFile(file.string(), error))
+                LogWarn("plugin " + file.filename().string() + " not loaded: " + error);
+        }
+    }
+
+    bool PluginHost::LoadFile(const std::string& path, std::string& error) {
+        auto plugin = std::make_unique<Plugin>();
+        plugin->info.file = path;
+        plugin->info.name = fs::path(path).stem().string();
+        plugin->info.engine = mods::WasmEngineName();
+        if (!file::ReadBytes(path, plugin->wasm)) {
+            error = "cannot read the file";
+            return false;
+        }
+        // optional name.json beside the module
+        if (std::string text; file::Read(fs::path(path).replace_extension(".json"), text)) {
+            json::Value manifest;
+            if (json::Parse(text, manifest)) {
+                if (std::string name = manifest["name"].String(); !name.empty())
+                    plugin->info.name = std::move(name);
+                plugin->info.version = manifest["version"].String();
+                plugin->info.author = manifest["author"].String();
+                plugin->info.description = manifest["description"].String();
+            }
+        }
+
+        Plugin* raw = plugin.get();
+        const std::string pluginName = plugin->info.name;
+        raw->instance = std::make_unique<WasmInstance>();
+        const auto resolver = [this, raw, pluginName](const std::string& module,
+                                                      const std::string& name) -> WasmInstance::HostFn {
+            if (module == "perlin" && name == "call")
+                return [this, raw](WasmInstance::HostContext& c, const uint64_t* a, uint32_t n, uint64_t* r,
+                                   uint32_t nr) {
+                    if (n != 5 || nr != 1) {
+                        c.error = "perlin.call has the wrong signature";
+                        return false;
+                    }
+                    const uint8_t* in = c.instance.Memory(a[1], a[2]);
+                    uint8_t* out = c.instance.Memory(a[3], a[4]);
+                    if ((!in && a[2]) || (!out && a[4])) {
+                        r[0] = static_cast<uint32_t>(abi::Status::BadArguments);
+                        return true;
+                    }
+                    CallContext ctx{*raw, api};
+                    abi::Writer reply;
+                    // server plugins hold every permission: the operator chose to install them
+                    const abi::Status status = ops.Call(ctx, static_cast<uint32_t>(a[0]),
+                                                        {in, static_cast<size_t>(a[2])}, reply, ~0u);
+                    int32_t rc = static_cast<int32_t>(status);
+                    if (status == abi::Status::Ok) {
+                        if (reply.Size() > a[4]) {
+                            // the SDK grows its buffer and calls again
+                            rc = -static_cast<int32_t>(abi::kNeedMoreBase + reply.Size());
+                        } else {
+                            if (reply.Size())
+                                std::memcpy(out, reply.Data(), reply.Size());
+                            rc = static_cast<int32_t>(reply.Size());
+                        }
+                    }
+                    r[0] = static_cast<uint32_t>(rc);
+                    return true;
+                };
+            if (module == "wasi_snapshot_preview1")
+                return WasiFunction(name, pluginName);
+            if (module == "env" && name == "emscripten_notify_memory_growth")
+                return [](WasmInstance::HostContext&, const uint64_t*, uint32_t, uint64_t* r, uint32_t nr) {
+                    if (nr)
+                        r[0] = 0;
+                    return true;
+                };
+            return {};
+        };
+
+        if (!raw->instance->Load(raw->wasm.data(), raw->wasm.size(), resolver, error))
+            return false;
+        if (!raw->instance->HasExport("perlin_event")) {
+            error = "not a Perlin plugin (no perlin_event export)";
+            return false;
+        }
+        raw->hasAlloc = raw->instance->HasExport("perlin_alloc");
+        raw->hasFree = raw->instance->HasExport("perlin_free");
+        std::string ignored;
+        if (raw->instance->HasExport("_initialize"))
+            raw->instance->Call("_initialize", {}, nullptr, ignored);
+        raw->info.enabled = true;
+        LogInfo("plugin " + raw->info.name + (raw->info.version.empty() ? "" : " " + raw->info.version) +
+                " loaded (" + (raw->instance->Is64() ? "wasm64" : "wasm32") + " on " + raw->info.engine +
+                ")");
+        plugins.push_back(std::move(plugin));
+        uint32_t result = 0;
+        // the SDK boots the plugin class on Load; subscriptions are only known after that
+        CallPlugin(*raw, abi::Event::Load, {}, result);
+        raw->subscriptions = ReadSubscriptions(*raw->instance);
+        return true;
+    }
+
+    void PluginHost::UnloadAll() {
+        for (auto& p : plugins) {
+            uint32_t result = 0;
+            if (p->info.enabled)
+                CallPlugin(*p, abi::Event::Unload, {}, result);
+        }
+        plugins.clear();
+    }
+
+    bool PluginHost::CallPlugin(Plugin& p, abi::Event event, std::span<const uint8_t> payload,
+                                uint32_t& result) {
+        std::string error;
+        if (CallEvent(*p.instance, p.hasAlloc, p.hasFree, static_cast<uint32_t>(event), payload, result,
+                      error))
+            return true;
+        p.info.enabled = false;
+        p.info.error = error;
+        LogError("plugin " + p.info.name + " disabled after an error: " + error);
+        return false;
+    }
+
+    bool PluginHost::AnyoneListens(abi::Event event) const {
+        const uint64_t bit = abi::host::SubscriptionBit(event);
+        return std::ranges::any_of(
+            plugins, [bit](const auto& p) { return p->info.enabled && (p->subscriptions & bit); });
+    }
+
+    bool PluginHost::DispatchEncoded(abi::Event event, std::span<const uint8_t> payload) {
+        const uint64_t bit = abi::host::SubscriptionBit(event);
+        for (auto& p : plugins) {
+            if (!p->info.enabled || !(p->subscriptions & bit))
+                continue;
+            uint32_t result = 0;
+            if (CallPlugin(*p, event, payload, result) && (result & abi::kEventCancel))
+                return true;
+        }
+        return false;
+    }
+
+    bool PluginHost::DispatchCommand(const std::string& plugin, uint64_t player, const std::string& command,
+                                     const std::string& args) {
         for (auto& p : plugins) {
             if (p->info.name != plugin || !p->info.enabled)
                 continue;
-            PayloadWriter w;
-            w.U64(player);
-            w.Str(command);
-            w.Str(args);
+            const abi::Writer w = abi::host::Encode<abi::Event::Command>({command, args, player});
             uint32_t result = 0;
-            return CallPlugin(*p, PS_EVENT_COMMAND, w.bytes, result);
+            return CallPlugin(*p, abi::Event::Command, {w.Data(), w.Size()}, result);
         }
         return false;
     }
 
     std::vector<PluginHost::Info> PluginHost::List() const {
         std::vector<Info> out;
+        out.reserve(plugins.size());
         for (const auto& p : plugins)
             out.push_back(p->info);
         return out;

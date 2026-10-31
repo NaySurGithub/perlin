@@ -14,19 +14,27 @@ using namespace perlin;
 namespace fs = std::filesystem;
 
 namespace perlin {
-    std::string KeyName(int) { return {}; }
-    int KeyFromName(const std::string&) { return 0; }
-    std::string MouseName(int) { return {}; }
-    int MouseFromName(const std::string&) { return 0; }
+    std::string KeyName(int) {
+        return {};
+    }
+    int KeyFromName(const std::string&) {
+        return 0;
+    }
+    std::string MouseName(int) {
+        return {};
+    }
+    int MouseFromName(const std::string&) {
+        return 0;
+    }
 }
 
 static int failures = 0;
-#define CHECK(c)                                                                    \
-    do {                                                                            \
-        if (!(c)) {                                                                 \
-            std::cout << "FAIL line " << __LINE__ << ": " #c << std::endl;          \
-            failures++;                                                             \
-        }                                                                           \
+#define CHECK(c)                                                                                             \
+    do {                                                                                                     \
+        if (!(c)) {                                                                                          \
+            std::cout << "FAIL line " << __LINE__ << ": " #c << std::endl;                                   \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 int main(int argc, char** argv) {
@@ -62,8 +70,8 @@ int main(int argc, char** argv) {
         CHECK(mz_zip_writer_init_file(&zip, zipPath.c_str(), 0));
         for (const char* n : {"stone.png", "dirt.png"}) {
             const std::string src = (tmp / "packs/Fake 64x/textures/blocks" / n).string();
-            CHECK(mz_zip_writer_add_file(&zip, (std::string("Top Folder/textures/blocks/") + n).c_str(), src.c_str(),
-                                         nullptr, 0, MZ_DEFAULT_LEVEL));
+            CHECK(mz_zip_writer_add_file(&zip, (std::string("Top Folder/textures/blocks/") + n).c_str(),
+                                         src.c_str(), nullptr, 0, MZ_DEFAULT_LEVEL));
         }
         mz_zip_writer_finalize_archive(&zip);
         mz_zip_writer_end(&zip);
@@ -86,8 +94,7 @@ int main(int argc, char** argv) {
     lib.SetTexturePack(true);
     CHECK(BlockLibrary::TilePx() == 64);
     const std::string vanilla = argv[1];
-    for (int attempt = 0; attempt < 12 && !lib.EnsureLoaded((tmp / "perlin").string(), vanilla); attempt++) {
-    }
+    for (int attempt = 0; attempt < 12 && !lib.EnsureLoaded((tmp / "perlin").string(), vanilla); attempt++) {}
     CHECK(lib.Ready());
     const int tiles = lib.TilesLoaded();
     CHECK(tiles > 100);

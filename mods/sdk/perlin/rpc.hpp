@@ -18,8 +18,7 @@ namespace perlin {
 }
 #else
 namespace perlin {
-    template <class E>
-    class unexpected {
+    template <class E> class unexpected {
     public:
         constexpr explicit unexpected(E e) : err(std::move(e)) {}
         constexpr const E& error() const { return err; }
@@ -27,15 +26,12 @@ namespace perlin {
     private:
         E err;
     };
-    template <class E>
-    unexpected(E) -> unexpected<E>;
+    template <class E> unexpected(E) -> unexpected<E>;
 
-    template <class T, class E>
-    class expected {
+    template <class T, class E> class expected {
     public:
         constexpr expected(T v) : val(std::move(v)), ok(true) {}
-        template <class G>
-        constexpr expected(const unexpected<G>& u) : err(u.error()), ok(false) {}
+        template <class G> constexpr expected(const unexpected<G>& u) : err(u.error()), ok(false) {}
         constexpr bool has_value() const { return ok; }
         constexpr explicit operator bool() const { return ok; }
         constexpr T& operator*() & { return val; }
@@ -46,8 +42,9 @@ namespace perlin {
         constexpr T& value() & { return val; }
         constexpr const T& value() const& { return val; }
         constexpr const E& error() const { return err; }
-        template <class U>
-        constexpr T value_or(U&& fallback) const& { return ok ? val : static_cast<T>(std::forward<U>(fallback)); }
+        template <class U> constexpr T value_or(U&& fallback) const& {
+            return ok ? val : static_cast<T>(std::forward<U>(fallback));
+        }
 
     private:
         T val{};
@@ -55,12 +52,10 @@ namespace perlin {
         bool ok;
     };
 
-    template <class E>
-    class expected<void, E> {
+    template <class E> class expected<void, E> {
     public:
         constexpr expected() : ok(true) {}
-        template <class G>
-        constexpr expected(const unexpected<G>& u) : err(u.error()), ok(false) {}
+        template <class G> constexpr expected(const unexpected<G>& u) : err(u.error()), ok(false) {}
         constexpr bool has_value() const { return ok; }
         constexpr explicit operator bool() const { return ok; }
         constexpr void operator*() const {}
@@ -105,21 +100,22 @@ namespace perlin {
         friend constexpr bool operator==(Error, Error) = default;
     };
 
-    template <class T>
-    using Result = expected<T, Error>;
+    template <class T> using Result = expected<T, Error>;
 
     namespace detail {
         extern "C" {
 #if defined(__wasm__)
         __attribute__((import_module("perlin"), import_name("call")))
 #endif
-        int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen, void* out, uint32_t outCap);
+        int32_t
+        perlin_host_call(uint32_t op, const void* in, uint32_t inLen, void* out, uint32_t outCap);
         }
 
         inline Result<std::vector<uint8_t>> call(Op op, const abi::Writer& args) {
             std::vector<uint8_t> out(2048);
             for (int attempt = 0; attempt < 4; attempt++) {
-                const int32_t rc = perlin_host_call(static_cast<uint32_t>(op), args.Data(), static_cast<uint32_t>(args.Size()), out.data(),
+                const int32_t rc = perlin_host_call(static_cast<uint32_t>(op), args.Data(),
+                                                    static_cast<uint32_t>(args.Size()), out.data(),
                                                     static_cast<uint32_t>(out.size()));
                 if (rc >= 0) {
                     out.resize(static_cast<size_t>(rc));
@@ -134,10 +130,11 @@ namespace perlin {
             return unexpected(Error{Status::Failed});
         }
 
-        inline Result<std::vector<uint8_t>> call(Op op) { return call(op, abi::Writer{}); }
+        inline Result<std::vector<uint8_t>> call(Op op) {
+            return call(op, abi::Writer{});
+        }
 
-        template <class T>
-        Result<T> call_as(Op op, const abi::Writer& args) {
+        template <class T> Result<T> call_as(Op op, const abi::Writer& args) {
             auto bytes = call(op, args);
             if (!bytes)
                 return unexpected(bytes.error());
@@ -148,13 +145,11 @@ namespace perlin {
             return value;
         }
 
-        template <class T>
-        Result<T> call_as(Op op) {
+        template <class T> Result<T> call_as(Op op) {
             return call_as<T>(op, abi::Writer{});
         }
 
-        template <class T>
-        Result<std::vector<T>> call_list(Op op, const abi::Writer& args) {
+        template <class T> Result<std::vector<T>> call_list(Op op, const abi::Writer& args) {
             auto bytes = call(op, args);
             if (!bytes)
                 return unexpected(bytes.error());
@@ -165,8 +160,7 @@ namespace perlin {
             return list;
         }
 
-        template <class T>
-        Result<std::vector<T>> call_list(Op op) {
+        template <class T> Result<std::vector<T>> call_list(Op op) {
             return call_list<T>(op, abi::Writer{});
         }
 
@@ -182,14 +176,56 @@ namespace perlin {
             return {};
         }
 
-        inline Result<void> call_void(Op op) { return call_void(op, abi::Writer{}); }
+        inline Result<void> call_void(Op op) {
+            return call_void(op, abi::Writer{});
+        }
+    }
+
+    namespace detail {
+        template <class T>
+        using call_result_t =
+            std::conditional_t<std::is_same_v<T, abi::Nothing>, void,
+                               std::conditional_t<std::is_same_v<T, abi::Raw>, std::vector<uint8_t>, T>>;
+
+        template <abi::Op O>
+        Result<call_result_t<typename abi::OpSpec<O>::Response>> call_encoded(const abi::Writer& args) {
+            using Res = typename abi::OpSpec<O>::Response;
+            if constexpr (std::is_same_v<Res, abi::Nothing>)
+                return call_void(O, args);
+            else if constexpr (std::is_same_v<Res, abi::Raw>)
+                return call(O, args);
+            else
+                return call_as<Res>(O, args);
+        }
+    }
+
+    // any host function from abi_table.h, typed by its table entry:
+    //   call<Op::PlayerState>()                       -> Result<abi::PlayerState>
+    //   call<Op::Broadcast>({.text = "hi"})           -> Result<void>
+    //   call<Op::Block>(writer)                       raw ops take the bytes they were always given
+    template <abi::Op O>
+        requires std::is_same_v<typename abi::OpSpec<O>::Request, abi::Nothing>
+    auto call() {
+        return detail::call_encoded<O>(abi::Writer{});
+    }
+
+    template <abi::Op O>
+        requires std::is_same_v<typename abi::OpSpec<O>::Request, abi::Raw>
+    auto call(const abi::Writer& args) {
+        return detail::call_encoded<O>(args);
+    }
+
+    template <abi::Op O, class Req = typename abi::OpSpec<O>::Request>
+        requires(!std::is_same_v<Req, abi::Nothing> && !std::is_same_v<Req, abi::Raw>)
+    auto call(const Req& request) {
+        abi::Writer w;
+        w.write(request);
+        return detail::call_encoded<O>(w);
     }
 }
 
-template <>
-struct std::formatter<perlin::Error> : std::formatter<std::string_view> {
-    template <class Ctx>
-    auto format(const perlin::Error& e, Ctx& ctx) const {
+template <> struct std::formatter<perlin::Error> : std::formatter<std::string_view> {
+    template <class Ctx> auto format(const perlin::Error& e, Ctx& ctx) const {
         return std::formatter<std::string_view>::format(e.message(), ctx);
     }
 };

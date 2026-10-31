@@ -51,15 +51,7 @@ namespace perlin {
     };
     static_assert(sizeof(UiVertex) == 24);
 
-    enum class UiLayer : uint8_t {
-        World,
-        WorldLate,
-        Hand,
-        Gui,
-        Doll,
-        Top,
-        Export
-    };
+    enum class UiLayer : uint8_t { World, WorldLate, Hand, Gui, Doll, Top, Export };
 
     enum class DrawMaterial : uint8_t { Auto, Entity, Particle, Weather, Cracks, Nametag };
 
@@ -157,7 +149,7 @@ namespace perlin {
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
         virtual bool ReloadShaders() { return false; }
-        virtual bool SetJavaShaderPack(const std::string& , const std::map<std::string, std::string>& ,
+        virtual bool SetJavaShaderPack(const std::string&, const std::map<std::string, std::string>&,
                                        std::string& error) {
             error = "Java shader packs are not supported by this renderer";
             return false;
@@ -166,7 +158,7 @@ namespace perlin {
         virtual bool JavaShaderPackActive() const { return false; }
         virtual std::vector<JavaPackOption> JavaShaderPackOptions() const { return {}; }
         virtual std::string JavaShaderPackError() const { return {}; }
-        virtual void SetJavaShaderPackDimension(const std::string& ) {}
+        virtual void SetJavaShaderPackDimension(const std::string&) {}
         // block name of a palette id, which packs map to their own block ids
         virtual void SetBlockNameLookup(std::function<std::string(uint16_t)>) {}
         virtual bool PackShadowsActive() const { return false; }
@@ -182,9 +174,10 @@ namespace perlin {
 
         virtual void BeginFrame(const FrameParams& params) = 0;
         virtual void EndFrame() = 0;
-        virtual bool PresentGenerated(int  , int  ) { return false; }
+        virtual bool PresentGenerated(int, int) { return false; }
         virtual void RequestScreenshot(const std::string& path) = 0;
-        using CaptureSink = std::function<void(uint32_t width, uint32_t height, uint32_t pitch, const uint8_t* bgra, bool flipY)>;
+        using CaptureSink = std::function<void(uint32_t width, uint32_t height, uint32_t pitch,
+                                               const uint8_t* bgra, bool flipY)>;
         virtual void SetForcedSize(int, int) {}
         virtual bool SetExportTarget(bool) { return false; }
         virtual bool QueryNativeHandles(NativeHandleInfo&) const { return false; }
@@ -198,12 +191,13 @@ namespace perlin {
         virtual int MaxAtlasLayers(int) const { return 2048; }
         virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba) = 0;
 
-        virtual uint32_t UiCreateTexture(int width, int height, const uint8_t* rgba, bool linear, bool repeat = false) = 0;
+        virtual uint32_t UiCreateTexture(int width, int height, const uint8_t* rgba, bool linear,
+                                         bool repeat = false) = 0;
         virtual void UiDestroyTexture(uint32_t texture) = 0;
         virtual uint32_t UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
                                       uint32_t indexCount) = 0;
-        virtual uint32_t UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
-                                           uint32_t indexCount) {
+        virtual uint32_t UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount,
+                                           const uint32_t* indices, uint32_t indexCount) {
             return UiCreateMesh(vertices, vertexCount, indices, indexCount);
         }
         virtual void UiDestroyMesh(uint32_t mesh) = 0;

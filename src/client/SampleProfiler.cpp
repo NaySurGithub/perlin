@@ -50,7 +50,8 @@ namespace perlin {
         if (!path || gStarted)
             return;
         gStarted = true;
-        gSince = Now() + (std::getenv("PERLIN_SAMPLE_DELAY") ? std::atof(std::getenv("PERLIN_SAMPLE_DELAY")) : 0.0);
+        gSince = Now() +
+                 (std::getenv("PERLIN_SAMPLE_DELAY") ? std::atof(std::getenv("PERLIN_SAMPLE_DELAY")) : 0.0);
         void* warm[4];
         backtrace(warm, 4);
         std::signal(SIGUSR2, OnSignal);

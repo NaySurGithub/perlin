@@ -14,33 +14,50 @@ namespace perlin::server::vanilla {
         struct CornerHash {
             size_t operator()(const CornerKey& k) const {
                 uint64_t h = reinterpret_cast<uintptr_t>(k.node) * 0x9E3779B97F4A7C15ull;
-                h ^= (static_cast<uint64_t>(static_cast<uint32_t>(k.x)) << 32 | static_cast<uint32_t>(k.z)) * 0xC2B2AE3D27D4EB4Full;
+                h ^= (static_cast<uint64_t>(static_cast<uint32_t>(k.x)) << 32 | static_cast<uint32_t>(k.z)) *
+                     0xC2B2AE3D27D4EB4Full;
                 h ^= static_cast<uint64_t>(static_cast<uint32_t>(k.y)) * 0x165667B19E3779F9ull;
                 return static_cast<size_t>(h ^ (h >> 29));
             }
         };
         thread_local std::unordered_map<CornerKey, float, CornerHash>* t_corners = nullptr;
 
-        float Lerp(float t, float a, float b) { return a + t * (b - a); }
-        float Clamp(float v, float lo, float hi) { return v < lo ? lo : std::min(v, hi); }
+        float Lerp(float t, float a, float b) {
+            return a + t * (b - a);
+        }
+        float Clamp(float v, float lo, float hi) {
+            return v < lo ? lo : std::min(v, hi);
+        }
 
         // java's Math.min/max on floats: NaN wins, -0.0 < 0.0
         float JMin(float a, float b) {
-            if (a != a) return a;
-            if (a == 0.0f && b == 0.0f) return std::signbit(a) ? a : b;
+            if (a != a)
+                return a;
+            if (a == 0.0f && b == 0.0f)
+                return std::signbit(a) ? a : b;
             return a <= b ? a : b;
         }
         float JMax(float a, float b) {
-            if (a != a) return a;
-            if (a == 0.0f && b == 0.0f) return std::signbit(a) ? b : a;
+            if (a != a)
+                return a;
+            if (a == 0.0f && b == 0.0f)
+                return std::signbit(a) ? b : a;
             return a >= b ? a : b;
         }
 
-        std::string Strip(const std::string& s) { return s.starts_with("minecraft:") ? s.substr(10) : s; }
+        std::string Strip(const std::string& s) {
+            return s.starts_with("minecraft:") ? s.substr(10) : s;
+        }
     }
 
-    DfCacheScope::DfCacheScope() { t_corners = new std::unordered_map<CornerKey, float, CornerHash>(); t_corners->reserve(1 << 16); }
-    DfCacheScope::~DfCacheScope() { delete t_corners; t_corners = nullptr; }
+    DfCacheScope::DfCacheScope() {
+        t_corners = new std::unordered_map<CornerKey, float, CornerHash>();
+        t_corners->reserve(1 << 16);
+    }
+    DfCacheScope::~DfCacheScope() {
+        delete t_corners;
+        t_corners = nullptr;
+    }
 
     float SplineNode::Eval(int x, int y, int z) const {
         const float c = coordinate->Eval(x, y, z);
@@ -49,10 +66,16 @@ namespace perlin::server::vanilla {
         int lo = 0, hi = n;
         while (lo < hi) {
             const int mid = (lo + hi) / 2;
-            if (c < locations[static_cast<size_t>(mid)]) hi = mid; else lo = mid + 1;
+            if (c < locations[static_cast<size_t>(mid)])
+                hi = mid;
+            else
+                lo = mid + 1;
         }
         const int i = lo - 1;
-        const auto valueAt = [&](int k) { return nested[static_cast<size_t>(k)] ? nested[static_cast<size_t>(k)]->Eval(x, y, z) : constants[static_cast<size_t>(k)]; };
+        const auto valueAt = [&](int k) {
+            return nested[static_cast<size_t>(k)] ? nested[static_cast<size_t>(k)]->Eval(x, y, z)
+                                                  : constants[static_cast<size_t>(k)];
+        };
         const auto extend = [&](int k) {
             const float v = valueAt(k);
             const float d = derivatives[static_cast<size_t>(k)];
@@ -74,30 +97,52 @@ namespace perlin::server::vanilla {
     float DfNode::Eval(int x, int y, int z) const {
         using O = Op;
         switch (op) {
-        case O::Constant: return value;
-        case O::Add: return in[0]->Eval(x, y, z) + in[1]->Eval(x, y, z);
-        case O::Sub: return in[0]->Eval(x, y, z) - in[1]->Eval(x, y, z);
-        case O::Mul: return in[0]->Eval(x, y, z) * in[1]->Eval(x, y, z);
+        case O::Constant:
+            return value;
+        case O::Add:
+            return in[0]->Eval(x, y, z) + in[1]->Eval(x, y, z);
+        case O::Sub:
+            return in[0]->Eval(x, y, z) - in[1]->Eval(x, y, z);
+        case O::Mul:
+            return in[0]->Eval(x, y, z) * in[1]->Eval(x, y, z);
         case O::Div: {
             const float l = in[0]->Eval(x, y, z);
             return l == 0.0f ? 0.0f : l / in[1]->Eval(x, y, z);
         }
-        case O::Min: return JMin(in[0]->Eval(x, y, z), in[1]->Eval(x, y, z));
-        case O::Max: return JMax(in[0]->Eval(x, y, z), in[1]->Eval(x, y, z));
-        case O::Abs: return std::fabs(in[0]->Eval(x, y, z));
-        case O::Square: { const float v = in[0]->Eval(x, y, z); return v * v; }
-        case O::Cube: { const float v = in[0]->Eval(x, y, z); return v * v * v; }
-        case O::HalfNegative: { const float v = in[0]->Eval(x, y, z); return v > 0.0f ? v : v * 0.5f; }
-        case O::QuarterNegative: { const float v = in[0]->Eval(x, y, z); return v > 0.0f ? v : v * 0.25f; }
+        case O::Min:
+            return JMin(in[0]->Eval(x, y, z), in[1]->Eval(x, y, z));
+        case O::Max:
+            return JMax(in[0]->Eval(x, y, z), in[1]->Eval(x, y, z));
+        case O::Abs:
+            return std::fabs(in[0]->Eval(x, y, z));
+        case O::Square: {
+            const float v = in[0]->Eval(x, y, z);
+            return v * v;
+        }
+        case O::Cube: {
+            const float v = in[0]->Eval(x, y, z);
+            return v * v * v;
+        }
+        case O::HalfNegative: {
+            const float v = in[0]->Eval(x, y, z);
+            return v > 0.0f ? v : v * 0.5f;
+        }
+        case O::QuarterNegative: {
+            const float v = in[0]->Eval(x, y, z);
+            return v > 0.0f ? v : v * 0.25f;
+        }
         case O::Squeeze: {
             const float c = Clamp(in[0]->Eval(x, y, z), -1.0f, 1.0f);
             return c / 2.0f - (c * c * c) / 24.0f;
         }
-        case O::Negate: return -in[0]->Eval(x, y, z);
-        case O::Clamp: return Clamp(in[0]->Eval(x, y, z), lo, hi);
+        case O::Negate:
+            return -in[0]->Eval(x, y, z);
+        case O::Clamp:
+            return Clamp(in[0]->Eval(x, y, z), lo, hi);
         case O::Noise: {
             // shifts (when present) are evaluated at the block and added after scaling
-            double nx = static_cast<double>(x) * xzScale, ny = static_cast<double>(y) * yScale, nz = static_cast<double>(z) * xzScale;
+            double nx = static_cast<double>(x) * xzScale, ny = static_cast<double>(y) * yScale,
+                   nz = static_cast<double>(z) * xzScale;
             if (!in.empty()) {
                 nx += static_cast<double>(in[0]->Eval(x, y, z));
                 nz += static_cast<double>(in[2]->Eval(x, y, z));
@@ -106,9 +151,18 @@ namespace perlin::server::vanilla {
             }
             return noise->Get(nx, ny, nz);
         }
-        case O::ShiftA: return noise->Get(static_cast<double>(x) * 0.25, static_cast<double>(y) * 0.0, static_cast<double>(z) * 0.25) * 4.0f;
-        case O::ShiftB: return noise->Get(static_cast<double>(z) * 0.25, static_cast<double>(x) * 0.25, static_cast<double>(y) * 0.0) * 4.0f;
-        case O::Shift: return noise->Get(static_cast<double>(x) * 0.25, static_cast<double>(y) * 0.25, static_cast<double>(z) * 0.25) * 4.0f;
+        case O::ShiftA:
+            return noise->Get(static_cast<double>(x) * 0.25, static_cast<double>(y) * 0.0,
+                              static_cast<double>(z) * 0.25) *
+                   4.0f;
+        case O::ShiftB:
+            return noise->Get(static_cast<double>(z) * 0.25, static_cast<double>(x) * 0.25,
+                              static_cast<double>(y) * 0.0) *
+                   4.0f;
+        case O::Shift:
+            return noise->Get(static_cast<double>(x) * 0.25, static_cast<double>(y) * 0.25,
+                              static_cast<double>(z) * 0.25) *
+                   4.0f;
         case O::Gradient: {
             const int c = axis == 0 ? x : axis == 1 ? y : z;
             const int clamped = std::clamp(c, minCoordinate, maxCoordinate);
@@ -116,8 +170,10 @@ namespace perlin::server::vanilla {
         }
         case O::Lerp: {
             const float alpha = in[0]->Eval(x, y, z);
-            if (alpha == 0.0f) return in[1]->Eval(x, y, z);
-            if (alpha == 1.0f) return in[2]->Eval(x, y, z);
+            if (alpha == 0.0f)
+                return in[1]->Eval(x, y, z);
+            if (alpha == 1.0f)
+                return in[2]->Eval(x, y, z);
             return Lerp(alpha, in[1]->Eval(x, y, z), in[2]->Eval(x, y, z));
         }
         case O::RangeChoice: {
@@ -131,16 +187,23 @@ namespace perlin::server::vanilla {
                 i++;
             return in[1 + i]->Eval(x, y, z);
         }
-        case O::Spline: return spline->Eval(x, y, z);
-        case O::Pass: return in[0]->Eval(x, y, z);
+        case O::Spline:
+            return spline->Eval(x, y, z);
+        case O::Pass:
+            return in[0]->Eval(x, y, z);
         case O::Interpolated: {
             // between cell corners the value is blended from the inner function sampled at the eight corners
-            const auto mod = [](int a, int b) { const int r = a % b; return r < 0 ? r + b : r; };
+            const auto mod = [](int a, int b) {
+                const int r = a % b;
+                return r < 0 ? r + b : r;
+            };
             const int fx = mod(x, cellXz), fy = mod(y, cellY), fz = mod(z, cellXz);
             if (fx == 0 && fy == 0 && fz == 0)
                 return in[0]->Eval(x, y, z);
             const int x0 = x - fx, y0 = y - fy, z0 = z - fz;
-            const float tx = static_cast<float>(fx) / static_cast<float>(cellXz), ty = static_cast<float>(fy) / static_cast<float>(cellY), tz = static_cast<float>(fz) / static_cast<float>(cellXz);
+            const float tx = static_cast<float>(fx) / static_cast<float>(cellXz),
+                        ty = static_cast<float>(fy) / static_cast<float>(cellY),
+                        tz = static_cast<float>(fz) / static_cast<float>(cellXz);
             const auto corner = [&](int cx, int cy, int cz) {
                 if (!t_corners)
                     return in[0]->Eval(cx, cy, cz);
@@ -151,15 +214,19 @@ namespace perlin::server::vanilla {
                 t_corners->emplace(key, v);
                 return v;
             };
-            const float v000 = corner(x0, y0, z0), v100 = corner(x0 + cellXz, y0, z0), v010 = corner(x0, y0 + cellY, z0), v110 = corner(x0 + cellXz, y0 + cellY, z0);
-            const float v001 = corner(x0, y0, z0 + cellXz), v101 = corner(x0 + cellXz, y0, z0 + cellXz), v011 = corner(x0, y0 + cellY, z0 + cellXz),
+            const float v000 = corner(x0, y0, z0), v100 = corner(x0 + cellXz, y0, z0),
+                        v010 = corner(x0, y0 + cellY, z0), v110 = corner(x0 + cellXz, y0 + cellY, z0);
+            const float v001 = corner(x0, y0, z0 + cellXz), v101 = corner(x0 + cellXz, y0, z0 + cellXz),
+                        v011 = corner(x0, y0 + cellY, z0 + cellXz),
                         v111 = corner(x0 + cellXz, y0 + cellY, z0 + cellXz);
             const float a = Lerp(ty, Lerp(tx, v000, v100), Lerp(tx, v010, v110));
             const float b = Lerp(ty, Lerp(tx, v001, v101), Lerp(tx, v011, v111));
             return Lerp(tz, a, b);
         }
-        case O::OldBlendedNoise: return blended->Get(x, y, z);
-        case O::Unsupported: return 0.0f;
+        case O::OldBlendedNoise:
+            return blended->Get(x, y, z);
+        case O::Unsupported:
+            return 0.0f;
         }
         return 0.0f;
     }
@@ -229,13 +296,27 @@ namespace perlin::server::vanilla {
             return Load(v.text);
         const std::string type = Strip(v["type"].String());
         const auto child = [&](const char* key) { return Build(v[key]); };
-        const auto f = [&](const char* key, double fallback = 0.0) { return static_cast<float>(v[key].Number(fallback)); };
-        if (type == "add" || type == "sub" || type == "mul" || type == "div" || type == "min" || type == "max") {
-            node->op = type == "add" ? O::Add : type == "sub" ? O::Sub : type == "mul" ? O::Mul : type == "div" ? O::Div : type == "min" ? O::Min : O::Max;
+        const auto f = [&](const char* key, double fallback = 0.0) {
+            return static_cast<float>(v[key].Number(fallback));
+        };
+        if (type == "add" || type == "sub" || type == "mul" || type == "div" || type == "min" ||
+            type == "max") {
+            node->op = type == "add"   ? O::Add
+                       : type == "sub" ? O::Sub
+                       : type == "mul" ? O::Mul
+                       : type == "div" ? O::Div
+                       : type == "min" ? O::Min
+                                       : O::Max;
             node->in = {child("left"), child("right")};
-        } else if (type == "abs" || type == "square" || type == "cube" || type == "half_negative" || type == "quarter_negative" || type == "squeeze" || type == "negate") {
-            node->op = type == "abs" ? O::Abs : type == "square" ? O::Square : type == "cube" ? O::Cube : type == "half_negative" ? O::HalfNegative :
-                       type == "quarter_negative" ? O::QuarterNegative : type == "squeeze" ? O::Squeeze : O::Negate;
+        } else if (type == "abs" || type == "square" || type == "cube" || type == "half_negative" ||
+                   type == "quarter_negative" || type == "squeeze" || type == "negate") {
+            node->op = type == "abs"                ? O::Abs
+                       : type == "square"           ? O::Square
+                       : type == "cube"             ? O::Cube
+                       : type == "half_negative"    ? O::HalfNegative
+                       : type == "quarter_negative" ? O::QuarterNegative
+                       : type == "squeeze"          ? O::Squeeze
+                                                    : O::Negate;
             node->in = {child("input")};
         } else if (type == "clamp") {
             node->op = O::Clamp;
@@ -247,9 +328,15 @@ namespace perlin::server::vanilla {
             node->noise = NoiseFor(v["noise"].String());
             node->xzScale = v["xz_scale"].Number(1.0);
             node->yScale = v["y_scale"].Number(1.0);
-            if (v["shift_x"].kind != json::Value::Kind::Null || v["shift_y"].kind != json::Value::Kind::Null || v["shift_z"].kind != json::Value::Kind::Null) {
-                const auto zero = [] { auto z = std::make_shared<DfNode>(); return DfPtr(z); };
-                node->in = {v["shift_x"].kind == json::Value::Kind::Null ? zero() : child("shift_x"), v["shift_y"].kind == json::Value::Kind::Null ? nullptr : child("shift_y"),
+            if (v["shift_x"].kind != json::Value::Kind::Null ||
+                v["shift_y"].kind != json::Value::Kind::Null ||
+                v["shift_z"].kind != json::Value::Kind::Null) {
+                const auto zero = [] {
+                    auto z = std::make_shared<DfNode>();
+                    return DfPtr(z);
+                };
+                node->in = {v["shift_x"].kind == json::Value::Kind::Null ? zero() : child("shift_x"),
+                            v["shift_y"].kind == json::Value::Kind::Null ? nullptr : child("shift_y"),
                             v["shift_z"].kind == json::Value::Kind::Null ? zero() : child("shift_z")};
             }
         } else if (type == "shift_a" || type == "shift_b" || type == "shift") {
@@ -259,7 +346,8 @@ namespace perlin::server::vanilla {
             node->op = O::Gradient;
             const std::string axis = v["axis"].String();
             node->axis = axis == "x" ? 0 : axis == "y" ? 1 : 2;
-            const int from = static_cast<int>(v["from_coordinate"].Int()), to = static_cast<int>(v["to_coordinate"].Int());
+            const int from = static_cast<int>(v["from_coordinate"].Int()),
+                      to = static_cast<int>(v["to_coordinate"].Int());
             node->fromCoordinate = from;
             node->minCoordinate = std::min(from, to);
             node->maxCoordinate = std::max(from, to);
@@ -288,7 +376,8 @@ namespace perlin::server::vanilla {
             node->in = {child("input")};
             node->cellXz = static_cast<int>(v["cell_size_xz"].Int(4));
             node->cellY = static_cast<int>(v["cell_size_y"].Int(8));
-        } else if (type == "cache" || type == "flat_cache" || type == "cache_2d" || type == "cache_once" || type == "cache_all_in_cell") {
+        } else if (type == "cache" || type == "flat_cache" || type == "cache_2d" || type == "cache_once" ||
+                   type == "cache_all_in_cell") {
             // caches only remember values; interpolation across cells is not applied when sampling single blocks
             node->op = O::Pass;
             node->in = {child("input")};
@@ -298,8 +387,10 @@ namespace perlin::server::vanilla {
         } else if (type == "old_blended_noise") {
             node->op = O::OldBlendedNoise;
             // the generator seeds it from the world's positional random by the name "minecraft:terrain"
-            node->blended = std::make_shared<BlendedNoise>(v["xz_scale"].Number(1.0), v["y_scale"].Number(1.0), v["xz_factor"].Number(80.0), v["y_factor"].Number(160.0),
-                                                           v["smear_scale_multiplier"].Number(8.0), positional.FromHashOf("minecraft:terrain"));
+            node->blended = std::make_shared<BlendedNoise>(
+                v["xz_scale"].Number(1.0), v["y_scale"].Number(1.0), v["xz_factor"].Number(80.0),
+                v["y_factor"].Number(160.0), v["smear_scale_multiplier"].Number(8.0),
+                positional.FromHashOf("minecraft:terrain"));
         } else if (type == "blend_alpha") {
             node->op = O::Constant;
             node->value = 1.0f;

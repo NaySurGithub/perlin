@@ -8,9 +8,18 @@ namespace waila {
     struct Theme {
         Rgba outline, frame_top, frame_bottom, fill;
 
-        static Theme dark() { return {Rgba(0x13, 0x13, 0x13), Rgba(0x38, 0x38, 0x38), Rgba(0x2e, 0x2e, 0x2e), Rgba(0x13, 0x13, 0x13)}; }
-        static Theme waila() { return {Rgba(0x10, 0x00, 0x10), Rgba(0x50, 0x00, 0xff), Rgba(0x28, 0x00, 0x7f), Rgba(0x10, 0x00, 0x10)}; }
-        static Theme create() { return {Rgba(0x00, 0x00, 0x00), Rgba(0x40, 0x3c, 0x37), Rgba(0x30, 0x2d, 0x2a), Rgba(0x00, 0x00, 0x00)}; }
+        static Theme dark() {
+            return {Rgba(0x13, 0x13, 0x13), Rgba(0x38, 0x38, 0x38), Rgba(0x2e, 0x2e, 0x2e),
+                    Rgba(0x13, 0x13, 0x13)};
+        }
+        static Theme waila() {
+            return {Rgba(0x10, 0x00, 0x10), Rgba(0x50, 0x00, 0xff), Rgba(0x28, 0x00, 0x7f),
+                    Rgba(0x10, 0x00, 0x10)};
+        }
+        static Theme create() {
+            return {Rgba(0x00, 0x00, 0x00), Rgba(0x40, 0x3c, 0x37), Rgba(0x30, 0x2d, 0x2a),
+                    Rgba(0x00, 0x00, 0x00)};
+        }
     };
 
     struct Prim {
@@ -38,13 +47,17 @@ namespace waila {
     }
 
     namespace detail_layout {
-        inline float text_width(const std::string& s) { return ui::text_width(s); }
+        inline float text_width(const std::string& s) {
+            return ui::text_width(s);
+        }
 
         struct Size {
             float w = 0, h = 0;
         };
 
-        inline int heart_count(const Hearts& e) { return std::clamp(static_cast<int>(std::ceil(e.max / 2.0f)), 1, 200); }
+        inline int heart_count(const Hearts& e) {
+            return std::clamp(static_cast<int>(std::ceil(e.max / 2.0f)), 1, 200);
+        }
 
         inline Size measure(const Element& element) {
             return std::visit(
@@ -61,7 +74,8 @@ namespace waila {
                     } else if constexpr (std::is_same_v<T, Hearts>) {
                         const int n = heart_count(e), per = std::max(1, e.per_line);
                         const int columns = std::min(n, per), rows = (n + per - 1) / per;
-                        return {static_cast<float>(columns - 1) * metrics::kHeart + 9.0f, static_cast<float>(rows) * 10.0f - 1.0f};
+                        return {static_cast<float>(columns - 1) * metrics::kHeart + 9.0f,
+                                static_cast<float>(rows) * 10.0f - 1.0f};
                     } else if constexpr (std::is_same_v<T, Armor>) {
                         return {9.0f * 8.0f + 9.0f, 9.0f};
                     } else if constexpr (std::is_same_v<T, Mark>) {
@@ -99,7 +113,8 @@ namespace waila {
             p.x = x, p.y = y, p.w = w, p.h = h, p.a = top, p.b = bottom;
             out.prims.push_back(std::move(p));
         }
-        inline void push_line(Laid& out, float x0, float y0, float x1, float y1, Rgba c, float thickness = 1.0f) {
+        inline void push_line(Laid& out, float x0, float y0, float x1, float y1, Rgba c,
+                              float thickness = 1.0f) {
             Prim p;
             p.kind = Prim::Kind::Line;
             p.x = x0, p.y = y0, p.w = x1, p.h = y1, p.a = c, p.scale = thickness;
@@ -139,7 +154,9 @@ namespace waila {
                         out.prims.push_back(std::move(p));
                     } else if constexpr (std::is_same_v<T, Bar>) {
                         push_rect(out, x, top, e.width, e.height, Rgba(0x1c, 0x1c, 0x1c, 255));
-                        push_rect(out, x + 1, top + 1, std::max(0.0f, (e.width - 2.0f) * std::clamp(e.fraction, 0.0f, 1.0f)), e.height - 2.0f, e.fill);
+                        push_rect(out, x + 1, top + 1,
+                                  std::max(0.0f, (e.width - 2.0f) * std::clamp(e.fraction, 0.0f, 1.0f)),
+                                  e.height - 2.0f, e.fill);
                         push_rect(out, x, top, e.width, 1, Rgba(0x55, 0x55, 0x55));
                         push_rect(out, x, top + e.height - 1, e.width, 1, Rgba(0x55, 0x55, 0x55));
                         push_rect(out, x, top + 1, 1, e.height - 2, Rgba(0x55, 0x55, 0x55));
@@ -155,14 +172,17 @@ namespace waila {
                     } else if constexpr (std::is_same_v<T, Hearts>) {
                         const int n = heart_count(e), per = std::max(1, e.per_line);
                         for (int i = 0; i < n; i++) {
-                            const float hx = x + static_cast<float>(i % per) * metrics::kHeart, hy = top + static_cast<float>(i / per) * 10.0f;
+                            const float hx = x + static_cast<float>(i % per) * metrics::kHeart,
+                                        hy = top + static_cast<float>(i / per) * 10.0f;
                             Prim back;
                             back.kind = Prim::Kind::Image;
-                            back.x = hx, back.y = hy, back.w = 9, back.h = 9, back.text = "textures/ui/heart_background";
+                            back.x = hx, back.y = hy, back.w = 9, back.h = 9,
+                            back.text = "textures/ui/heart_background";
                             out.prims.push_back(back);
                             const float twice = static_cast<float>(i) * 2.0f;
                             if (e.health >= twice + 2.0f - 0.01f || e.health >= twice + 1.0f) {
-                                back.text = e.health >= twice + 2.0f - 0.01f ? "textures/ui/heart" : "textures/ui/heart_half";
+                                back.text = e.health >= twice + 2.0f - 0.01f ? "textures/ui/heart"
+                                                                             : "textures/ui/heart_half";
                                 out.prims.push_back(back);
                             }
                         }
@@ -172,7 +192,9 @@ namespace waila {
                             Prim p;
                             p.kind = Prim::Kind::Image;
                             p.x = x + static_cast<float>(i) * 8.0f, p.y = top, p.w = 9, p.h = 9;
-                            p.text = e.points >= twice + 2.0f ? "textures/ui/armor_full" : e.points >= twice + 1.0f ? "textures/ui/armor_half" : "textures/ui/armor_empty";
+                            p.text = e.points >= twice + 2.0f   ? "textures/ui/armor_full"
+                                     : e.points >= twice + 1.0f ? "textures/ui/armor_half"
+                                                                : "textures/ui/armor_empty";
                             out.prims.push_back(std::move(p));
                         }
                     } else if constexpr (std::is_same_v<T, Mark>) {
@@ -207,14 +229,23 @@ namespace waila {
                         std::visit(
                             [&](const auto& v) {
                                 using T = std::decay_t<decltype(v)>;
-                                if constexpr (std::is_same_v<T, Text>) add('t', v.text, std::to_string(v.color.packed()));
-                                else if constexpr (std::is_same_v<T, ItemIcon>) add('i', v.id, std::to_string(v.count), std::to_string(v.size));
-                                else if constexpr (std::is_same_v<T, Texture>) add('x', v.path);
-                                else if constexpr (std::is_same_v<T, Bar>) add('b', std::to_string(v.fraction), v.label, std::to_string(v.fill.packed()));
-                                else if constexpr (std::is_same_v<T, Hearts>) add('h', std::to_string(v.health), std::to_string(v.max));
-                                else if constexpr (std::is_same_v<T, Armor>) add('a', std::to_string(v.points));
-                                else if constexpr (std::is_same_v<T, Mark>) add('m', v.ok ? "1" : "0");
-                                else add('g', std::to_string(v.width));
+                                if constexpr (std::is_same_v<T, Text>)
+                                    add('t', v.text, std::to_string(v.color.packed()));
+                                else if constexpr (std::is_same_v<T, ItemIcon>)
+                                    add('i', v.id, std::to_string(v.count), std::to_string(v.size));
+                                else if constexpr (std::is_same_v<T, Texture>)
+                                    add('x', v.path);
+                                else if constexpr (std::is_same_v<T, Bar>)
+                                    add('b', std::to_string(v.fraction), v.label,
+                                        std::to_string(v.fill.packed()));
+                                else if constexpr (std::is_same_v<T, Hearts>)
+                                    add('h', std::to_string(v.health), std::to_string(v.max));
+                                else if constexpr (std::is_same_v<T, Armor>)
+                                    add('a', std::to_string(v.points));
+                                else if constexpr (std::is_same_v<T, Mark>)
+                                    add('m', v.ok ? "1" : "0");
+                                else
+                                    add('g', std::to_string(v.width));
                             },
                             e);
                 }
@@ -292,7 +323,8 @@ namespace waila {
         return out;
     }
 
-    inline void paint(ui::Canvas& g, const Laid& laid, float x, float y, float scale, float alpha, float opacity, float breaking) {
+    inline void paint(ui::Canvas& g, const Laid& laid, float x, float y, float scale, float alpha,
+                      float opacity, float breaking) {
         const auto fade = [&](Rgba c, float extra = 1.0f) {
             c.a = static_cast<uint8_t>(std::clamp(static_cast<float>(c.a) * alpha * extra, 0.0f, 255.0f));
             return c;
@@ -306,14 +338,17 @@ namespace waila {
                 g.rect(x + p.x * scale, y + p.y * scale, p.w * scale, p.h * scale, fade(p.a, extra));
                 break;
             case Prim::Kind::Gradient:
-                g.gradient(x + p.x * scale, y + p.y * scale, p.w * scale, p.h * scale, fade(p.a, extra), fade(p.b, extra));
+                g.gradient(x + p.x * scale, y + p.y * scale, p.w * scale, p.h * scale, fade(p.a, extra),
+                           fade(p.b, extra));
                 break;
             case Prim::Kind::Line:
-                g.line(x + p.x * scale, y + p.y * scale, x + p.w * scale, y + p.h * scale, fade(p.a), std::max(1.0f, p.scale * scale));
+                g.line(x + p.x * scale, y + p.y * scale, x + p.w * scale, y + p.h * scale, fade(p.a),
+                       std::max(1.0f, p.scale * scale));
                 break;
             case Prim::Kind::Text:
                 if (alpha > 0.04f)
-                    g.text(x + p.x * scale, y + p.y * scale, p.text, {.color = fade(p.a), .scale = p.scale * scale});
+                    g.text(x + p.x * scale, y + p.y * scale, p.text,
+                           {.color = fade(p.a), .scale = p.scale * scale});
                 break;
             case Prim::Kind::Item:
                 if (alpha > 0.04f)
@@ -321,14 +356,16 @@ namespace waila {
                 break;
             case Prim::Kind::Image:
                 if (alpha > 0.04f)
-                    g.image(x + p.x * scale, y + p.y * scale, p.w * scale, p.h * scale, p.text, fade(Rgba::white));
+                    g.image(x + p.x * scale, y + p.y * scale, p.w * scale, p.h * scale, p.text,
+                            fade(Rgba::white));
                 break;
             default:
                 break;
             }
         }
         if (breaking > 0.0f)
-            g.rect(x + laid.bar_x * scale, y + (laid.height - 3.0f) * scale, laid.bar_width * std::clamp(breaking, 0.0f, 1.0f) * scale, 1.0f * scale,
+            g.rect(x + laid.bar_x * scale, y + (laid.height - 3.0f) * scale,
+                   laid.bar_width * std::clamp(breaking, 0.0f, 1.0f) * scale, 1.0f * scale,
                    fade(Rgba(255, 255, 255, 190)));
     }
 }

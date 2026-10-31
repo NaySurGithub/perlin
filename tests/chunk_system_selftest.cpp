@@ -11,12 +11,12 @@
 using namespace perlin::render;
 
 static int g_failed = 0;
-#define CHECK(cond)                                                              \
-    do {                                                                         \
-        if (!(cond)) {                                                           \
-            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-            g_failed++;                                                          \
-        }                                                                        \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                             \
+            g_failed++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 static BlockTable MakeTable() {
@@ -37,7 +37,8 @@ struct Section {
 static const int kDir[6][3] = {{-1, 0, 0}, {1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}};
 
 // visible faces counted the slow way: (x, y, z, face) set
-static std::set<std::array<int, 4>> NaiveFaces(const Section& s, const SectionNeighbours& nb, const BlockTable& t) {
+static std::set<std::array<int, 4>> NaiveFaces(const Section& s, const SectionNeighbours& nb,
+                                               const BlockTable& t) {
     std::set<std::array<int, 4>> faces;
     for (int y = 0; y < 16; y++)
         for (int z = 0; z < 16; z++)
@@ -51,10 +52,12 @@ static std::set<std::array<int, 4>> NaiveFaces(const Section& s, const SectionNe
                     if (nx < 0 || nx > 15 || ny < 0 || ny > 15 || nz < 0 || nz > 15) {
                         opaque = true;
                         if (nb.Known(f))
-                            opaque = (t.Flags(nb.section[static_cast<size_t>(f)].At((nx + 16) & 15, (ny + 16) & 15, (nz + 16) & 15)) &
+                            opaque = (t.Flags(nb.section[static_cast<size_t>(f)].At(
+                                          (nx + 16) & 15, (ny + 16) & 15, (nz + 16) & 15)) &
                                       BlockTable::Opaque) != 0;
                     } else {
-                        opaque = (t.Flags(s.cells[static_cast<size_t>((ny * 16 + nz) * 16 + nx)]) & BlockTable::Opaque) != 0;
+                        opaque = (t.Flags(s.cells[static_cast<size_t>((ny * 16 + nz) * 16 + nx)]) &
+                                  BlockTable::Opaque) != 0;
                     }
                     if (!opaque)
                         faces.insert({x, y, z, f});
@@ -149,9 +152,16 @@ static void TestRandomAgainstNaive() {
                 for (int i = 0; i < q.W(); i++) {
                     int x = q.X(), y = q.Y(), z = q.Z();
                     // the quad grows along the in-plane axes in (p, q) order
-                    if (axis == 0) { y += i; z += j; }
-                    else if (axis == 1) { x += i; z += j; }
-                    else { x += i; y += j; }
+                    if (axis == 0) {
+                        y += i;
+                        z += j;
+                    } else if (axis == 1) {
+                        x += i;
+                        z += j;
+                    } else {
+                        x += i;
+                        y += j;
+                    }
                     CHECK(covered.insert({x, y, z, face}).second);
                     CHECK(q.Tile() == t.Tile(s.cells[static_cast<size_t>((y * 16 + z) * 16 + x)], face));
                 }
@@ -170,12 +180,15 @@ static void TestWinding() {
             b[i] = c.pos[2][i] - c.pos[0][i];
         }
         const float n[3] = {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
-        const float dot = n[0] * static_cast<float>(kDir[face][0]) + n[1] * static_cast<float>(kDir[face][1]) +
-                          n[2] * static_cast<float>(kDir[face][2]);
+        const float dot = n[0] * static_cast<float>(kDir[face][0]) +
+                          n[1] * static_cast<float>(kDir[face][1]) + n[2] * static_cast<float>(kDir[face][2]);
         CHECK(dot > 0);
         // the quad sits on the correct plane
         const int axis = AxisOf(face);
-        const float plane = static_cast<float>(axis == 0 ? q.X() : axis == 1 ? q.Y() : q.Z()) + (Positive(face) ? 1.0f : 0.0f);
+        const float plane = static_cast<float>(axis == 0   ? q.X()
+                                               : axis == 1 ? q.Y()
+                                                           : q.Z()) +
+                            (Positive(face) ? 1.0f : 0.0f);
         for (int i = 0; i < 4; i++)
             CHECK(c.pos[i][axis] == plane);
         CHECK(q.W() == 3 && q.H() == 2 && q.Tile() == 7 && q.FaceIndex() == face);
@@ -191,13 +204,16 @@ static void TestExtraKeySplits() {
     const FaceMask m = ComputeFaceMask(solid, air, t);
     std::vector<PackedQuad> q;
     // light differs on the left and right half of every face
-    GreedyMesh(solid, m, t, [](int x, int y, int z, int face) -> uint16_t {
-        const int axis = AxisOf(face);
-        const int coord = axis == 0 ? y : x;
-        (void)z;
-        (void)y;
-        return coord < 8 ? 1 : 2;
-    }, q);
+    GreedyMesh(
+        solid, m, t,
+        [](int x, int y, int z, int face) -> uint16_t {
+            const int axis = AxisOf(face);
+            const int coord = axis == 0 ? y : x;
+            (void)z;
+            (void)y;
+            return coord < 8 ? 1 : 2;
+        },
+        q);
     CHECK(q.size() > 6);
     for (const PackedQuad& p : q)
         CHECK(p.Extra() == 1 || p.Extra() == 2);
@@ -227,7 +243,8 @@ static void TestMaskCache() {
 
 // ---- residency
 
-static bool InRangeCoverage(const ChunkResidency& r, const std::set<std::pair<int, int>>& present, std::map<std::pair<int, int>, int>& count) {
+static bool InRangeCoverage(const ChunkResidency& r, const std::set<std::pair<int, int>>& present,
+                            std::map<std::pair<int, int>, int>& count) {
     std::vector<ChunkResidency::DrawItem> draw;
     r.CollectDraw(draw);
     count.clear();
@@ -558,7 +575,8 @@ static void TestNoHolesWhileMoving() {
         // a column that was on screen and is still in range must never drop out while its replacement builds
         std::set<std::pair<int, int>> mustCover;
         for (const auto& p : wasCovered)
-            if (present.count(p) && std::max(std::abs(p.first - cam.x), std::abs(p.second - cam.z)) <= c.lodRadius)
+            if (present.count(p) &&
+                std::max(std::abs(p.first - cam.x), std::abs(p.second - cam.z)) <= c.lodRadius)
                 mustCover.insert(p);
         CHECK(InRangeCoverage(r, mustCover, count));
         wasCovered.clear();

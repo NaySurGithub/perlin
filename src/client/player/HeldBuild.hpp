@@ -20,9 +20,9 @@ namespace perlin::heldbuild {
     };
 
     struct Hit {
-        bool block = false;     // crosshair on a block (direct hit)
+        bool block = false; // crosshair on a block (direct hit)
         Target target;
-        glm::vec3 point{};      // where the ray stopped: hit point, or eye + look * reach without a hit
+        glm::vec3 point{}; // where the ray stopped: hit point, or eye + look * reach without a hit
     };
 
     class HeldBuild {

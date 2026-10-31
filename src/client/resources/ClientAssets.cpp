@@ -41,7 +41,8 @@ namespace perlin::clientassets {
                     const int sx = x + i, sy = y + j;
                     if (sx < 0 || sy < 0 || sx >= src.w || sy >= src.h)
                         continue;
-                    std::memcpy(&out.px[(static_cast<size_t>(j) * w + i) * 4], &src.px[(static_cast<size_t>(sy) * src.w + sx) * 4], 4);
+                    std::memcpy(&out.px[(static_cast<size_t>(j) * w + i) * 4],
+                                &src.px[(static_cast<size_t>(sy) * src.w + sx) * 4], 4);
                 }
             return out;
         }
@@ -52,7 +53,8 @@ namespace perlin::clientassets {
                     const int dx = x + i, dy = y + j;
                     if (dx < 0 || dy < 0 || dx >= dst.w || dy >= dst.h)
                         continue;
-                    std::memcpy(&dst.px[(static_cast<size_t>(dy) * dst.w + dx) * 4], &src.px[(static_cast<size_t>(j) * src.w + i) * 4], 4);
+                    std::memcpy(&dst.px[(static_cast<size_t>(dy) * dst.w + dx) * 4],
+                                &src.px[(static_cast<size_t>(j) * src.w + i) * 4], 4);
                 }
         }
 
@@ -100,7 +102,8 @@ namespace perlin::clientassets {
                 if (!bytes)
                     return im;
                 int w = 0, h = 0, n = 0;
-                unsigned char* data = stbi_load_from_memory(static_cast<const unsigned char*>(bytes), static_cast<int>(size), &w, &h, &n, 4);
+                unsigned char* data = stbi_load_from_memory(static_cast<const unsigned char*>(bytes),
+                                                            static_cast<int>(size), &w, &h, &n, 4);
                 mz_free(bytes);
                 if (!data)
                     return im;
@@ -126,7 +129,9 @@ namespace perlin::clientassets {
         }
     }
 
-    std::string Directory(const std::string& dataDir) { return (fs::path(dataDir) / "assets").string(); }
+    std::string Directory(const std::string& dataDir) {
+        return (fs::path(dataDir) / "assets").string();
+    }
 
     bool Ready(const std::string& dataDir) {
         std::error_code ec;
@@ -152,16 +157,23 @@ namespace perlin::clientassets {
         const auto gui = [&](const std::string& rel) { return jar.Load(kBase + "gui/" + rel); };
 
         emit("ui_inventory.png", Crop(gui("container/inventory.png"), 0, 0, 176, 166));
-        const std::pair<const char*, const char*> creative[] = {{"tab_items", "ui_creative_items"}, {"tab_item_search", "ui_creative_search"}, {"tab_inventory", "ui_creative_survival"}};
+        const std::pair<const char*, const char*> creative[] = {{"tab_items", "ui_creative_items"},
+                                                                {"tab_item_search", "ui_creative_search"},
+                                                                {"tab_inventory", "ui_creative_survival"}};
         for (const auto& [src, dst] : creative)
-            emit(std::string(dst) + ".png", Crop(gui(std::string("container/creative_inventory/") + src + ".png"), 0, 0, 195, 136));
+            emit(std::string(dst) + ".png",
+                 Crop(gui(std::string("container/creative_inventory/") + src + ".png"), 0, 0, 195, 136));
 
         {
             Image tabs = Blank(26 * 7, 32 * 4);
-            const char* names[] = {"tab_top_unselected", "tab_top_selected", "tab_bottom_unselected", "tab_bottom_selected"};
+            const char* names[] = {"tab_top_unselected", "tab_top_selected", "tab_bottom_unselected",
+                                   "tab_bottom_selected"};
             for (int row = 0; row < 4; row++)
                 for (int col = 0; col < 7; col++)
-                    Paste(tabs, gui(std::string("sprites/container/creative_inventory/") + names[row] + "_" + std::to_string(col + 1) + ".png"), 26 * col, 32 * row);
+                    Paste(tabs,
+                          gui(std::string("sprites/container/creative_inventory/") + names[row] + "_" +
+                              std::to_string(col + 1) + ".png"),
+                          26 * col, 32 * row);
             emit("ui_creative_tabs.png", tabs);
         }
         {
@@ -178,10 +190,12 @@ namespace perlin::clientassets {
             emit("ui_slot_icons.png", icons);
         }
         {
-            static const char* const kJarDye[16] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
-                                                    "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"};
-            static const char* const kOutDye[16] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
-                                                    "silver", "cyan", "purple", "blue", "brown", "green", "red", "black"};
+            static const char* const kJarDye[16] = {
+                "white",      "orange", "magenta", "light_blue", "yellow", "lime",  "pink", "gray",
+                "light_gray", "cyan",   "purple",  "blue",       "brown",  "green", "red",  "black"};
+            static const char* const kOutDye[16] = {
+                "white",  "orange", "magenta", "light_blue", "yellow", "lime",  "pink", "gray",
+                "silver", "cyan",   "purple",  "blue",       "brown",  "green", "red",  "black"};
             const Image down = jar.Load(kBase + "block/bed_down.png");
             const Image headNorth = jar.Load(kBase + "block/bed_head_north.png");
             for (int c = 0; c < 16; c++) {
@@ -229,10 +243,12 @@ namespace perlin::clientassets {
             emit("ui_recipe_slots.png", slots);
         }
         for (const char* name : {"effect_background", "effect_background_ambient"})
-            emit(std::string("ui_inv_") + name + ".png", gui(std::string("sprites/container/inventory/") + name + ".png"));
+            emit(std::string("ui_inv_") + name + ".png",
+                 gui(std::string("sprites/container/inventory/") + name + ".png"));
         {
             Image pages = Blank(48, 17);
-            const char* names[] = {"page_backward", "page_backward_highlighted", "page_forward", "page_forward_highlighted"};
+            const char* names[] = {"page_backward", "page_backward_highlighted", "page_forward",
+                                   "page_forward_highlighted"};
             for (int i = 0; i < 4; i++)
                 Paste(pages, gui(std::string("sprites/recipe_book/") + names[i] + ".png"), 12 * i, 0);
             emit("ui_recipe_pages.png", pages);
@@ -246,7 +262,8 @@ namespace perlin::clientassets {
         const std::string effects = kBase + "mob_effect/";
         for (const auto& [name, index] : jar.index) {
             (void)index;
-            if (name.compare(0, effects.size(), effects) == 0 && name.size() > 4 && name.compare(name.size() - 4, 4, ".png") == 0 &&
+            if (name.compare(0, effects.size(), effects) == 0 && name.size() > 4 &&
+                name.compare(name.size() - 4, 4, ".png") == 0 &&
                 name.find('/', effects.size()) == std::string::npos)
                 emit("effect_" + name.substr(effects.size()), jar.Load(name));
         }

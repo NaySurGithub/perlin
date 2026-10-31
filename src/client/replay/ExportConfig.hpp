@@ -41,7 +41,8 @@ namespace perlin::replay {
         static ExportConfig FromJson(const std::string& text);
     };
 
-    std::string ExpandNameTemplate(const std::string& tpl, const std::string& replayName, int w, int h, double fps, const std::string& container);
+    std::string ExpandNameTemplate(const std::string& tpl, const std::string& replayName, int w, int h,
+                                   double fps, const std::string& container);
     std::string ExportDirectory(const ExportConfig& c);
     std::string FpsLabel(double fps);
     double ParseFps(const std::string& text);

@@ -3,8 +3,8 @@
 #include <bit>
 
 namespace perlin::render {
-    MeshStats GreedyMesh(const SectionBlocks& section, const FaceMask& mask, const BlockTable& table, const FaceKeyFn& extra,
-                         std::vector<PackedQuad>& out) {
+    MeshStats GreedyMesh(const SectionBlocks& section, const FaceMask& mask, const BlockTable& table,
+                         const FaceKeyFn& extra, std::vector<PackedQuad>& out) {
         MeshStats stats;
         stats.faces = mask.faceCount;
         const size_t first = out.size();
@@ -57,7 +57,8 @@ namespace perlin::render {
                             rows[q + i] = static_cast<uint16_t>(rows[q + i] & ~run);
                         int x, y, z;
                         ColumnCoords(axis, p, q, depth, x, y, z);
-                        out.push_back(PackedQuad::Make(x, y, z, w, h, face, static_cast<uint16_t>(key & 0xFFFF),
+                        out.push_back(PackedQuad::Make(x, y, z, w, h, face,
+                                                       static_cast<uint16_t>(key & 0xFFFF),
                                                        static_cast<uint16_t>(key >> 16)));
                     }
                 }
@@ -70,7 +71,8 @@ namespace perlin::render {
     QuadCorners CornersOf(const PackedQuad& quad) {
         const int face = quad.FaceIndex();
         const int axis = AxisOf(face);
-        const float x = static_cast<float>(quad.X()), y = static_cast<float>(quad.Y()), z = static_cast<float>(quad.Z());
+        const float x = static_cast<float>(quad.X()), y = static_cast<float>(quad.Y()),
+                    z = static_cast<float>(quad.Z());
         const float w = static_cast<float>(quad.W()), h = static_cast<float>(quad.H());
         const float plane = Positive(face) ? 1.0f : 0.0f;
         // corner order in (p, q) space; flipped for faces whose winding would otherwise face inwards
@@ -86,9 +88,21 @@ namespace perlin::render {
             const int k = order[natural ? 1 : 0][i];
             float px = x, py = y, pz = z;
             switch (axis) {
-            case 0: px += plane; py += pp[k]; pz += qq[k]; break;
-            case 1: px += pp[k]; py += plane; pz += qq[k]; break;
-            default: px += pp[k]; py += qq[k]; pz += plane; break;
+            case 0:
+                px += plane;
+                py += pp[k];
+                pz += qq[k];
+                break;
+            case 1:
+                px += pp[k];
+                py += plane;
+                pz += qq[k];
+                break;
+            default:
+                px += pp[k];
+                py += qq[k];
+                pz += plane;
+                break;
             }
             c.pos[i][0] = px;
             c.pos[i][1] = py;
@@ -99,8 +113,8 @@ namespace perlin::render {
         return c;
     }
 
-    void AppendTriangles(const PackedQuad& quad, uint32_t baseIndex, std::vector<float>& positions, std::vector<float>& uvs,
-                         std::vector<uint32_t>& indices) {
+    void AppendTriangles(const PackedQuad& quad, uint32_t baseIndex, std::vector<float>& positions,
+                         std::vector<float>& uvs, std::vector<uint32_t>& indices) {
         const QuadCorners c = CornersOf(quad);
         for (int i = 0; i < 4; i++) {
             positions.insert(positions.end(), c.pos[i], c.pos[i] + 3);

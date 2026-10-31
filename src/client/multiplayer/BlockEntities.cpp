@@ -10,7 +10,8 @@ namespace perlin {
             if (const ui::Json* t = node->Find("Text"))
                 face.text = t->StringOr("");
             if (const ui::Json* c = node->Find("SignTextColor"))
-                face.color = static_cast<uint32_t>(static_cast<int64_t>(c->NumberOr(-16777216.0))) | 0xFF000000u;
+                face.color =
+                    static_cast<uint32_t>(static_cast<int64_t>(c->NumberOr(-16777216.0))) | 0xFF000000u;
             if (const ui::Json* g = node->Find("IgnoreLighting"))
                 face.glow = g->NumberOr(0) != 0 || g->BoolOr(false);
         }
@@ -30,7 +31,8 @@ namespace perlin {
         else if (const ui::Json* t = nbt.Find("Text")) {
             be.front.text = t->StringOr("");
             if (const ui::Json* c = nbt.Find("SignTextColor"))
-                be.front.color = static_cast<uint32_t>(static_cast<int64_t>(c->NumberOr(-16777216.0))) | 0xFF000000u;
+                be.front.color =
+                    static_cast<uint32_t>(static_cast<int64_t>(c->NumberOr(-16777216.0))) | 0xFF000000u;
             if (const ui::Json* g = nbt.Find("IgnoreLighting"))
                 be.front.glow = g->NumberOr(0) != 0 || g->BoolOr(false);
         }
@@ -48,7 +50,8 @@ namespace perlin {
                 const ui::Json* code = p.Find("Pattern");
                 const ui::Json* col = p.Find("Color");
                 if (code && be.patterns.size() < 16)
-                    be.patterns.emplace_back(code->StringOr(""), col ? static_cast<int>(col->NumberOr(0)) : 0);
+                    be.patterns.emplace_back(code->StringOr(""),
+                                             col ? static_cast<int>(col->NumberOr(0)) : 0);
             }
         const ui::Json* px = nbt.Find("pairx");
         const ui::Json* pz = nbt.Find("pairz");

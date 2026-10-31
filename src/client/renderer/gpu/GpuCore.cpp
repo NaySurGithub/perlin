@@ -10,7 +10,9 @@ namespace perlin::gpu {
     namespace {
         constexpr uint64_t kRingChunk = 4ull << 20;
 
-        uint64_t AlignUp(uint64_t v, uint64_t a) { return a ? (v + a - 1) / a * a : v; }
+        uint64_t AlignUp(uint64_t v, uint64_t a) {
+            return a ? (v + a - 1) / a * a : v;
+        }
 
         void Mix(size_t& h, uint64_t v) {
             h ^= static_cast<size_t>(v) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
@@ -18,27 +20,43 @@ namespace perlin::gpu {
 
         const VertexLayoutInfo kLayouts[static_cast<size_t>(VertexLayout::Count)] = {
             // terrain: position, packed colour, uv, packed light, packed normal, entity, mid uv, tangent
-            {48, {{{0, 0, Format::RGB32Float, 0}, {2, 0, Format::RGBA8Unorm, 12}, {4, 0, Format::RG32Float, 16}, {5, 0, Format::RGBA8Unorm, 24}, {1, 0, Format::RGBA8Unorm, 28}, {8, 0, Format::R32Float, 32}, {9, 0, Format::RG32Float, 36}, {10, 0, Format::R32Float, 44}}}, 8},
+            {48,
+             {{{0, 0, Format::RGB32Float, 0},
+               {2, 0, Format::RGBA8Unorm, 12},
+               {4, 0, Format::RG32Float, 16},
+               {5, 0, Format::RGBA8Unorm, 24},
+               {1, 0, Format::RGBA8Unorm, 28},
+               {8, 0, Format::R32Float, 32},
+               {9, 0, Format::RG32Float, 36},
+               {10, 0, Format::R32Float, 44}}},
+             8},
             {12, {{{0, 0, Format::RGB32Float, 0}}}, 1},
             {16, {{{0, 0, Format::RGB32Float, 0}, {2, 0, Format::RGBA8Unorm, 12}}}, 2},
             {20, {{{0, 0, Format::RGB32Float, 0}, {4, 0, Format::RG32Float, 12}}}, 2},
-            {24, {{{0, 0, Format::RGB32Float, 0}, {2, 0, Format::RGBA8Unorm, 12}, {4, 0, Format::RG32Float, 16}}}, 3},
+            {24,
+             {{{0, 0, Format::RGB32Float, 0}, {2, 0, Format::RGBA8Unorm, 12}, {4, 0, Format::RG32Float, 16}}},
+             3},
         };
     }
 
-    const VertexLayoutInfo& LayoutInfo(VertexLayout layout) { return kLayouts[static_cast<size_t>(layout)]; }
+    const VertexLayoutInfo& LayoutInfo(VertexLayout layout) {
+        return kLayouts[static_cast<size_t>(layout)];
+    }
 
-    uint32_t FormatBytes(Format format) { return GetFormatInfo(format).bytesPerBlock; }
+    uint32_t FormatBytes(Format format) {
+        return GetFormatInfo(format).bytesPerBlock;
+    }
 
     std::array<uint64_t, 4> PipelineKey::Pack() const {
         const auto u = [](auto v) { return static_cast<uint64_t>(static_cast<uint32_t>(v)); };
         std::array<uint64_t, 4> out{};
-        out[0] = u(program) | (u(layout) << 16) | (u(cull) << 24) | (u(front) << 28) | (u(depthTest) << 32) | (u(depthWrite) << 33) |
-                 (u(blend) << 34) | (u(alphaToCoverage) << 35) | (u(depthOp) << 36) | (u(mask) << 40) | (u(color) << 48);
-        out[1] = u(srcColor) | (u(dstColor) << 8) | (u(srcAlpha) << 16) | (u(dstAlpha) << 24) | (u(depth) << 32) |
-                 (static_cast<uint64_t>(static_cast<uint16_t>(biasConstant)) << 48);
-        out[2] = static_cast<uint64_t>(static_cast<uint16_t>(biasSlope)) | (u(alphaOp) << 16) | (u(colorCount) << 24) |
-                 (u(color1) << 32);
+        out[0] = u(program) | (u(layout) << 16) | (u(cull) << 24) | (u(front) << 28) | (u(depthTest) << 32) |
+                 (u(depthWrite) << 33) | (u(blend) << 34) | (u(alphaToCoverage) << 35) | (u(depthOp) << 36) |
+                 (u(mask) << 40) | (u(color) << 48);
+        out[1] = u(srcColor) | (u(dstColor) << 8) | (u(srcAlpha) << 16) | (u(dstAlpha) << 24) |
+                 (u(depth) << 32) | (static_cast<uint64_t>(static_cast<uint16_t>(biasConstant)) << 48);
+        out[2] = static_cast<uint64_t>(static_cast<uint16_t>(biasSlope)) | (u(alphaOp) << 16) |
+                 (u(colorCount) << 24) | (u(color1) << 32);
         out[3] = u(color2);
         return out;
     }
@@ -59,7 +77,8 @@ namespace perlin::gpu {
         return h;
     }
 
-    bool Arena::Create(Device& device, uint32_t elements, uint32_t bytes, BufferUsage usage, const char* name) {
+    bool Arena::Create(Device& device, uint32_t elements, uint32_t bytes, BufferUsage usage,
+                       const char* name) {
         BufferDesc bd;
         bd.size = static_cast<uint64_t>(elements) * bytes;
         bd.usage = usage | BufferUsage::CopyDst | BufferUsage::CopySrc;
@@ -93,7 +112,9 @@ namespace perlin::gpu {
         ranges.Reset(0);
     }
 
-    Gpu::~Gpu() { Shutdown(); }
+    Gpu::~Gpu() {
+        Shutdown();
+    }
 
     bool Gpu::Init(const GpuSettings& s, std::span<const uint8_t> shaderPack, std::string* error) {
         const auto fail = [&](const std::string& why) {
@@ -115,6 +136,7 @@ namespace perlin::gpu {
         dop.framesInFlight = std::max(1u, s.framesInFlight);
         dop.hooks = s.hooks;
         dop.pipelineCacheData = s.pipelineCache;
+        dop.asyncPipelines = !s.offscreen;
         device = instance->CreateDevice(dop);
         if (!device)
             return fail("could not create a " + std::string(ApiName(s.api)) + " device");
@@ -130,7 +152,8 @@ namespace perlin::gpu {
         vertexShaders.assign(programs.size(), {});
         fragmentShaders.assign(programs.size(), {});
         for (size_t i = 0; i < programs.size(); i++) {
-            uniformRangeBytes = std::max(uniformRangeBytes, static_cast<uint32_t>(AlignUp(programs[i].uniformBytes, 256)));
+            uniformRangeBytes =
+                std::max(uniformRangeBytes, static_cast<uint32_t>(AlignUp(programs[i].uniformBytes, 256)));
             for (ShaderStage stage : {ShaderStage::Vertex, ShaderStage::Fragment}) {
                 const auto code = library.Code(programs[i], stage, target);
                 if (code.empty())
@@ -141,7 +164,8 @@ namespace perlin::gpu {
                 sd.code = code;
                 sd.entry = ShaderLibrary::EntryFor(stage, target);
                 sd.name = programs[i].name.c_str();
-                (stage == ShaderStage::Vertex ? vertexShaders : fragmentShaders)[i] = device->CreateShader(sd);
+                (stage == ShaderStage::Vertex ? vertexShaders : fragmentShaders)[i] =
+                    device->CreateShader(sd);
             }
         }
         if (library.TextureSlots().size() > kTextureSlots)
@@ -244,12 +268,15 @@ namespace perlin::gpu {
     }
 
     bool Gpu::BuildLayouts() {
-        std::vector<BindLayoutEntry> uniformEntries{{0, BindingType::UniformBufferDynamic, ShaderStage::All, 1, TextureDim::Tex2D}};
+        std::vector<BindLayoutEntry> uniformEntries{
+            {0, BindingType::UniformBufferDynamic, ShaderStage::All, 1, TextureDim::Tex2D}};
         std::vector<BindLayoutEntry> textureEntries;
         for (const TextureSlot& s : library.TextureSlots()) {
-            textureEntries.push_back({s.slot * 2, BindingType::SampledTexture, ShaderStage::Fragment | ShaderStage::Vertex, 1,
+            textureEntries.push_back({s.slot * 2, BindingType::SampledTexture,
+                                      ShaderStage::Fragment | ShaderStage::Vertex, 1,
                                       s.array ? TextureDim::Tex2DArray : TextureDim::Tex2D, !s.unfilterable});
-            textureEntries.push_back({s.slot * 2 + 1, BindingType::Sampler, ShaderStage::Fragment | ShaderStage::Vertex, 1, TextureDim::Tex2D,
+            textureEntries.push_back({s.slot * 2 + 1, BindingType::Sampler,
+                                      ShaderStage::Fragment | ShaderStage::Vertex, 1, TextureDim::Tex2D,
                                       !s.unfilterable});
         }
         BindLayoutDesc uld;
@@ -277,11 +304,16 @@ namespace perlin::gpu {
             sd.maxLod = mips ? 1000.0f : 0.0f;
             return device->CreateSampler(sd);
         };
-        samplers[static_cast<size_t>(SamplerKind::PointClamp)] = make(Filter::Nearest, AddressMode::Clamp, false);
-        samplers[static_cast<size_t>(SamplerKind::PointRepeat)] = make(Filter::Nearest, AddressMode::Repeat, false);
-        samplers[static_cast<size_t>(SamplerKind::LinearClamp)] = make(Filter::Linear, AddressMode::Clamp, false);
-        samplers[static_cast<size_t>(SamplerKind::LinearRepeat)] = make(Filter::Linear, AddressMode::Repeat, false);
-        samplers[static_cast<size_t>(SamplerKind::LinearMipRepeat)] = make(Filter::Linear, AddressMode::Repeat, true);
+        samplers[static_cast<size_t>(SamplerKind::PointClamp)] =
+            make(Filter::Nearest, AddressMode::Clamp, false);
+        samplers[static_cast<size_t>(SamplerKind::PointRepeat)] =
+            make(Filter::Nearest, AddressMode::Repeat, false);
+        samplers[static_cast<size_t>(SamplerKind::LinearClamp)] =
+            make(Filter::Linear, AddressMode::Clamp, false);
+        samplers[static_cast<size_t>(SamplerKind::LinearRepeat)] =
+            make(Filter::Linear, AddressMode::Repeat, false);
+        samplers[static_cast<size_t>(SamplerKind::LinearMipRepeat)] =
+            make(Filter::Linear, AddressMode::Repeat, true);
         {
             SamplerDesc sd;
             sd.min = sd.mag = Filter::Nearest;
@@ -308,7 +340,9 @@ namespace perlin::gpu {
         return keys;
     }
 
-    bool Gpu::PipelineReady(const PipelineKey& key) { return Pipeline(key).value != 0; }
+    bool Gpu::PipelineReady(const PipelineKey& key) {
+        return Pipeline(key).value != 0;
+    }
 
     PipelineHandle Gpu::Pipeline(const PipelineKey& key) {
         if (const auto it = pipelines.find(key); it != pipelines.end())
@@ -587,13 +621,15 @@ namespace perlin::gpu {
         if (!texture)
             return;
         // pending writes to a dying texture are dropped
-        imageWrites.erase(std::remove_if(imageWrites.begin(), imageWrites.end(), [&](const ImageWrite& w) { return w.texture == texture; }),
+        imageWrites.erase(std::remove_if(imageWrites.begin(), imageWrites.end(),
+                                         [&](const ImageWrite& w) { return w.texture == texture; }),
                           imageWrites.end());
         ForgetTexture(texture);
         device->Destroy(texture);
     }
 
-    void Gpu::WriteBuffer(BufferHandle buffer, State resting, uint64_t byteOffset, const void* data, uint64_t bytes) {
+    void Gpu::WriteBuffer(BufferHandle buffer, State resting, uint64_t byteOffset, const void* data,
+                          uint64_t bytes) {
         if (!bytes || !buffer)
             return;
         const uint64_t at = AlignUp(pendingBytes.size(), 16);
@@ -609,19 +645,21 @@ namespace perlin::gpu {
         bd.memory = MemoryClass::GpuOnly;
         bd.name = name;
         const BufferHandle h = device->CreateBuffer(bd);
-        WriteBuffer(h, Has(usage, BufferUsage::Index) ? State::IndexBuffer : State::VertexBuffer, 0, data, bytes);
+        WriteBuffer(h, Has(usage, BufferUsage::Index) ? State::IndexBuffer : State::VertexBuffer, 0, data,
+                    bytes);
         return h;
     }
 
-    void Gpu::WriteTexture(TextureHandle texture, uint32_t layer, uint32_t x, uint32_t y, uint32_t width, uint32_t height, const void* data,
-                           uint32_t rowBytes, uint32_t mip) {
+    void Gpu::WriteTexture(TextureHandle texture, uint32_t layer, uint32_t x, uint32_t y, uint32_t width,
+                           uint32_t height, const void* data, uint32_t rowBytes, uint32_t mip) {
         const TextureDesc* td = device->GetDesc(texture);
         if (!td || !width || !height)
             return;
         const uint32_t packed = width * FormatBytes(td->format);
         const uint32_t srcPitch = rowBytes ? rowBytes : packed;
         const uint32_t pitch = static_cast<uint32_t>(AlignUp(packed, Caps().limits.copyRowPitchAlignment));
-        const uint64_t at = AlignUp(pendingBytes.size(), std::max<uint64_t>(16, Caps().limits.copyOffsetAlignment));
+        const uint64_t at =
+            AlignUp(pendingBytes.size(), std::max<uint64_t>(16, Caps().limits.copyOffsetAlignment));
         pendingBytes.resize(at + static_cast<uint64_t>(pitch) * height);
         for (uint32_t row = 0; row < height; row++)
             std::memcpy(pendingBytes.data() + at + static_cast<uint64_t>(row) * pitch,
@@ -634,7 +672,9 @@ namespace perlin::gpu {
         return it == textureStates.end() ? State::Undefined : it->second;
     }
 
-    void Gpu::SetState(TextureHandle texture, State state) { textureStates[texture.value] = state; }
+    void Gpu::SetState(TextureHandle texture, State state) {
+        textureStates[texture.value] = state;
+    }
 
     void Gpu::Transition(CommandList& list, TextureHandle texture, State to) {
         const State from = StateOf(texture);
@@ -653,7 +693,8 @@ namespace perlin::gpu {
             pendingBytes.clear();
             return;
         }
-        const RingSlice staging = Ring(pendingBytes.size(), std::max<uint64_t>(256, Caps().limits.copyOffsetAlignment));
+        const RingSlice staging =
+            Ring(pendingBytes.size(), std::max<uint64_t>(256, Caps().limits.copyOffsetAlignment));
         if (!staging.data) {
             bufferWrites.clear();
             imageWrites.clear();
@@ -664,12 +705,14 @@ namespace perlin::gpu {
 
         std::vector<BufferBarrier> toCopy, toUse;
         std::vector<TextureBarrier> texToCopy, texToUse;
-        bufferWrites.erase(std::remove_if(bufferWrites.begin(), bufferWrites.end(),
-                                          [&](const BufferWrite& w) { return device->GetDesc(w.buffer) == nullptr; }),
-                           bufferWrites.end());
-        imageWrites.erase(std::remove_if(imageWrites.begin(), imageWrites.end(),
-                                         [&](const ImageWrite& w) { return device->GetDesc(w.texture) == nullptr; }),
-                          imageWrites.end());
+        bufferWrites.erase(
+            std::remove_if(bufferWrites.begin(), bufferWrites.end(),
+                           [&](const BufferWrite& w) { return device->GetDesc(w.buffer) == nullptr; }),
+            bufferWrites.end());
+        imageWrites.erase(
+            std::remove_if(imageWrites.begin(), imageWrites.end(),
+                           [&](const ImageWrite& w) { return device->GetDesc(w.texture) == nullptr; }),
+            imageWrites.end());
         std::unordered_set<uint32_t> seenBuffers;
         seenBuffers.reserve(16);
         for (const BufferWrite& w : bufferWrites) {
@@ -677,7 +720,8 @@ namespace perlin::gpu {
             if (!seenBuffers.insert(w.buffer.value).second)
                 continue;
             const auto known = bufferStates.find(w.buffer.value);
-            toCopy.push_back({w.buffer, known == bufferStates.end() ? State::Undefined : known->second, State::CopyDst});
+            toCopy.push_back(
+                {w.buffer, known == bufferStates.end() ? State::Undefined : known->second, State::CopyDst});
             toUse.push_back({w.buffer, State::CopyDst, w.state});
             bufferStates[w.buffer.value] = w.state;
         }

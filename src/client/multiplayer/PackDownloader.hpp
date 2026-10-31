@@ -59,7 +59,7 @@ namespace perlin {
             std::vector<uint8_t> data;
             // chunks that arrived ahead of the one still missing; some servers do not answer requests in order
             std::map<uint32_t, std::vector<uint8_t>> early;
-            std::chrono::steady_clock::time_point gapSince{};
+            std::chrono::steady_clock::time_point gapSince;
             std::string fileName;
             std::map<uint32_t, std::vector<uint8_t>> held;
         };
@@ -69,7 +69,7 @@ namespace perlin {
         std::vector<Offered> offeredPacks;
         std::string currentKey;
         std::vector<std::string> queuedKeys;
-        std::chrono::steady_clock::time_point requestedAt{};
+        std::chrono::steady_clock::time_point requestedAt;
         bool stallReported = false;
         static constexpr uint32_t kWindow = 8;
         void Refill(Active& a, Result& r);

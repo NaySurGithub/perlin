@@ -9,7 +9,9 @@ namespace rhi::d3d11 {
         // largest constant buffer a shader can address
         constexpr uint64_t kConstantWindow = 4096ull * 16;
 
-        UINT Subresource(const TextureDesc& d, uint32_t mip, uint32_t layer) { return mip + layer * (std::max)(1u, d.mips); }
+        UINT Subresource(const TextureDesc& d, uint32_t mip, uint32_t layer) {
+            return mip + layer * (std::max)(1u, d.mips);
+        }
     }
 
     CmdList::CmdList(Device& device, QueueType queue) : device(device), queue(queue) {}
@@ -60,18 +62,23 @@ namespace rhi::d3d11 {
     void CmdList::Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) {
         device.MutableStats().barriers += textures.size() + buffers.size();
     }
-    void CmdList::UavBarrier(BufferHandle) { device.MutableStats().barriers++; }
-    void CmdList::UavBarrier(TextureHandle) { device.MutableStats().barriers++; }
-
+    void CmdList::UavBarrier(BufferHandle) {
+        device.MutableStats().barriers++;
+    }
+    void CmdList::UavBarrier(TextureHandle) {
+        device.MutableStats().barriers++;
+    }
 
     void CmdList::CopyToConstant(Buffer& b, uint64_t offset, uint64_t size) {
         if (!b.constant)
             return;
         const D3D11_BOX box{static_cast<UINT>(offset), 0, 0, static_cast<UINT>(offset + size), 1, 1};
-        ctx->CopySubresourceRegion(b.constant.get(), 0, static_cast<UINT>(offset), 0, 0, b.main.get(), 0, &box);
+        ctx->CopySubresourceRegion(b.constant.get(), 0, static_cast<UINT>(offset), 0, 0, b.main.get(), 0,
+                                   &box);
     }
 
-    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) {
+    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                             uint64_t size) {
         recorded = true;
         Buffer* d = device.buffers.Get(dst);
         Buffer* s = device.buffers.Get(src);
@@ -79,15 +86,18 @@ namespace rhi::d3d11 {
             device.ReportError("CopyBuffer: bad handle");
             return;
         }
-        size = std::min<uint64_t>({size, d->gpuSize - (std::min)(dstOffset, d->gpuSize), s->gpuSize - (std::min)(srcOffset, s->gpuSize)});
+        size = std::min<uint64_t>({size, d->gpuSize - (std::min)(dstOffset, d->gpuSize),
+                                   s->gpuSize - (std::min)(srcOffset, s->gpuSize)});
         if (!size)
             return;
         const D3D11_BOX box{static_cast<UINT>(srcOffset), 0, 0, static_cast<UINT>(srcOffset + size), 1, 1};
-        ctx->CopySubresourceRegion(d->main.get(), 0, static_cast<UINT>(dstOffset), 0, 0, s->main.get(), 0, &box);
+        ctx->CopySubresourceRegion(d->main.get(), 0, static_cast<UINT>(dstOffset), 0, 0, s->main.get(), 0,
+                                   &box);
         CopyToConstant(*d, dstOffset, size);
     }
 
-    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         recorded = true;
         Texture* t = device.textures.Get(dst);
         Buffer* b = device.buffers.Get(src);
@@ -105,19 +115,24 @@ namespace rhi::d3d11 {
             }
             const bool volume = t->desc.dim == TextureDim::Tex3D;
             const D3D11_BOX box{r.x, r.y, r.z, r.x + r.width, r.y + r.height, r.z + depth};
-            const bool whole = r.x == 0 && r.y == 0 && r.z == 0 && r.width >= MipExtent(t->desc.width, r.mip) &&
-                               r.height >= MipExtent(t->desc.height, r.mip) && (!volume || depth >= (std::max)(1u, DepthOf(t->desc) >> r.mip));
-            ctx->UpdateSubresource(t->resource.get(), Subresource(t->desc, r.mip, volume ? 0 : r.layer), whole ? nullptr : &box,
-                                   b->shadow.data() + r.bufferOffset, rowPitch, depthPitch);
+            const bool whole = r.x == 0 && r.y == 0 && r.z == 0 &&
+                               r.width >= MipExtent(t->desc.width, r.mip) &&
+                               r.height >= MipExtent(t->desc.height, r.mip) &&
+                               (!volume || depth >= (std::max)(1u, DepthOf(t->desc) >> r.mip));
+            ctx->UpdateSubresource(t->resource.get(), Subresource(t->desc, r.mip, volume ? 0 : r.layer),
+                                   whole ? nullptr : &box, b->shadow.data() + r.bufferOffset, rowPitch,
+                                   depthPitch);
         }
     }
 
-    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         recorded = true;
         Texture* t = device.textures.Get(src);
         Buffer* b = device.buffers.Get(dst);
         if (!t || !b || b->desc.memory != MemoryClass::Readback) {
-            device.ReportError("CopyTextureToBuffer: bad handle or a destination that is not a readback buffer");
+            device.ReportError(
+                "CopyTextureToBuffer: bad handle or a destination that is not a readback buffer");
             return;
         }
         const FormatInfo& info = GetFormatInfo(t->desc.format);
@@ -137,9 +152,11 @@ namespace rhi::d3d11 {
                 continue;
             }
             const D3D11_BOX box{r.x, r.y, 0, r.x + r.width, r.y + r.height, 1};
-            const bool whole = r.x == 0 && r.y == 0 && r.width >= MipExtent(t->desc.width, r.mip) && r.height >= MipExtent(t->desc.height, r.mip);
+            const bool whole = r.x == 0 && r.y == 0 && r.width >= MipExtent(t->desc.width, r.mip) &&
+                               r.height >= MipExtent(t->desc.height, r.mip);
             // depth-stencil resources only copy whole
-            ctx->CopySubresourceRegion(pending.staging.get(), 0, 0, 0, 0, t->resource.get(), Subresource(t->desc, r.mip, r.layer),
+            ctx->CopySubresourceRegion(pending.staging.get(), 0, 0, 0, 0, t->resource.get(),
+                                       Subresource(t->desc, r.mip, r.layer),
                                        whole || info.depth ? nullptr : &box);
             pending.bufferOffset = r.bufferOffset;
             pending.rowBytes = RowBytes(t->desc.format, r.width);
@@ -161,7 +178,8 @@ namespace rhi::d3d11 {
         const bool depth = IsDepthFormat(s->desc.format);
         for (const TextureCopy& r : regions) {
             const D3D11_BOX box{r.srcX, r.srcY, 0, r.srcX + r.width, r.srcY + r.height, 1};
-            ctx->CopySubresourceRegion(d->resource.get(), Subresource(d->desc, r.dstMip, r.dstLayer), r.dstX, r.dstY, 0, s->resource.get(),
+            ctx->CopySubresourceRegion(d->resource.get(), Subresource(d->desc, r.dstMip, r.dstLayer), r.dstX,
+                                       r.dstY, 0, s->resource.get(),
                                        Subresource(s->desc, r.srcMip, r.srcLayer), depth ? nullptr : &box);
         }
     }
@@ -197,7 +215,6 @@ namespace rhi::d3d11 {
         }
         ctx->ResolveSubresource(d->resource.get(), 0, s->resource.get(), 0, d->formats.view);
     }
-
 
     // the runtime forces a resource to null when it becomes a target while still bound for reading; clear our own bindings first
     void CmdList::ClearBindings() {
@@ -249,8 +266,9 @@ namespace rhi::d3d11 {
                 return;
             }
             if (!desc.depth.readOnly && desc.depth.load == LoadOp::Clear)
-                ctx->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH | (HasStencil(t->desc.format) ? D3D11_CLEAR_STENCIL : 0), desc.depth.clearDepth,
-                                           desc.depth.clearStencil);
+                ctx->ClearDepthStencilView(
+                    dsv, D3D11_CLEAR_DEPTH | (HasStencil(t->desc.format) ? D3D11_CLEAR_STENCIL : 0),
+                    desc.depth.clearDepth, desc.depth.clearStencil);
             if (!passWidth) {
                 passWidth = MipExtent(t->desc.width, desc.depth.mip);
                 passHeight = MipExtent(t->desc.height, desc.depth.mip);
@@ -265,7 +283,9 @@ namespace rhi::d3d11 {
 
         // viewport and scissor persist across passes like in the other apis; a pass that never set them covers its targets
         const bool hadViewport = viewportSet, hadScissor = scissorSet;
-        SetViewport(hadViewport ? viewport : Viewport{0, 0, static_cast<float>(passWidth), static_cast<float>(passHeight), 0.0f, 1.0f});
+        SetViewport(hadViewport ? viewport
+                                : Viewport{0, 0, static_cast<float>(passWidth),
+                                           static_cast<float>(passHeight), 0.0f, 1.0f});
         SetScissor(hadScissor ? scissor : Rect{0, 0, passWidth, passHeight});
         viewportSet = hadViewport;
         scissorSet = hadScissor;
@@ -285,7 +305,6 @@ namespace rhi::d3d11 {
         inPass = false;
     }
 
-
     void CmdList::SetPipeline(PipelineHandle p) {
         pipeline = p;
         pipelineDirty = true;
@@ -293,7 +312,8 @@ namespace rhi::d3d11 {
         vertexDirty = 0xFF;
     }
 
-    void CmdList::SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) {
+    void CmdList::SetBindGroup(uint32_t set, BindGroupHandle group,
+                               std::span<const uint32_t> dynamicOffsets) {
         if (set >= kMaxBindGroups)
             return;
         BoundSet& s = sets[set];
@@ -341,7 +361,8 @@ namespace rhi::d3d11 {
             right = std::min<int64_t>(right, passWidth);
             bottom = std::min<int64_t>(bottom, passHeight);
         }
-        const D3D11_RECT d{static_cast<LONG>(left), static_cast<LONG>(top), static_cast<LONG>(std::max(left, right)),
+        const D3D11_RECT d{static_cast<LONG>(left), static_cast<LONG>(top),
+                           static_cast<LONG>(std::max(left, right)),
                            static_cast<LONG>(std::max(top, bottom))};
         ctx->RSSetScissorRects(1, &d);
     }
@@ -365,7 +386,6 @@ namespace rhi::d3d11 {
         if (const Pipeline* p = device.pipelines.Get(pipeline); p && !p->compute && inPass)
             ctx->OMSetDepthStencilState(p->depthStencil.get(), stencilRef);
     }
-
 
     bool CmdList::BindSets(const Pipeline& p) {
         const uint32_t first = p.compute ? kStageCompute : kStageVertex;
@@ -397,13 +417,15 @@ namespace rhi::d3d11 {
                     case ResourceKind::UniformBuffer: {
                         Buffer* b = device.buffers.Get(e->buffer.buffer);
                         if (!b) {
-                            device.ReportError("bind group buffer at binding " + std::to_string(slot.binding) + " is gone");
+                            device.ReportError("bind group buffer at binding " +
+                                               std::to_string(slot.binding) + " is gone");
                             return false;
                         }
                         uint64_t offset = e->buffer.offset;
                         if (slot.dynamicIndex != ~0u && slot.dynamicIndex < bs.offsetCount)
                             offset += bs.offsets[slot.dynamicIndex];
-                        const uint64_t size = e->buffer.size ? e->buffer.size : b->gpuSize - (std::min)(offset, b->gpuSize);
+                        const uint64_t size =
+                            e->buffer.size ? e->buffer.size : b->gpuSize - (std::min)(offset, b->gpuSize);
                         ID3D11Buffer* cb = nullptr;
                         UINT firstConstant = 0, constants = 0;
                         if (b->constant && ctx1 && (offset & 255) == 0) {
@@ -411,7 +433,8 @@ namespace rhi::d3d11 {
                             const uint64_t span = std::min<uint64_t>(AlignUp(size, 256), b->gpuSize - offset);
                             firstConstant = static_cast<UINT>(offset / 16);
                             constants = static_cast<UINT>(std::min<uint64_t>(span, kConstantWindow) / 16);
-                        } else if (!b->shadow.empty() && b->desc.memory != MemoryClass::GpuOnly && b->desc.memory != MemoryClass::Readback) {
+                        } else if (!b->shadow.empty() && b->desc.memory != MemoryClass::GpuOnly &&
+                                   b->desc.memory != MemoryClass::Readback) {
                             // cpu written uniforms (the frame ring): push the bytes into a small buffer that always starts at zero. The data is
                             // final when the draw is recorded, so this needs neither constant offsetting (unreliable from deferred contexts)
                             // nor a gpu copy per draw
@@ -420,7 +443,8 @@ namespace rhi::d3d11 {
                             const uint64_t want = (std::min)({size, avail, kConstantWindow});
                             const UINT n = static_cast<UINT>(want & ~15ull);
                             if (!n) {
-                                device.ReportError("uniform buffer range is empty at binding " + std::to_string(slot.binding));
+                                device.ReportError("uniform buffer range is empty at binding " +
+                                                   std::to_string(slot.binding));
                                 return false;
                             }
                             if (!um.buffer || um.bytes != n) {
@@ -452,8 +476,11 @@ namespace rhi::d3d11 {
                                 if (FAILED(device.Dev()->CreateBuffer(&md, nullptr, mirror.put())))
                                     return false;
                             }
-                            const uint64_t n = std::min<uint64_t>({AlignUp(size, 16), kConstantWindow, b->gpuSize - (std::min)(offset, b->gpuSize)});
-                            const D3D11_BOX box{static_cast<UINT>(offset), 0, 0, static_cast<UINT>(offset + n), 1, 1};
+                            const uint64_t n =
+                                std::min<uint64_t>({AlignUp(size, 16), kConstantWindow,
+                                                    b->gpuSize - (std::min)(offset, b->gpuSize)});
+                            const D3D11_BOX box{static_cast<UINT>(offset),     0, 0,
+                                                static_cast<UINT>(offset + n), 1, 1};
                             ctx->CopySubresourceRegion(mirror.get(), 0, 0, 0, 0, b->main.get(), 0, &box);
                             cb = mirror.get();
                         }
@@ -496,7 +523,8 @@ namespace rhi::d3d11 {
                                 uav = b ? device.BufferUav(*b, e->buffer.offset, e->buffer.size) : nullptr;
                             }
                             if (!uav) {
-                                device.ReportError("bind group storage resource at binding " + std::to_string(slot.binding) + " is gone");
+                                device.ReportError("bind group storage resource at binding " +
+                                                   std::to_string(slot.binding) + " is gone");
                                 return false;
                             }
                             ctx->CSSetUnorderedAccessViews(slot.slot, 1, &uav, nullptr);
@@ -504,15 +532,19 @@ namespace rhi::d3d11 {
                             break;
                         }
                         ID3D11ShaderResourceView* srv = nullptr;
-                        if (slot.kind == ResourceKind::SampledTexture || slot.kind == ResourceKind::StorageTexture) {
+                        if (slot.kind == ResourceKind::SampledTexture ||
+                            slot.kind == ResourceKind::StorageTexture) {
                             Texture* t = device.textures.Get(e->texture.texture);
-                            srv = t ? device.SrvOf(*t, e->texture.range, slot.dim, e->texture.format, e->texture.stencil) : nullptr;
+                            srv = t ? device.SrvOf(*t, e->texture.range, slot.dim, e->texture.format,
+                                                   e->texture.stencil)
+                                    : nullptr;
                         } else {
                             Buffer* b = device.buffers.Get(e->buffer.buffer);
                             srv = b ? device.BufferSrv(*b, e->buffer.offset, e->buffer.size) : nullptr;
                         }
                         if (!srv) {
-                            device.ReportError("bind group resource at binding " + std::to_string(slot.binding) + " is gone");
+                            device.ReportError("bind group resource at binding " +
+                                               std::to_string(slot.binding) + " is gone");
                             return false;
                         }
                         if (stage == kStageVertex)
@@ -527,7 +559,8 @@ namespace rhi::d3d11 {
                     case ResourceKind::Sampler: {
                         Sampler* sm = device.samplers.Get(e->sampler);
                         if (!sm) {
-                            device.ReportError("bind group sampler at binding " + std::to_string(slot.binding) + " is gone");
+                            device.ReportError("bind group sampler at binding " +
+                                               std::to_string(slot.binding) + " is gone");
                             return false;
                         }
                         ID3D11SamplerState* state = sm->state.get();
@@ -588,14 +621,16 @@ namespace rhi::d3d11 {
         return true;
     }
 
-    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
+    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                       uint32_t firstInstance) {
         if (!PrepareDraw())
             return;
         ctx->DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance);
         device.MutableStats().draws++;
     }
 
-    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                              int32_t vertexOffset, uint32_t firstInstance) {
         if (!PrepareDraw())
             return;
         if (indexDirty) {
@@ -604,14 +639,17 @@ namespace rhi::d3d11 {
                 device.ReportError("DrawIndexed: no index buffer");
                 return;
             }
-            ctx->IASetIndexBuffer(b->main.get(), indexType == IndexType::U16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT, static_cast<UINT>(indexOffset));
+            ctx->IASetIndexBuffer(b->main.get(),
+                                  indexType == IndexType::U16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT,
+                                  static_cast<UINT>(indexOffset));
             indexDirty = false;
         }
         ctx->DrawIndexedInstanced(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
         device.MutableStats().draws++;
     }
 
-    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) {
+    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                      uint32_t stride) {
         if (!PrepareDraw())
             return;
         Buffer* a = device.buffers.Get(args);
@@ -621,20 +659,23 @@ namespace rhi::d3d11 {
             return;
         }
         if (indexDirty) {
-            ctx->IASetIndexBuffer(ib->main.get(), indexType == IndexType::U16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT, static_cast<UINT>(indexOffset));
+            ctx->IASetIndexBuffer(ib->main.get(),
+                                  indexType == IndexType::U16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT,
+                                  static_cast<UINT>(indexOffset));
             indexDirty = false;
         }
         // no multi draw in d3d11: one call per command
         for (uint32_t i = 0; i < maxDraws; i++)
-            ctx->DrawIndexedInstancedIndirect(a->main.get(), static_cast<UINT>(offset + static_cast<uint64_t>(i) * stride));
+            ctx->DrawIndexedInstancedIndirect(a->main.get(),
+                                              static_cast<UINT>(offset + static_cast<uint64_t>(i) * stride));
         device.MutableStats().indirectDraws += maxDraws;
     }
 
-    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle, uint64_t, uint32_t maxDraws, uint32_t stride) {
+    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle, uint64_t,
+                                           uint32_t maxDraws, uint32_t stride) {
         // the count lives on the gpu and d3d11 cannot read it into a draw: run every slot, the culling pass zeroes the unused ones
         DrawIndexedIndirect(args, offset, maxDraws, stride);
     }
-
 
     void CmdList::Dispatch(uint32_t x, uint32_t y, uint32_t z) {
         recorded = true;

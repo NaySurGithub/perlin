@@ -11,24 +11,42 @@ namespace perlin::server::vanilla {
             uint32_t a = 0x67452301, b = 0xefcdab89, c = 0x98badcfe, d = 0x10325476;
             void Block(const uint8_t* p) {
                 static const uint32_t k[64] = {
-                    0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122,
-                    0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6,
-                    0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60,
-                    0xbebfbc70, 0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039,
-                    0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391};
-                static const int s[64] = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-                                          4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
+                    0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613,
+                    0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193,
+                    0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d,
+                    0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed,
+                    0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122,
+                    0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70, 0x289b7ec6, 0xeaa127fa,
+                    0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244,
+                    0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
+                    0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb,
+                    0xeb86d391};
+                static const int s[64] = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+                                          5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,
+                                          4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+                                          6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
                 uint32_t m[16];
                 for (int i = 0; i < 16; i++)
-                    m[i] = static_cast<uint32_t>(p[i * 4]) | static_cast<uint32_t>(p[i * 4 + 1]) << 8 | static_cast<uint32_t>(p[i * 4 + 2]) << 16 | static_cast<uint32_t>(p[i * 4 + 3]) << 24;
+                    m[i] = static_cast<uint32_t>(p[i * 4]) | static_cast<uint32_t>(p[i * 4 + 1]) << 8 |
+                           static_cast<uint32_t>(p[i * 4 + 2]) << 16 |
+                           static_cast<uint32_t>(p[i * 4 + 3]) << 24;
                 uint32_t A = a, B = b, C = c, D = d;
                 for (int i = 0; i < 64; i++) {
                     uint32_t f;
                     int g;
-                    if (i < 16) { f = (B & C) | (~B & D); g = i; }
-                    else if (i < 32) { f = (D & B) | (~D & C); g = (5 * i + 1) & 15; }
-                    else if (i < 48) { f = B ^ C ^ D; g = (3 * i + 5) & 15; }
-                    else { f = C ^ (B | ~D); g = (7 * i) & 15; }
+                    if (i < 16) {
+                        f = (B & C) | (~B & D);
+                        g = i;
+                    } else if (i < 32) {
+                        f = (D & B) | (~D & C);
+                        g = (5 * i + 1) & 15;
+                    } else if (i < 48) {
+                        f = B ^ C ^ D;
+                        g = (3 * i + 5) & 15;
+                    } else {
+                        f = C ^ (B | ~D);
+                        g = (7 * i) & 15;
+                    }
                     f = f + A + k[i] + m[g];
                     A = D;
                     D = C;
@@ -54,19 +72,31 @@ namespace perlin::server::vanilla {
 
         int JavaFloor(double d) {
             const double f = std::floor(d);
-            if (f != f) return 0;
-            if (f >= 2147483647.0) return 2147483647;
-            if (f <= -2147483648.0) return static_cast<int>(-2147483647 - 1);
+            if (f != f)
+                return 0;
+            if (f >= 2147483647.0)
+                return 2147483647;
+            if (f <= -2147483648.0)
+                return static_cast<int>(-2147483647 - 1);
             return static_cast<int>(f);
         }
 
-        float Lerp(float t, float a, float b) { return a + t * (b - a); }
-        float Lerp2(float d1, float d2, float v00, float v10, float v01, float v11) { return Lerp(d2, Lerp(d1, v00, v10), Lerp(d1, v01, v11)); }
-        float Smoothstep(float f) { return f * f * f * (f * (f * 6.0f - 15.0f) + 10.0f); }
+        float Lerp(float t, float a, float b) {
+            return a + t * (b - a);
+        }
+        float Lerp2(float d1, float d2, float v00, float v10, float v01, float v11) {
+            return Lerp(d2, Lerp(d1, v00, v10), Lerp(d1, v01, v11));
+        }
+        float Smoothstep(float f) {
+            return f * f * f * (f * (f * 6.0f - 15.0f) + 10.0f);
+        }
 
-        struct Grad { int x, y, z; };
-        constexpr Grad kGradients[16] = {{1, 1, 0}, {-1, 1, 0}, {1, -1, 0}, {-1, -1, 0}, {1, 0, 1}, {-1, 0, 1}, {1, 0, -1}, {-1, 0, -1},
-                                         {0, 1, 1}, {0, -1, 1}, {0, 1, -1}, {0, -1, -1}, {1, 1, 0}, {0, -1, 1}, {-1, 1, 0}, {0, -1, -1}};
+        struct Grad {
+            int x, y, z;
+        };
+        constexpr Grad kGradients[16] = {
+            {1, 1, 0}, {-1, 1, 0}, {1, -1, 0}, {-1, -1, 0}, {1, 0, 1}, {-1, 0, 1}, {1, 0, -1}, {-1, 0, -1},
+            {0, 1, 1}, {0, -1, 1}, {0, 1, -1}, {0, -1, -1}, {1, 1, 0}, {0, -1, 1}, {-1, 1, 0}, {0, -1, -1}};
 
         float GradDot(int hash, float x, float y, float z) {
             const Grad& g = kGradients[hash & 15];
@@ -120,7 +150,8 @@ namespace perlin::server::vanilla {
         return SampleAndLerp(ix, iy, iz, fx, fy, fz, fy);
     }
 
-    float PerlinNoise::SampleAndLerp(int ix, int iy, int iz, float fx, float fy, float fz, float smoothY) const {
+    float PerlinNoise::SampleAndLerp(int ix, int iy, int iz, float fx, float fy, float fz,
+                                     float smoothY) const {
         const int p0 = Permute(ix), p1 = Permute(ix + 1);
         const int i10 = Permute(p0 + iy), i11 = Permute(p0 + iy + 1);
         const int i12 = Permute(p1 + iy), i13 = Permute(p1 + iy + 1);
@@ -145,17 +176,20 @@ namespace perlin::server::vanilla {
         const float fz = static_cast<float>(pz - static_cast<double>(iz));
         // snap the fraction down to a multiple of the smear scale while y is within that first step
         const double d = (y >= 0.0 && y < fyd) ? y : fyd;
-        const double fudge = static_cast<double>(JavaFloor(d / fudgeYScale + 1.0000000116860974E-7)) * fudgeYScale;
+        const double fudge =
+            static_cast<double>(JavaFloor(d / fudgeYScale + 1.0000000116860974E-7)) * fudgeYScale;
         return SampleAndLerp(ix, iy, iz, fx, static_cast<float>(fyd - fudge), fz, static_cast<float>(fyd));
     }
 
-    std::vector<BlendedNoise::Layer> BlendedNoise::Fbm(Xoroshiro& random, int firstOctave, double smearScale, double amplitude) {
+    std::vector<BlendedNoise::Layer> BlendedNoise::Fbm(Xoroshiro& random, int firstOctave, double smearScale,
+                                                       double amplitude) {
         const int count = -firstOctave + 1;
         double frequency = 1.0;
         amplitude = amplitude / (std::pow(2.0, static_cast<double>(count)) - 1.0);
         std::vector<Layer> out;
         for (int i = count - 1; i >= 0; i--) {
-            out.push_back({SmearedPerlinNoise(random, smearScale * frequency), frequency, static_cast<float>(amplitude)});
+            out.push_back({SmearedPerlinNoise(random, smearScale * frequency), frequency,
+                           static_cast<float>(amplitude)});
             frequency /= 2.0;
             amplitude *= 2.0;
         }
@@ -169,8 +203,10 @@ namespace perlin::server::vanilla {
         return sum;
     }
 
-    BlendedNoise::BlendedNoise(double xzScale, double yScale, double xzFactorIn, double yFactorIn, double smear, Xoroshiro random)
-        : xzMultiplier(684.412 * xzScale), yMultiplier(684.412 * yScale), xzFactor(xzFactorIn), yFactor(yFactorIn) {
+    BlendedNoise::BlendedNoise(double xzScale, double yScale, double xzFactorIn, double yFactorIn,
+                               double smear, Xoroshiro random)
+        : xzMultiplier(684.412 * xzScale), yMultiplier(684.412 * yScale), xzFactor(xzFactorIn),
+          yFactor(yFactorIn) {
         const double d2 = yMultiplier * smear;
         const double d4 = d2 / yFactor;
         minLimit = Fbm(random, -15, d2, 0.9999847412109375);
@@ -180,7 +216,9 @@ namespace perlin::server::vanilla {
 
     float BlendedNoise::Get(int x, int y, int z) const {
         const double dx = static_cast<double>(x), dy = static_cast<double>(y), dz = static_cast<double>(z);
-        float alpha = Sum(main, dx * (xzMultiplier / xzFactor), dy * (yMultiplier / yFactor), dz * (xzMultiplier / xzFactor)) + 0.5f;
+        float alpha = Sum(main, dx * (xzMultiplier / xzFactor), dy * (yMultiplier / yFactor),
+                          dz * (xzMultiplier / xzFactor)) +
+                      0.5f;
         alpha = alpha < 0.0f ? 0.0f : std::min(alpha, 1.0f);
         if (alpha == 0.0f)
             return Sum(minLimit, dx * xzMultiplier, dy * yMultiplier, dz * xzMultiplier);
@@ -192,14 +230,19 @@ namespace perlin::server::vanilla {
     }
 
     NormalNoise::NormalNoise(const NoiseParameters& p, Xoroshiro random) {
-        struct Octave { int index; double frequency, amplitude; };
+        struct Octave {
+            int index;
+            double frequency, amplitude;
+        };
         std::vector<Octave> octaves;
         double frequency = std::pow(2.0, static_cast<double>(p.baseOctave));
         double amplitude = p.baseAmplitude;
         if (p.normalize)
-            amplitude = amplitude * std::pow(0.5, static_cast<double>(-(p.octaveCount - 1))) / (std::pow(0.5, static_cast<double>(-p.octaveCount)) - 1.0);
+            amplitude = amplitude * std::pow(0.5, static_cast<double>(-(p.octaveCount - 1))) /
+                        (std::pow(0.5, static_cast<double>(-p.octaveCount)) - 1.0);
         for (int i = 0; i < p.octaveCount; i++) {
-            const double modifier = p.amplitudeModifiers.empty() ? 1.0 : p.amplitudeModifiers[static_cast<size_t>(i)];
+            const double modifier =
+                p.amplitudeModifiers.empty() ? 1.0 : p.amplitudeModifiers[static_cast<size_t>(i)];
             if (modifier != 0.0)
                 octaves.push_back({p.baseOctave + i, frequency, amplitude * modifier});
             frequency *= 2.0;
@@ -212,7 +255,8 @@ namespace perlin::server::vanilla {
             deviation += d * d;
         }
         deviation = std::sqrt(deviation);
-        const double normalization = deviation == 0.0 ? 0.0 : (sum * 0.3333333333333333) / (deviation * std::sqrt(2.0));
+        const double normalization =
+            deviation == 0.0 ? 0.0 : (sum * 0.3333333333333333) / (deviation * std::sqrt(2.0));
 
         const Xoroshiro::Factory a = random.ForkPositional();
         const Xoroshiro::Factory b = random.ForkPositional();

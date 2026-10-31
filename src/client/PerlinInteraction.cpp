@@ -78,7 +78,8 @@ namespace perlin {
                 EntityPickRange(creative));
         }
         if (PERLIN_ENV("PERLIN_AIM_DEBUG"))
-            Log("aim", "kind {} block {},{},{} face {} dist {}", static_cast<int>(aimHit.kind), aimHit.bx, aimHit.by, aimHit.bz, aimHit.face, aimHit.distance);
+            Log("aim", "kind {} block {},{},{} face {} dist {}", static_cast<int>(aimHit.kind), aimHit.bx,
+                aimHit.by, aimHit.bz, aimHit.face, aimHit.distance);
     }
 
     void Perlin::StopBreaking(BedrockSession* live) {
@@ -538,16 +539,17 @@ namespace perlin {
                         ? custom.useTicks > 0
                         : blockuse::VanillaUseTicks(held.name, HandRenderer::IsFood(held.name)) > 0;
                 live->SendUseItemInAir(eyeF, heldUse);
+                if (held.name == "minecraft:firework_rocket")
+                    player.UseFirework();
                 usingItem = heldUse;
+                if (heldUse)
+                    player.BeginItemUse();
             }
         }
         if (!useHeld && live)
             live->EndItemUseOn();
-        if (usingItem && !useHeld) {
-            usingItem = false;
-            if (live)
-                live->SendReleaseItem(eyeF);
-        }
+        if (usingItem && !useHeld)
+            ReleaseHeldItem(live, held, eyeF);
 
         if (live && inputManager.Pressed(Action::PickBlock)) {
             entity::Entity picked;
@@ -619,7 +621,6 @@ namespace perlin {
         const auto say = [&](const std::string& text) {
             chat.AddMessage(i18n::Tr("perlin.debug.prefix") + " " + text, hudAnim.ticks);
         };
-        const auto onOff = [&](bool on) { return i18n::Tr(on ? "options.on" : "options.off"); };
         const auto num = [](double v) {
             char b[32];
             std::snprintf(b, sizeof b, "%.2f", v);

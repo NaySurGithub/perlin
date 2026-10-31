@@ -17,54 +17,83 @@ namespace perlin::material {
     namespace fs = std::filesystem;
     using Json = ui::Json;
 
-
     BlendFactor ParseBlendFactor(const std::string& raw, BlendFactor fallback) {
         const std::string s = str::Lower(raw);
-        if (s == "zero") return BlendFactor::Zero;
-        if (s == "one") return BlendFactor::One;
-        if (s == "sourcecolor" || s == "srccolor") return BlendFactor::SrcColor;
-        if (s == "oneminussourcecolor" || s == "oneminussrccolor") return BlendFactor::InvSrcColor;
-        if (s == "sourcealpha" || s == "srcalpha") return BlendFactor::SrcAlpha;
-        if (s == "oneminussourcealpha" || s == "oneminussrcalpha") return BlendFactor::InvSrcAlpha;
-        if (s == "destcolor" || s == "dstcolor" || s == "destinationcolor") return BlendFactor::DstColor;
-        if (s == "oneminusdestcolor" || s == "oneminusdstcolor" || s == "oneminusdestinationcolor") return BlendFactor::InvDstColor;
-        if (s == "destalpha" || s == "dstalpha" || s == "destinationalpha") return BlendFactor::DstAlpha;
-        if (s == "oneminusdestalpha" || s == "oneminusdstalpha" || s == "oneminusdestinationalpha") return BlendFactor::InvDstAlpha;
-        if (s == "sourcealphasaturate") return BlendFactor::SrcAlphaSaturate;
+        if (s == "zero")
+            return BlendFactor::Zero;
+        if (s == "one")
+            return BlendFactor::One;
+        if (s == "sourcecolor" || s == "srccolor")
+            return BlendFactor::SrcColor;
+        if (s == "oneminussourcecolor" || s == "oneminussrccolor")
+            return BlendFactor::InvSrcColor;
+        if (s == "sourcealpha" || s == "srcalpha")
+            return BlendFactor::SrcAlpha;
+        if (s == "oneminussourcealpha" || s == "oneminussrcalpha")
+            return BlendFactor::InvSrcAlpha;
+        if (s == "destcolor" || s == "dstcolor" || s == "destinationcolor")
+            return BlendFactor::DstColor;
+        if (s == "oneminusdestcolor" || s == "oneminusdstcolor" || s == "oneminusdestinationcolor")
+            return BlendFactor::InvDstColor;
+        if (s == "destalpha" || s == "dstalpha" || s == "destinationalpha")
+            return BlendFactor::DstAlpha;
+        if (s == "oneminusdestalpha" || s == "oneminusdstalpha" || s == "oneminusdestinationalpha")
+            return BlendFactor::InvDstAlpha;
+        if (s == "sourcealphasaturate")
+            return BlendFactor::SrcAlphaSaturate;
         return fallback;
     }
 
     DepthFunc ParseDepthFunc(const std::string& raw) {
         const std::string s = str::Lower(raw);
-        if (s == "less") return DepthFunc::Less;
-        if (s == "equal") return DepthFunc::Equal;
-        if (s == "always") return DepthFunc::Always;
-        if (s == "greater") return DepthFunc::Greater;
-        if (s == "greaterequal") return DepthFunc::GreaterEqual;
-        if (s == "notequal") return DepthFunc::NotEqual;
-        if (s == "never") return DepthFunc::Never;
+        if (s == "less")
+            return DepthFunc::Less;
+        if (s == "equal")
+            return DepthFunc::Equal;
+        if (s == "always")
+            return DepthFunc::Always;
+        if (s == "greater")
+            return DepthFunc::Greater;
+        if (s == "greaterequal")
+            return DepthFunc::GreaterEqual;
+        if (s == "notequal")
+            return DepthFunc::NotEqual;
+        if (s == "never")
+            return DepthFunc::Never;
         return DepthFunc::LessEqual;
     }
 
     StencilFunc ParseStencilFunc(const std::string& raw) {
         const std::string s = str::Lower(raw);
-        if (s == "equal") return StencilFunc::Equal;
-        if (s == "notequal") return StencilFunc::NotEqual;
-        if (s == "less") return StencilFunc::Less;
-        if (s == "lessequal") return StencilFunc::LessEqual;
-        if (s == "greater") return StencilFunc::Greater;
-        if (s == "greaterequal") return StencilFunc::GreaterEqual;
-        if (s == "never") return StencilFunc::Never;
+        if (s == "equal")
+            return StencilFunc::Equal;
+        if (s == "notequal")
+            return StencilFunc::NotEqual;
+        if (s == "less")
+            return StencilFunc::Less;
+        if (s == "lessequal")
+            return StencilFunc::LessEqual;
+        if (s == "greater")
+            return StencilFunc::Greater;
+        if (s == "greaterequal")
+            return StencilFunc::GreaterEqual;
+        if (s == "never")
+            return StencilFunc::Never;
         return StencilFunc::Always;
     }
 
     StencilOp ParseStencilOp(const std::string& raw) {
         const std::string s = str::Lower(raw);
-        if (s == "replace") return StencilOp::Replace;
-        if (s == "zero") return StencilOp::Zero;
-        if (s == "incr" || s == "increment") return StencilOp::Increment;
-        if (s == "decr" || s == "decrement") return StencilOp::Decrement;
-        if (s == "invert") return StencilOp::Invert;
+        if (s == "replace")
+            return StencilOp::Replace;
+        if (s == "zero")
+            return StencilOp::Zero;
+        if (s == "incr" || s == "increment")
+            return StencilOp::Increment;
+        if (s == "decr" || s == "decrement")
+            return StencilOp::Decrement;
+        if (s == "invert")
+            return StencilOp::Invert;
         return StencilOp::Keep;
     }
 
@@ -129,7 +158,8 @@ namespace perlin::material {
                 if (!s.IsObject())
                     continue;
                 Sampler sampler;
-                sampler.index = static_cast<int>(s.Find("samplerIndex") ? s.Find("samplerIndex")->NumberOr(0) : 0);
+                sampler.index =
+                    static_cast<int>(s.Find("samplerIndex") ? s.Find("samplerIndex")->NumberOr(0) : 0);
                 if (const Json* f = s.Find("textureFilter"))
                     sampler.filter = f->StringOr("Point");
                 if (const Json* w = s.Find("textureWrap"))
@@ -137,8 +167,10 @@ namespace perlin::material {
                 bool replaced = false;
                 for (Sampler& existing : def.samplers)
                     if (existing.index == sampler.index) {
-                        if (!s.Find("textureFilter")) sampler.filter = existing.filter;
-                        if (!s.Find("textureWrap")) sampler.wrap = existing.wrap;
+                        if (!s.Find("textureFilter"))
+                            sampler.filter = existing.filter;
+                        if (!s.Find("textureWrap"))
+                            sampler.wrap = existing.wrap;
                         existing = sampler;
                         replaced = true;
                     }
@@ -152,10 +184,14 @@ namespace perlin::material {
         }
         readSamplers(json.Find("+samplerStates"));
 
-        if (const Json* v = json.Find("vertexShader")) def.vertexShader = v->StringOr(def.vertexShader);
-        if (const Json* v = json.Find("vrGeometryShader")) def.geometryShader = v->StringOr(def.geometryShader);
-        if (const Json* v = json.Find("fragmentShader")) def.fragmentShader = v->StringOr(def.fragmentShader);
-        if (const Json* v = json.Find("primitiveMode")) def.primitive = v->StringOr(def.primitive);
+        if (const Json* v = json.Find("vertexShader"))
+            def.vertexShader = v->StringOr(def.vertexShader);
+        if (const Json* v = json.Find("vrGeometryShader"))
+            def.geometryShader = v->StringOr(def.geometryShader);
+        if (const Json* v = json.Find("fragmentShader"))
+            def.fragmentShader = v->StringOr(def.fragmentShader);
+        if (const Json* v = json.Find("primitiveMode"))
+            def.primitive = v->StringOr(def.primitive);
         if (const Json* v = json.Find("vertexFields"); v && v->IsArray()) {
             def.vertexFields.clear();
             for (const Json& f : v->array)
@@ -170,10 +206,14 @@ namespace perlin::material {
             def.blendDst = ParseBlendFactor(v->StringOr(""), def.blendDst);
             def.blendSet = true;
         }
-        if (const Json* v = json.Find("depthFunc")) def.depthFunc = ParseDepthFunc(v->StringOr(""));
-        if (const Json* v = json.Find("depthBias")) def.depthBias = static_cast<float>(v->NumberOr(def.depthBias));
-        if (const Json* v = json.Find("depthBiasOGL")) def.depthBiasOgl = static_cast<float>(v->NumberOr(def.depthBiasOgl));
-        if (const Json* v = json.Find("slopeScaledDepthBias")) def.slopeScaledDepthBias = static_cast<float>(v->NumberOr(def.slopeScaledDepthBias));
+        if (const Json* v = json.Find("depthFunc"))
+            def.depthFunc = ParseDepthFunc(v->StringOr(""));
+        if (const Json* v = json.Find("depthBias"))
+            def.depthBias = static_cast<float>(v->NumberOr(def.depthBias));
+        if (const Json* v = json.Find("depthBiasOGL"))
+            def.depthBiasOgl = static_cast<float>(v->NumberOr(def.depthBiasOgl));
+        if (const Json* v = json.Find("slopeScaledDepthBias"))
+            def.slopeScaledDepthBias = static_cast<float>(v->NumberOr(def.slopeScaledDepthBias));
         if (const Json* v = json.Find("msaaSupport")) {
             const std::string m = v->StringOr("Both");
             def.msaa = m != "NonMSAA";
@@ -181,10 +221,14 @@ namespace perlin::material {
         if (const Json* v = json.Find("frontFace"); v && v->IsObject())
             ApplyStencilFace(def.stencil, *v);
         ApplyStencilFace(def.stencil, json);
-        if (const Json* v = json.Find("stencilRef")) def.stencil.ref = static_cast<uint8_t>(v->NumberOr(def.stencil.ref));
-        if (const Json* v = json.Find("stencilRefOverride")) def.stencil.ref = static_cast<uint8_t>(v->NumberOr(def.stencil.ref));
-        if (const Json* v = json.Find("stencilReadMask")) def.stencil.readMask = static_cast<uint8_t>(v->NumberOr(def.stencil.readMask));
-        if (const Json* v = json.Find("stencilWriteMask")) def.stencil.writeMask = static_cast<uint8_t>(v->NumberOr(def.stencil.writeMask));
+        if (const Json* v = json.Find("stencilRef"))
+            def.stencil.ref = static_cast<uint8_t>(v->NumberOr(def.stencil.ref));
+        if (const Json* v = json.Find("stencilRefOverride"))
+            def.stencil.ref = static_cast<uint8_t>(v->NumberOr(def.stencil.ref));
+        if (const Json* v = json.Find("stencilReadMask"))
+            def.stencil.readMask = static_cast<uint8_t>(v->NumberOr(def.stencil.readMask));
+        if (const Json* v = json.Find("stencilWriteMask"))
+            def.stencil.writeMask = static_cast<uint8_t>(v->NumberOr(def.stencil.writeMask));
         def.stencil.enabled = def.State("EnableStencilTest");
         def.stencil.write = def.State("StencilWrite");
     }
@@ -237,9 +281,11 @@ namespace perlin::material {
         std::sort(files.begin(), files.end());
         for (const fs::path& p : files) {
             const std::string stem = p.stem().string();
-            if (stem == "gameface" || stem == "hologram" || (stem == "fancy" && !fancy) || (stem == "sad" && fancy))
+            if (stem == "gameface" || stem == "hologram" || (stem == "fancy" && !fancy) ||
+                (stem == "sad" && fancy))
                 continue;
-            const bool defineFancy = fancy && (stem == "fancy" || stem == "entity" || stem == "terrain" || stem == "portal");
+            const bool defineFancy =
+                fancy && (stem == "fancy" || stem == "entity" || stem == "terrain" || stem == "portal");
             AddText(file::Read(p), defineFancy ? fancyDefine : std::set<std::string>());
         }
     }
@@ -319,7 +365,6 @@ namespace perlin::material {
             ResolveOne(r.name);
     }
 
-
     namespace {
         struct Builtin {
             const char* name;
@@ -391,39 +436,63 @@ namespace perlin::material {
         using B = BlendFactor;
         const bool fancy = mode == Mode::Fancy;
         const Builtin table[] = {
-            {"clouds", fancy ? "Blending,DisableAlphaWrite" : "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, ""},
-            {"sun_moon", "DisableDepthWrite,DisableAlphaWrite,Blending", B::SrcAlpha, B::One, DepthFunc::LessEqual, ""},
-            {"stars", "DisableDepthWrite,DisableAlphaWrite,Blending", B::InvDstColor, B::One, DepthFunc::LessEqual, ""},
+            {"clouds", fancy ? "Blending,DisableAlphaWrite" : "DisableAlphaWrite", B::SrcAlpha,
+             B::InvSrcAlpha, DepthFunc::LessEqual, ""},
+            {"sun_moon", "DisableDepthWrite,DisableAlphaWrite,Blending", B::SrcAlpha, B::One,
+             DepthFunc::LessEqual, ""},
+            {"stars", "DisableDepthWrite,DisableAlphaWrite,Blending", B::InvDstColor, B::One,
+             DepthFunc::LessEqual, ""},
             {"ui_crosshair", "Blending", B::InvDstColor, B::InvSrcColor, DepthFunc::LessEqual, ""},
-            {"particles_opaque", "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "ENABLE_FOG"},
-            {"particles_alpha", "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "ALPHA_TEST,ENABLE_FOG"},
-            {"particles_blend", "Blending,DisableCulling,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "ENABLE_FOG"},
-            {"particles_add", "Blending,DisableCulling,DisableDepthWrite", B::SrcAlpha, B::One, DepthFunc::LessEqual, "ENABLE_FOG"},
-            {"cracks_overlay", "Blending,DisableDepthWrite,DisableAlphaWrite", B::DstColor, B::Zero, DepthFunc::LessEqual, ""},
+            {"particles_opaque", "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual,
+             "ENABLE_FOG"},
+            {"particles_alpha", "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual,
+             "ALPHA_TEST,ENABLE_FOG"},
+            {"particles_blend", "Blending,DisableCulling,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha,
+             DepthFunc::LessEqual, "ENABLE_FOG"},
+            {"particles_add", "Blending,DisableCulling,DisableDepthWrite", B::SrcAlpha, B::One,
+             DepthFunc::LessEqual, "ENABLE_FOG"},
+            {"cracks_overlay", "Blending,DisableDepthWrite,DisableAlphaWrite", B::DstColor, B::Zero,
+             DepthFunc::LessEqual, ""},
             {"name_tag", "Blending,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::Always, ""},
-            {"name_tag_depth_tested", "Blending,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, ""},
+            {"name_tag_depth_tested", "Blending,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha,
+             DepthFunc::LessEqual, ""},
             {"name_tag_text", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::Always, ""},
             {"name_text_depth_tested", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, ""},
-            {"precipitation", "DisableCulling,DisableDepthWrite,Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "COMFORT_MODE"},
+            {"precipitation", "DisableCulling,DisableDepthWrite,Blending", B::SrcAlpha, B::InvSrcAlpha,
+             DepthFunc::LessEqual, "COMFORT_MODE"},
             {"lightning", "DisableCulling,Blending", B::SrcAlpha, B::One, DepthFunc::LessEqual, ""},
             {"entity", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
-            {"entity_alphatest", "DisableCulling", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,ALPHA_TEST"},
-            {"entity_alphablend", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
+            {"entity_alphatest", "DisableCulling", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual,
+             "USE_OVERLAY,ALPHA_TEST"},
+            {"entity_alphablend", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual,
+             "USE_OVERLAY"},
             {"slime_outer", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
-            {"entity_multitexture", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,MULTI_COLOR_TINT"},
-            {"entity_emissive_alpha_one_sided", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
-            {"entity_emissive", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE"},
-            {"entity_emissive_alpha", "DisableCulling,Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
+            {"entity_multitexture", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual,
+             "USE_OVERLAY,MULTI_COLOR_TINT"},
+            {"entity_emissive_alpha_one_sided", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual,
+             "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
+            {"entity_emissive", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual,
+             "USE_OVERLAY,USE_EMISSIVE"},
+            {"entity_emissive_alpha", "DisableCulling,Blending", B::SrcAlpha, B::InvSrcAlpha,
+             DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
         };
         for (const Builtin& b : table) {
             const std::string name = b.name;
-            const char* family = name == "clouds" ? "Clouds" : name == "sun_moon" ? "SunMoon"
-                : name == "stars" ? "Stars" : name == "ui_crosshair" ? "UISprite"
-                : name.starts_with("particles_") ? "Particle" : name == "cracks_overlay" ? "Cracks"
-                : name.starts_with("name_") ? "NameTag" : name == "precipitation" ? "Weather" : "Actor";
-            const char* pass = name == "ui_crosshair" ? "Transparent"
+            const char* family = name == "clouds"                 ? "Clouds"
+                                 : name == "sun_moon"             ? "SunMoon"
+                                 : name == "stars"                ? "Stars"
+                                 : name == "ui_crosshair"         ? "UISprite"
+                                 : name.starts_with("particles_") ? "Particle"
+                                 : name == "cracks_overlay"       ? "Cracks"
+                                 : name.starts_with("name_")      ? "NameTag"
+                                 : name == "precipitation"        ? "Weather"
+                                                                  : "Actor";
+            const char* pass =
+                name == "ui_crosshair" ? "Transparent"
                 : name == "entity" || name == "entity_multitexture" || name == "entity_emissive" ? "Opaque"
-                : name == "particles_alpha" || name == "particles_opaque" || name == "entity_alphatest" ? "AlphaTest" : "Transparent";
+                : name == "particles_alpha" || name == "particles_opaque" || name == "entity_alphatest"
+                    ? "AlphaTest"
+                    : "Transparent";
             Def& d = alias(b.name, family, pass);
             d.states = Split(b.states);
             d.defines = Split(b.defines);
@@ -432,7 +501,11 @@ namespace perlin::material {
             d.blendSet = true;
             d.depthFunc = b.depth;
         }
-        struct Alias { const char* name; const char* family; const char* pass; };
+        struct Alias {
+            const char* name;
+            const char* family;
+            const char* pass;
+        };
         const Alias aliases[] = {
             {"terrain_base", "RenderChunk", "Opaque"},
             {"terrain_opaque", "RenderChunk", "Opaque"},
@@ -462,9 +535,12 @@ namespace perlin::material {
                 d.defines.insert("USE_OVERLAY");
             if (d.sourceFamily == "RenderChunk") {
                 d.states.insert("DisableAlphaWrite");
-                if (fancy) d.defines.insert("FANCY");
-                if (d.Define("ALPHA_TEST")) d.states.insert("DisableCulling");
-                if (d.name.contains("seasons")) d.defines.insert("SEASONS");
+                if (fancy)
+                    d.defines.insert("FANCY");
+                if (d.Define("ALPHA_TEST"))
+                    d.states.insert("DisableCulling");
+                if (d.name.contains("seasons"))
+                    d.defines.insert("SEASONS");
             }
             if (d.name == "terrain_blend_no_culling" || d.name == "arrow")
                 d.states.insert("DisableCulling");

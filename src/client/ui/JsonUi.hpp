@@ -25,12 +25,13 @@ namespace perlin::ui {
 
         const Def* Find(const std::string& ns, const std::string& name);
         // "parent/child/..." definitions: paths into descendants, keyed by first name in the path
-        const std::unordered_map<std::string, std::vector<std::pair<std::string, const Json*>>>* Nested(const std::string& ns);
+        const std::unordered_map<std::string, std::vector<std::pair<std::string, const Json*>>>*
+        Nested(const std::string& ns);
         const Vars& GlobalVariables();
         const std::vector<std::string>& Problems() const { return problems; }
         size_t FileCount() const { return files.size(); }
         size_t NamespaceCount() const { return namespaces.size(); }
-        bool Has(const std::string& ns) const { return namespaces.count(ns) != 0; }
+        bool Has(const std::string& ns) const { return namespaces.contains(ns); }
         // true when a file for `ns` comes from a root listed before `root` (roots highest priority first)
         bool DefinedBefore(const std::string& ns, size_t root) const;
         size_t RootCount() const { return roots.size(); }
@@ -87,5 +88,6 @@ namespace perlin::ui {
     std::unique_ptr<Node> BuildTree(UiLibrary& library, const std::string& reference, const Vars& rootVars,
                                     BuildReport& report);
 
-    Json Substitute(const Json& value, const Vars& vars, std::unordered_set<std::string>* unresolved = nullptr);
+    Json Substitute(const Json& value, const Vars& vars,
+                    std::unordered_set<std::string>* unresolved = nullptr);
 }

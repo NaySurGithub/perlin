@@ -14,8 +14,7 @@
 
 namespace perlin {
     namespace detail {
-        template <std::floating_point T>
-        bool parse_floating(std::string_view text, T& out) {
+        template <std::floating_point T> bool parse_floating(std::string_view text, T& out) {
             if (text.empty() || text.size() > 64)
                 return false;
             const std::string copy(text);
@@ -59,8 +58,7 @@ namespace perlin {
             return instance;
         }
 
-        template <class T>
-        T parse(std::string_view text) {
+        template <class T> T parse(std::string_view text) {
             if constexpr (std::is_same_v<T, bool>) {
                 return text == "true" || text == "1";
             } else if constexpr (std::is_same_v<T, std::string>) {
@@ -72,15 +70,15 @@ namespace perlin {
                 (void)detail::parse_floating(text, value);
                 return value;
             } else {
-                static_assert(std::is_integral_v<T>, "a setting is a bool, a number, a string or an enumeration");
+                static_assert(std::is_integral_v<T>,
+                              "a setting is a bool, a number, a string or an enumeration");
                 T value{};
                 (void)std::from_chars(text.data(), text.data() + text.size(), value);
                 return value;
             }
         }
 
-        template <class T>
-        std::string format(const T& value) {
+        template <class T> std::string format(const T& value) {
             if constexpr (std::is_same_v<T, bool>) {
                 return value ? "true" : "false";
             } else if constexpr (std::is_same_v<T, std::string>) {
@@ -102,14 +100,12 @@ namespace perlin {
         return std::string(bytes->begin(), bytes->end());
     }
 
-    template <class T>
-    T setting(std::string_view id) {
+    template <class T> T setting(std::string_view id) {
         const std::string* text = detail_settings::store().find(id);
         return text ? detail_settings::parse<T>(*text) : T{};
     }
 
-    template <class T>
-    class Setting {
+    template <class T> class Setting {
     public:
         using Value = T;
         constexpr explicit Setting(std::string_view setting_id) : name(setting_id) {}
@@ -142,8 +138,7 @@ namespace perlin {
     using Integer = Setting<int>;
     using Number = Setting<double>;
     using Text = Setting<std::string>;
-    template <meta::Enumeration E>
-    using Choice = Setting<E>;
+    template <meta::Enumeration E> using Choice = Setting<E>;
 
     class Button {
     public:

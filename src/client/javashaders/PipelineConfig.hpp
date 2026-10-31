@@ -10,7 +10,27 @@ namespace perlin::jshader {
     constexpr int kMaxColorTex = 16;
     constexpr int kMaxShadowColor = 2;
 
-    enum class BufferFormat { RGBA8, RGBA16, RGBA16F, RGBA32F, R8, RG8, R16F, RG16F, R32F, RGB8, RGB16F, R11F_G11F_B10F, RGB10_A2, RG16, R16, RGBA8_SNORM, RGB16, RGBA32I, RG32F };
+    enum class BufferFormat {
+        RGBA8,
+        RGBA16,
+        RGBA16F,
+        RGBA32F,
+        R8,
+        RG8,
+        R16F,
+        RG16F,
+        R32F,
+        RGB8,
+        RGB16F,
+        R11F_G11F_B10F,
+        RGB10_A2,
+        RG16,
+        R16,
+        RGBA8_SNORM,
+        RGB16,
+        RGBA32I,
+        RG32F
+    };
     BufferFormat ParseBufferFormat(const std::string& text, BufferFormat fallback);
 
     struct BlendFactors {
@@ -69,10 +89,13 @@ namespace perlin::jshader {
         bool shadowEnabled = false;
         bool depthMipmap = false;
         float sunPathRotation = 0.0f;
-        float eyeBrightnessHalflife = 10.0f, centerDepthHalflife = 1.0f, wetnessHalflife = 600.0f, drynessHalflife = 200.0f;
+        float eyeBrightnessHalflife = 10.0f, centerDepthHalflife = 1.0f, wetnessHalflife = 600.0f,
+              drynessHalflife = 200.0f;
         float ambientOcclusionLevel = 1.0f;
-        bool oldLighting = false, oldHandLight = true, separateAo = false, underwaterOverlay = true, sun = true, moon = true, vignette = true;
-        bool rainDepth = false, beaconBeamDepth = false, dynamicHandLight = true, frustumCulling = true, shadowTranslucent = true;
+        bool oldLighting = false, oldHandLight = true, separateAo = false, underwaterOverlay = true,
+             sun = true, moon = true, vignette = true;
+        bool rainDepth = false, beaconBeamDepth = false, dynamicHandLight = true, frustumCulling = true,
+             shadowTranslucent = true;
         std::string clouds = "default";
         std::string cloudShadow;
         std::string particlesBeforeDeferred;

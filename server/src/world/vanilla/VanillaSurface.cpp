@@ -18,7 +18,8 @@ namespace perlin::server::vanilla {
                 const int32_t lo = p[d * 2], hi = p[d * 2 + 1];
                 const int32_t t = target[d];
                 const int32_t over = t - hi, under = lo - t;
-                uint32_t dist = over > 0 ? static_cast<uint32_t>(over) : (under > 0 ? static_cast<uint32_t>(under) : 0u);
+                uint32_t dist =
+                    over > 0 ? static_cast<uint32_t>(over) : (under > 0 ? static_cast<uint32_t>(under) : 0u);
                 dist = std::min(dist, kMaxClimateDistance);
                 fit += dist * dist;
             }
@@ -35,8 +36,9 @@ namespace perlin::server::vanilla {
     }
 
     VanillaClimate::VanillaClimate(DensityGraph& graph) {
-        static const char* kIds[6] = {"minecraft:overworld/temperature", "minecraft:overworld/vegetation", "minecraft:overworld/continents",
-                                      "minecraft:overworld/erosion", "minecraft:overworld/depth", "minecraft:overworld/ridges"};
+        static const char* kIds[6] = {"minecraft:overworld/temperature", "minecraft:overworld/vegetation",
+                                      "minecraft:overworld/continents",  "minecraft:overworld/erosion",
+                                      "minecraft:overworld/depth",       "minecraft:overworld/ridges"};
         ok = true;
         for (int i = 0; i < 6; i++) {
             roots[static_cast<size_t>(i)] = graph.Load(kIds[i]);
@@ -68,8 +70,9 @@ namespace perlin::server::vanilla {
         grass = c.DefaultBlock("grass_block");
         for (int i = 0; i < kBiomeCount; i++) {
             const BiomeMaterials& b = kBiomes[i];
-            materials.push_back({c.DefaultBlock(b.top), c.DefaultBlock(b.mid), c.DefaultBlock(b.foundation), c.DefaultBlock(b.seaFloor), c.DefaultBlock(b.sea),
-                                 b.seaFloorDepth, b.builder});
+            materials.push_back({c.DefaultBlock(b.top), c.DefaultBlock(b.mid), c.DefaultBlock(b.foundation),
+                                 c.DefaultBlock(b.seaFloor), c.DefaultBlock(b.sea), b.seaFloorDepth,
+                                 b.builder});
         }
     }
 
@@ -108,12 +111,14 @@ namespace perlin::server::vanilla {
             for (int x = 0; x < 16; x++)
                 for (int z = 0; z < 16; z++)
                     for (int y = 0; y < 16; y++)
-                        cells[static_cast<size_t>(CellIndex(x, y, z))] = blocks[static_cast<size_t>((x * 16 + z) * kHeight + sec * 16 + y)];
+                        cells[static_cast<size_t>(CellIndex(x, y, z))] =
+                            blocks[static_cast<size_t>((x * 16 + z) * kHeight + sec * 16 + y)];
             column.SetSection(sec, cells.data());
         }
     }
 
-    void VanillaSurface::Fill(const float* density, const uint8_t* biomes, ChunkColumn& column, const VanillaFeatures* features, int chunkX, int chunkZ) const {
+    void VanillaSurface::Fill(const float* density, const uint8_t* biomes, ChunkColumn& column,
+                              const VanillaFeatures* features, int chunkX, int chunkZ) const {
         std::vector<uint16_t> blocks(static_cast<size_t>(16 * 16 * kHeight), 0);
         for (int x = 0; x < 16; x++)
             for (int z = 0; z < 16; z++) {

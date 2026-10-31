@@ -14,19 +14,30 @@
 namespace perlin::replay {
     const std::vector<Resolution>& ResolutionPresets() {
         static const std::vector<Resolution> v = {
-            {"360p", 640, 360},   {"480p", 854, 480},    {"720p (HD)", 1280, 720},       {"1080p (Full HD)", 1920, 1080},
-            {"1440p (2K)", 2560, 1440}, {"2160p (4K)", 3840, 2160}, {"4320p (8K)", 7680, 4320}, {"Custom", 0, 0},
+            {"360p", 640, 360},         {"480p", 854, 480},
+            {"720p (HD)", 1280, 720},   {"1080p (Full HD)", 1920, 1080},
+            {"1440p (2K)", 2560, 1440}, {"2160p (4K)", 3840, 2160},
+            {"4320p (8K)", 7680, 4320}, {"Custom", 0, 0},
         };
         return v;
     }
     const std::vector<AspectRatio>& AspectRatios() {
         static const std::vector<AspectRatio> v = {
-            {"16:9", 16, 9}, {"21:9", 21, 9}, {"32:9", 32, 9}, {"4:3", 4, 3}, {"3:2", 3, 2}, {"1:1", 1, 1}, {"9:16 (vertical)", 9, 16}, {"4:5", 4, 5}, {"Free", 0, 0},
+            {"16:9", 16, 9},
+            {"21:9", 21, 9},
+            {"32:9", 32, 9},
+            {"4:3", 4, 3},
+            {"3:2", 3, 2},
+            {"1:1", 1, 1},
+            {"9:16 (vertical)", 9, 16},
+            {"4:5", 4, 5},
+            {"Free", 0, 0},
         };
         return v;
     }
     const std::vector<double>& FpsPresets() {
-        static const std::vector<double> v = {15, 23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 72, 90, 120, 144, 165, 240, 360, 480, 960};
+        static const std::vector<double> v = {15, 23.976, 24,  25,  29.97, 30,  48,  50,  59.94, 60,
+                                              72, 90,     120, 144, 165,   240, 360, 480, 960};
         return v;
     }
 
@@ -38,14 +49,17 @@ namespace perlin::replay {
             std::snprintf(buf, sizeof buf, "%.3f", fps);
         std::string s = buf;
         if (s.contains('.')) {
-            while (s.back() == '0') s.pop_back();
-            if (s.back() == '.') s.pop_back();
+            while (s.back() == '0')
+                s.pop_back();
+            if (s.back() == '.')
+                s.pop_back();
         }
         return s;
     }
 
     double ParseFps(const std::string& text) {
-        if (text.empty()) return -1;
+        if (text.empty())
+            return -1;
         try {
             const size_t slash = text.find('/');
             if (slash != std::string::npos) {
@@ -94,19 +108,28 @@ namespace perlin::replay {
         std::string err;
         if (!ui::Json::Parse(text, j, err) || !j.IsObject())
             return c;
-        const auto str = [&](const char* k, std::string& out) { if (const ui::Json* f = j.Find(k)) out = f->StringOr(out); };
-        const auto num = [&](const char* k, double d) { const ui::Json* f = j.Find(k); return f ? f->NumberOr(d) : d; };
+        const auto str = [&](const char* k, std::string& out) {
+            if (const ui::Json* f = j.Find(k))
+                out = f->StringOr(out);
+        };
+        const auto num = [&](const char* k, double d) {
+            const ui::Json* f = j.Find(k);
+            return f ? f->NumberOr(d) : d;
+        };
         str("container", c.container);
         str("codec", c.codec);
         c.width = std::clamp(static_cast<int>(num("width", c.width)), 16, 16384);
         c.height = std::clamp(static_cast<int>(num("height", c.height)), 16, 16384);
-        c.aspectIdx = std::clamp(static_cast<int>(num("aspect", 0)), 0, static_cast<int>(AspectRatios().size()) - 1);
+        c.aspectIdx =
+            std::clamp(static_cast<int>(num("aspect", 0)), 0, static_cast<int>(AspectRatios().size()) - 1);
         c.fps = std::clamp(num("fps", c.fps), 0.1, 1000.0);
         c.crf = std::clamp(static_cast<int>(num("crf", c.crf)), 0, 51);
         c.bitrateKbps = std::clamp(static_cast<int>(num("bitrate", 0)), 0, 2000000);
         c.ssaa = std::clamp(static_cast<int>(num("ssaa", 1)), 1, 4);
-        if (const ui::Json* f = j.Find("hideGui")) c.hideGui = f->BoolOr(true);
-        if (const ui::Json* f = j.Find("transparent")) c.transparent = f->BoolOr(false);
+        if (const ui::Json* f = j.Find("hideGui"))
+            c.hideGui = f->BoolOr(true);
+        if (const ui::Json* f = j.Find("transparent"))
+            c.transparent = f->BoolOr(false);
         c.range = static_cast<RangeMode>(std::clamp(static_cast<int>(num("range", 0)), 0, 2));
         c.customStartSec = num("customStart", 0);
         c.customEndSec = num("customEnd", 10);
@@ -119,11 +142,13 @@ namespace perlin::replay {
         str("muxer", c.muxerOverride);
         str("extension", c.extensionOverride);
         c.gifColors = std::clamp(static_cast<int>(num("gifColors", 256)), 2, 256);
-        if (!ffmpeg::FindContainer(c.container)) c.container = "mp4";
+        if (!ffmpeg::FindContainer(c.container))
+            c.container = "mp4";
         return c;
     }
 
-    std::string ExpandNameTemplate(const std::string& tpl, const std::string& replayName, int w, int h, double fps, const std::string& container) {
+    std::string ExpandNameTemplate(const std::string& tpl, const std::string& replayName, int w, int h,
+                                   double fps, const std::string& container) {
         const std::time_t now = std::time(nullptr);
         std::tm tm{};
 #ifdef _WIN32
@@ -140,13 +165,20 @@ namespace perlin::replay {
                 const size_t end = tpl.find('}', i);
                 if (end != std::string::npos) {
                     const std::string key = tpl.substr(i + 1, end - i - 1);
-                    if (key == "replay") out += replayName;
-                    else if (key == "date") out += date;
-                    else if (key == "time") out += time;
-                    else if (key == "res") out += std::to_string(w) + "x" + std::to_string(h);
-                    else if (key == "fps") out += FpsLabel(fps);
-                    else if (key == "container") out += container;
-                    else out += tpl.substr(i, end - i + 1);
+                    if (key == "replay")
+                        out += replayName;
+                    else if (key == "date")
+                        out += date;
+                    else if (key == "time")
+                        out += time;
+                    else if (key == "res")
+                        out += std::to_string(w) + "x" + std::to_string(h);
+                    else if (key == "fps")
+                        out += FpsLabel(fps);
+                    else if (key == "container")
+                        out += container;
+                    else
+                        out += tpl.substr(i, end - i + 1);
                     i = end + 1;
                     continue;
                 }
@@ -158,18 +190,22 @@ namespace perlin::replay {
     }
 
     std::string ExportDirectory(const ExportConfig& c) {
-        if (!c.outputDir.empty()) return c.outputDir;
+        if (!c.outputDir.empty())
+            return c.outputDir;
         return ReplayDirectory() + "/exports";
     }
 
     std::string UniquePath(const std::string& path, bool isDirectory) {
         namespace fs = std::filesystem;
         std::error_code ec;
-        if (!fs::exists(path, ec)) return path;
+        if (!fs::exists(path, ec))
+            return path;
         const fs::path p(path);
         for (int i = 2; i < 10000; i++) {
-            fs::path cand = p.parent_path() / (p.stem().string() + " (" + std::to_string(i) + ")" + (isDirectory ? "" : p.extension().string()));
-            if (!fs::exists(cand, ec)) return cand.string();
+            fs::path cand = p.parent_path() / (p.stem().string() + " (" + std::to_string(i) + ")" +
+                                               (isDirectory ? "" : p.extension().string()));
+            if (!fs::exists(cand, ec))
+                return cand.string();
         }
         return path;
     }

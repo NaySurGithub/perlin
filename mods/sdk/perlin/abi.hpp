@@ -11,6 +11,7 @@
 #include <variant>
 #include <vector>
 
+#include "perlin/abi_table.h"
 #include "perlin/meta.hpp"
 
 namespace perlin::abi {
@@ -18,210 +19,17 @@ namespace perlin::abi {
     inline constexpr int32_t kNeedMoreBase = 16;
     inline constexpr uint32_t kEventCancel = 1;
 
+    // every value comes from abi_table.h
     enum class Op : uint32_t {
-        Log = 0x0001,
-        Meta = 0x0002,
-        Clock = 0x0003,
-
-        PlayerState = 0x0100,
-        PlayerEffects = 0x0101,
-        PlayerLook = 0x0102,
-
-        Inventory = 0x0200,
-        InventorySelect = 0x0201,
-        InventoryDrop = 0x0202,
-        InventorySwap = 0x0203,
-        InventoryClick = 0x0204,
-        InventoryOpen = 0x0205,
-        InventoryClose = 0x0206,
-
-        WorldState = 0x0300,
-        Block = 0x0301,
-        Region = 0x0302,
-        Raycast = 0x0303,
-        Aim = 0x0304,
-        FindBlocks = 0x0305,
-        ChunkLoaded = 0x0306,
-        BlockNames = 0x0307,
-        BlockProps = 0x0308,
-        BlockEntityData = 0x0309,
-        DisplayName = 0x030A,
-        BreakProgress = 0x030B,
-
-        Entities = 0x0400,
-        EntityById = 0x0401,
-        PlayerList = 0x0402,
-
-        Options = 0x0500,
-        OptionGet = 0x0501,
-        OptionSet = 0x0502,
-        Screen = 0x0503,
-        Translate = 0x0504,
-        ReloadResources = 0x0505,
-        PerspectiveGet = 0x0506,
-        PerspectiveSet = 0x0507,
-        ResourcePacks = 0x0508,
-
-        InputDown = 0x0600,
-        InputOverride = 0x0601,
-        KeyRegister = 0x0602,
-        InputActions = 0x0603,
-        MousePosition = 0x0604,
-
-        Chat = 0x0700,
-        Command = 0x0701,
-        LocalMessage = 0x0702,
-        CommandRegister = 0x0703,
-        CommandUnregister = 0x0704,
-        ServerCommands = 0x0705,
-        Toast = 0x0706,
-        Title = 0x0707,
-        ChatHistory = 0x0708,
-        TitleState = 0x0709,
-
-        SwingArm = 0x0800,
-        UseItem = 0x0801,
-        UseOnBlock = 0x0802,
-        AttackEntity = 0x0803,
-        InteractEntity = 0x0804,
-        BreakBlock = 0x0805,
-        Look = 0x0806,
-        Respawn = 0x0807,
-        Disconnect = 0x0808,
-        PlaySound = 0x0809,
-        Jump = 0x080B,
-
-        UiSubmit = 0x0900,
-        UiClear = 0x0901,
-        UiMeasure = 0x0902,
-
-        GfxTextureCreate = 0x0910,
-        GfxTextureUpdate = 0x0911,
-        GfxTextureDestroy = 0x0912,
-        GfxSubmit = 0x0913,
-        GfxClear = 0x0914,
-        GfxDisplay = 0x0915,
-
-        InputGrab = 0x0920,
-
-        NativeInfo = 0x0930,
-
-        StorageRead = 0x0A00,
-        StorageWrite = 0x0A01,
-        StorageList = 0x0A02,
-        StorageRemove = 0x0A03,
-        StorageExists = 0x0A04,
-        StorageMakeDir = 0x0A05,
-
-        HttpRequest = 0x0B00,
-        PacketSend = 0x0B01,
-        PacketName = 0x0B02,
-
-        SettingGet = 0x0C01,
-        SettingSet = 0x0C02,
-        SettingList = 0x0C03,
-        ModList = 0x0C10,
-        IconSet = 0x0C11,
-
-        OpenScreen = 0x0D00,
-        OpenModSettings = 0x0D01,
-        TakeScreenshot = 0x0D02,
-        CyclePerspective = 0x0D03,
-        CopyToClipboard = 0x0D04,
-        OpenUrl = 0x0D05,
-        ToggleHud = 0x0D06,
-
-        CopyFile = 0x0E00,
-        MoveFile = 0x0E01,
-        DownloadFile = 0x0E02,
-
-        CameraControl = 0x0F00,
-        CameraState = 0x0F01,
-        WorldToScreen = 0x0F02,
-        PlayerMotion = 0x0F10,
-        PlayerTeleport = 0x0F11,
-        PlayerModelPose = 0x0F20,
-        PlayerSetLook = 0x0F21,
-        WorldLines = 0x0F30,
-        WorldBoxes = 0x0F31,
-        ClientBlockSet = 0x0F40,
-        ClientBlockGet = 0x0F41,
-        PacketDrop = 0x0F50,
-        PacketCounters = 0x0F51,
-        PacketInject = 0x0F52,
-
-        // hooks into the client's rendering, screens and systems
-        HudElementSet = 0x1000,
-        DebugLines = 0x1001,
-        FogSet = 0x1002,
-        ScreenTint = 0x1003,
-        EntityRenderOverride = 0x1010,
-        WorldMesh = 0x1011,
-        WorldMeshClear = 0x1012,
-        FrameLimit = 0x1020,
-        WindowState = 0x1021,
-        ScreenButtonAdd = 0x1030,
-        ScreenButtonRemove = 0x1031,
-        ScreenOpenCustom = 0x1032,
-        TooltipAppend = 0x1033,
-        LoadingOverlay = 0x1040,
-        SkinOverride = 0x1041,
-        AmbientSound = 0x1050,
-        ServerPing = 0x1060,
-        ModSend = 0x1070,
-        PackRegister = 0x1080,
-        ShaderPackSet = 0x1081,
-        ParticleSpawn = 0x1090,
-        KeyRegisterEx = 0x10A0,
+#define PERLIN_X(Name, Id, ...) Name = Id,
+        PERLIN_ABI_OPS(PERLIN_X)
+#undef PERLIN_X
     };
 
     enum class Event : uint32_t {
-        Load = 1,
-        Unload = 2,
-        Tick = 3,
-        Frame = 4,
-        ChatReceived = 5,
-        ChatSending = 6,
-        Connected = 7,
-        Disconnected = 8,
-        Key = 9,
-        Command = 10,
-        Damage = 11,
-        Death = 12,
-        Respawned = 13,
-        DimensionChanged = 14,
-        ScreenChanged = 15,
-        SlotChanged = 16,
-        EntityAdded = 17,
-        EntityRemoved = 18,
-        Sound = 19,
-        HttpResponse = 20,
-        Packet = 21,
-        Title = 22,
-        SettingChanged = 23,
-        Look = 24,
-        MouseMove = 25,
-        MouseButton = 26,
-        MouseWheel = 27,
-        KeyRaw = 28,
-        TextInput = 29,
-        ScreenRender = 30,
-        SlotClick = 31,
-        Interact = 32,
-        ChunkLoaded = 33,
-        ChunkUnloaded = 34,
-        BlockChanged = 35,
-        ResourcesReloaded = 36,
-        LevelLoaded = 37,
-        LevelUnloaded = 38,
-        ModsLoaded = 39,
-        ClientStopping = 40,
-        Toast = 41,
-        ModMessage = 42,
-        Tooltip = 43,
-        ScreenButton = 44,
-        WindowFocus = 45,
-        ServerPing = 46,
+#define PERLIN_X(Name, Id, ...) Name = Id,
+        PERLIN_ABI_EVENTS(PERLIN_X)
+#undef PERLIN_X
     };
 
     enum class Status : int32_t {
@@ -270,10 +78,28 @@ namespace perlin::abi {
     };
 
     enum class HudElement : int32_t {
-        Hearts = 0, Armor, Hunger, Air, Hotbar, Experience, Debug, Chat, Effects, Locator, Fire, Subtitles, Crosshair,
+        Hearts = 0,
+        Armor,
+        Hunger,
+        Air,
+        Hotbar,
+        Experience,
+        Debug,
+        Chat,
+        Effects,
+        Locator,
+        Fire,
+        Subtitles,
+        Crosshair,
     };
 
-    enum class InteractKind : int32_t { StartBreak = 0, Attack = 1, InteractEntity = 2, UseOnBlock = 3, UseItem = 4 };
+    enum class InteractKind : int32_t {
+        StartBreak = 0,
+        Attack = 1,
+        InteractEntity = 2,
+        UseOnBlock = 3,
+        UseItem = 4
+    };
 
     enum class RenderStage : int32_t { AfterTerrain = 0, AfterEntities = 1, Overlay = 2 };
 
@@ -382,29 +208,80 @@ namespace perlin::abi {
     enum class Area : uint8_t { Mod, Screenshots, ResourcePacks, ShaderPacks };
 
     enum class EntityFlag : uint8_t {
-        OnFire = 0, Sneaking = 1, Riding = 2, Sprinting = 3, UsingItem = 4, Invisible = 5, Tempted = 6, InLove = 7,
-        Saddled = 8, Powered = 9, Ignited = 10, Baby = 11, Converting = 12, Critical = 13, CanShowName = 14,
-        AlwaysShowName = 15, NoAi = 16, Silent = 17, WallClimbing = 18, CanClimb = 19, CanSwim = 20, CanFly = 21,
-        CanWalk = 22, Resting = 23, Sitting = 24, Angry = 25, Interested = 26, Charged = 27, Tamed = 28, Orphaned = 29,
-        Leashed = 30, Sheared = 31, Gliding = 32, Elder = 33, Moving = 34, Breathing = 35, Chested = 36, Stackable = 37,
-        ShowBase = 38, Rearing = 39, Vibrating = 40, Idling = 41, EvokerSpell = 42, ChargeAttack = 43, WasdControlled = 44,
-        CanPowerJump = 45, Lingering = 46, HasCollision = 47, HasGravity = 48, FireImmune = 49, Dancing = 50,
-        Enchanted = 51, ReturnTrident = 52, ContainerPrivate = 53, Transforming = 54, DamageNearbyMobs = 55,
-        Swimming = 56, Bribed = 57, Pregnant = 58, LayingEgg = 59, PassengerCanPick = 60, TransitionSitting = 61,
-        Eating = 62, LayingDown = 63,
+        OnFire = 0,
+        Sneaking = 1,
+        Riding = 2,
+        Sprinting = 3,
+        UsingItem = 4,
+        Invisible = 5,
+        Tempted = 6,
+        InLove = 7,
+        Saddled = 8,
+        Powered = 9,
+        Ignited = 10,
+        Baby = 11,
+        Converting = 12,
+        Critical = 13,
+        CanShowName = 14,
+        AlwaysShowName = 15,
+        NoAi = 16,
+        Silent = 17,
+        WallClimbing = 18,
+        CanClimb = 19,
+        CanSwim = 20,
+        CanFly = 21,
+        CanWalk = 22,
+        Resting = 23,
+        Sitting = 24,
+        Angry = 25,
+        Interested = 26,
+        Charged = 27,
+        Tamed = 28,
+        Orphaned = 29,
+        Leashed = 30,
+        Sheared = 31,
+        Gliding = 32,
+        Elder = 33,
+        Moving = 34,
+        Breathing = 35,
+        Chested = 36,
+        Stackable = 37,
+        ShowBase = 38,
+        Rearing = 39,
+        Vibrating = 40,
+        Idling = 41,
+        EvokerSpell = 42,
+        ChargeAttack = 43,
+        WasdControlled = 44,
+        CanPowerJump = 45,
+        Lingering = 46,
+        HasCollision = 47,
+        HasGravity = 48,
+        FireImmune = 49,
+        Dancing = 50,
+        Enchanted = 51,
+        ReturnTrident = 52,
+        ContainerPrivate = 53,
+        Transforming = 54,
+        DamageNearbyMobs = 55,
+        Swimming = 56,
+        Bribed = 57,
+        Pregnant = 58,
+        LayingEgg = 59,
+        PassengerCanPick = 60,
+        TransitionSitting = 61,
+        Eating = 62,
+        LayingDown = 63,
     };
     using EntityFlags = meta::IndexSet<EntityFlag, uint64_t>;
 }
 
-template <>
-struct perlin::meta::enable_flags<perlin::abi::Permission> : std::true_type {};
-template <>
-struct perlin::meta::enum_range<perlin::abi::EntityFlag> {
+template <> struct perlin::meta::enable_flags<perlin::abi::Permission> : std::true_type {};
+template <> struct perlin::meta::enum_range<perlin::abi::EntityFlag> {
     static constexpr int min = 0;
     static constexpr int max = 63;
 };
-template <>
-struct perlin::meta::enum_range<perlin::abi::EffectId> {
+template <> struct perlin::meta::enum_range<perlin::abi::EffectId> {
     static constexpr int min = 1;
     static constexpr int max = 63;
 };
@@ -420,7 +297,9 @@ namespace perlin::abi {
 namespace perlin::meta {
     template <class E>
         requires std::is_enum_v<E>
-    struct enable_format<E> : std::bool_constant<requires(E e) { abi_enum_tag(e); }> {};
+    struct enable_format<E> : std::bool_constant < requires(E e) {
+        abi_enum_tag(e);
+    } > {};
 }
 
 namespace perlin::abi {
@@ -428,32 +307,23 @@ namespace perlin::abi {
 
     namespace wire {
         template <class T>
-        concept Raw = (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) || std::is_enum_v<T> || requires { T::wire_raw_tag; };
+        concept Raw = (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) || std::is_enum_v<T> ||
+                      requires { T::wire_raw_tag; };
 
-        template <class T>
-        struct is_vector : std::false_type {};
-        template <class T, class A>
-        struct is_vector<std::vector<T, A>> : std::true_type {};
+        template <class T> struct is_vector : std::false_type {};
+        template <class T, class A> struct is_vector<std::vector<T, A>> : std::true_type {};
 
-        template <class T>
-        struct is_array : std::false_type {};
-        template <class T, size_t N>
-        struct is_array<std::array<T, N>> : std::true_type {};
+        template <class T> struct is_array : std::false_type {};
+        template <class T, size_t N> struct is_array<std::array<T, N>> : std::true_type {};
 
-        template <class T>
-        struct is_pair : std::false_type {};
-        template <class A, class B>
-        struct is_pair<std::pair<A, B>> : std::true_type {};
+        template <class T> struct is_pair : std::false_type {};
+        template <class A, class B> struct is_pair<std::pair<A, B>> : std::true_type {};
 
-        template <class T>
-        struct is_optional : std::false_type {};
-        template <class T>
-        struct is_optional<std::optional<T>> : std::true_type {};
+        template <class T> struct is_optional : std::false_type {};
+        template <class T> struct is_optional<std::optional<T>> : std::true_type {};
 
-        template <class T>
-        struct is_variant : std::false_type {};
-        template <class... Ts>
-        struct is_variant<std::variant<Ts...>> : std::true_type {};
+        template <class T> struct is_variant : std::false_type {};
+        template <class... Ts> struct is_variant<std::variant<Ts...>> : std::true_type {};
     }
 
     class Writer {
@@ -461,8 +331,7 @@ namespace perlin::abi {
         Writer() = default;
         explicit Writer(size_t reserve) { data.reserve(reserve); }
 
-        template <class T>
-        Writer& put(T value) {
+        template <class T> Writer& put(T value) {
             static_assert(std::is_trivially_copyable_v<T>);
             const size_t at = data.size();
             data.resize(at + sizeof(T));
@@ -487,8 +356,7 @@ namespace perlin::abi {
         }
         Writer& boolean(bool v) { return put<uint8_t>(v ? 1 : 0); }
 
-        template <class... Ts>
-        Writer& write(const Ts&... values) {
+        template <class... Ts> Writer& write(const Ts&... values) {
             (write_one(values), ...);
             return *this;
         }
@@ -499,8 +367,7 @@ namespace perlin::abi {
         std::vector<uint8_t> data;
 
     private:
-        template <class T>
-        void write_one(const T& v) {
+        template <class T> void write_one(const T& v) {
             if constexpr (std::is_same_v<T, bool>) {
                 boolean(v);
             } else if constexpr (wire::Raw<T>) {
@@ -546,8 +413,7 @@ namespace perlin::abi {
         Reader() = default;
         Reader(const uint8_t* p, size_t n) : cur(p), end(p + n) {}
 
-        template <class T>
-        T get() {
+        template <class T> T get() {
             T value{};
             if (static_cast<size_t>(end - cur) < sizeof(T)) {
                 failed = true;
@@ -582,14 +448,12 @@ namespace perlin::abi {
         }
         bool boolean() { return get<uint8_t>() != 0; }
 
-        template <class T>
-        T read() {
+        template <class T> T read() {
             T value{};
             read_into(value);
             return value;
         }
-        template <class T>
-        Reader& read_into(T& v) {
+        template <class T> Reader& read_into(T& v) {
             if constexpr (std::is_same_v<T, bool>) {
                 v = boolean();
             } else if constexpr (wire::Raw<T>) {
@@ -674,8 +538,7 @@ namespace perlin::abi {
         }
 
     private:
-        template <size_t I, class V>
-        void read_alternative(V& v, size_t index) {
+        template <size_t I, class V> void read_alternative(V& v, size_t index) {
             if constexpr (I < std::variant_size_v<V>) {
                 if (index == I) {
                     std::variant_alternative_t<I, V> alt{};
@@ -715,13 +578,15 @@ namespace perlin::abi {
         double x = 0, y = 0, z = 0;
         double vx = 0, vy = 0, vz = 0;
         float yaw = 0, pitch = 0, headYaw = 0, eyeHeight = 1.62f;
-        bool onGround = false, sprinting = false, sneaking = false, swimming = false, gliding = false, flying = false, mayFly = false,
-             spectator = false, onFire = false, riding = false, connected = false;
+        bool onGround = false, sprinting = false, sneaking = false, swimming = false, gliding = false,
+             flying = false, mayFly = false, spectator = false, onFire = false, riding = false,
+             connected = false;
         GameMode gameMode = GameMode::Survival;
         Dimension dimension = Dimension::Overworld;
         int32_t selectedSlot = 0;
         PermissionLevel permission = PermissionLevel::Unknown;
-        float health = 20, maxHealth = 20, absorption = 0, hunger = 20, saturation = 5, xpProgress = 0, walkSpeed = 0.1f;
+        float health = 20, maxHealth = 20, absorption = 0, hunger = 20, saturation = 5, xpProgress = 0,
+              walkSpeed = 0.1f;
         int32_t xpLevel = 0, air = 300, maxAir = 300;
     };
 
@@ -970,8 +835,10 @@ namespace perlin::abi {
             static const std::string empty;
             if (x < x0 || y < y0 || z < z0 || x >= x0 + sx || y >= y0 + sy || z >= z0 + sz)
                 return empty;
-            const size_t i = (static_cast<size_t>(y - y0) * static_cast<size_t>(sz) + static_cast<size_t>(z - z0)) * static_cast<size_t>(sx) +
-                             static_cast<size_t>(x - x0);
+            const size_t i =
+                (static_cast<size_t>(y - y0) * static_cast<size_t>(sz) + static_cast<size_t>(z - z0)) *
+                    static_cast<size_t>(sx) +
+                static_cast<size_t>(x - x0);
             return i < cells.size() && cells[i] < palette.size() ? palette[cells[i]] : empty;
         }
     };
@@ -1023,25 +890,25 @@ namespace perlin::abi {
 
     struct FogOverride {
         bool enabled = true;
-        uint32_t color = 0;  // 0 keeps vanilla color; else 0xAARRGGBB
-        float start = -1, end = -1;  // blocks; negative keeps vanilla
+        uint32_t color = 0;         // 0 keeps vanilla color; else 0xAARRGGBB
+        float start = -1, end = -1; // blocks; negative keeps vanilla
         int32_t ticks = 2;
     };
 
     struct ScreenTintData {
-        uint32_t color = 0;  // 0xAARRGGBB drawn over the world
-        float vignette = 0;  // 0..1 darkening at the edges
+        uint32_t color = 0; // 0xAARRGGBB drawn over the world
+        float vignette = 0; // 0..1 darkening at the edges
         int32_t ticks = 2;
     };
 
     struct EntityOverride {
-        uint64_t entity = 0;  // runtime id, or 0 to match every entity of `type`
+        uint64_t entity = 0; // runtime id, or 0 to match every entity of `type`
         std::string type;
         bool hidden = false;
         float scaleX = 1, scaleY = 1, scaleZ = 1;
         uint32_t tint = 0xFFFFFFFFu;
-        std::string texture;  // resource-pack texture path; empty keeps the vanilla one
-        int32_t nameTag = 0;  // 0 keep, 1 hide, 2 replace with nameText
+        std::string texture; // resource-pack texture path; empty keeps the vanilla one
+        int32_t nameTag = 0; // 0 keep, 1 hide, 2 replace with nameText
         std::string nameText;
         int32_t ticks = 2;
     };
@@ -1055,15 +922,15 @@ namespace perlin::abi {
     struct WorldMeshData {
         std::string id;
         RenderStage stage = RenderStage::AfterEntities;
-        uint32_t texture = 0;  // gfx texture id, 0 for plain color
+        uint32_t texture = 0; // gfx texture id, 0 for plain color
         bool depthTest = true;
         int32_t ticks = 2;
-        std::vector<MeshVertex> triangles;  // three vertices per triangle
+        std::vector<MeshVertex> triangles; // three vertices per triangle
     };
 
     struct FrameLimitData {
-        int32_t fps = 0;           // 0 keeps the player's setting
-        int32_t unfocusedFps = 0;  // while unfocused or minimized; 0 keeps fps
+        int32_t fps = 0;          // 0 keeps the player's setting
+        int32_t unfocusedFps = 0; // while unfocused or minimized; 0 keeps fps
     };
 
     struct WindowInfo {
@@ -1074,7 +941,7 @@ namespace perlin::abi {
     struct ScreenButtonDef {
         Screen screen = Screen::Pause;
         std::string id, label;
-        int32_t x = 0, y = 0, width = 98, height = 20;  // GUI pixels from the screen's top left
+        int32_t x = 0, y = 0, width = 98, height = 20; // GUI pixels from the screen's top left
     };
 
     struct LoadingOverlayData {
@@ -1082,9 +949,9 @@ namespace perlin::abi {
     };
 
     struct SkinOverrideData {
-        std::string player;  // player name, empty for yourself
+        std::string player; // player name, empty for yourself
         bool slim = false;
-        std::vector<uint8_t> png;  // empty removes the override
+        std::vector<uint8_t> png; // empty removes the override
     };
 
     struct AmbientSoundData {
@@ -1099,12 +966,12 @@ namespace perlin::abi {
     };
 
     struct ModMessageData {
-        std::string to, channel;  // empty `to` sends to every other mod
+        std::string to, channel; // empty `to` sends to every other mod
         std::vector<uint8_t> body;
     };
 
     struct PackRegistration {
-        std::string path;  // folder or .zip inside the mod's area
+        std::string path; // folder or .zip inside the mod's area
         bool enabled = true;
     };
 
@@ -1155,6 +1022,8 @@ namespace perlin::abi {
     };
     struct EventCommand {
         std::string name, args;
+        // the player who ran it on a server; 0 on the client
+        uint64_t player = 0;
     };
     struct EventConnection {
         std::string server, message;
@@ -1167,8 +1036,7 @@ namespace perlin::abi {
     struct EventText {
         std::string text;
     };
-    template <class T>
-    struct EventChange {
+    template <class T> struct EventChange {
         T from{}, to{};
     };
     using EventDimension = EventChange<Dimension>;
@@ -1233,7 +1101,7 @@ namespace perlin::abi {
         float mouseX = 0, mouseY = 0;
     };
     struct EventSlotClick {
-        int32_t slot = 0;  // same slot address as InventoryClick
+        int32_t slot = 0; // same slot address as InventoryClick
         bool right = false, shift = false;
     };
     struct EventInteract {
@@ -1318,54 +1186,153 @@ namespace perlin::abi {
         bool inGame = false;
     };
 
-    using EventPayloads = std::tuple<EventNothing,
-                                     EventNothing,
-                                     EventTick,
-                                     EventFrame,
-                                     EventChat,
-                                     EventText,
-                                     EventConnection,
-                                     EventConnection,
-                                     EventKey,
-                                     EventCommand,
-                                     EventDamage,
-                                     EventText,
-                                     EventNothing,
-                                     EventDimension,
-                                     EventScreen,
-                                     EventSlot,
-                                     EventEntity,
-                                     EventEntity,
-                                     EventSound,
-                                     EventHttp,
-                                     EventPacket,
-                                     EventTitle,
-                                     EventSettingChanged,
-                                     EventLook,
-                                     EventMouseMove,
-                                     EventMouseButton,
-                                     EventMouseWheel,
-                                     EventKeyRaw,
-                                     EventText,
-                                     EventScreenRender,
-                                     EventSlotClick,
-                                     EventInteract,
-                                     EventChunk,
-                                     EventChunk,
-                                     EventBlockChanged,
-                                     EventNothing,
-                                     EventLevel,
-                                     EventNothing,
-                                     EventNothing,
-                                     EventNothing,
-                                     EventToast,
-                                     EventModMessage,
-                                     EventTooltip,
-                                     EventScreenButton,
-                                     EventWindow,
-                                     EventServerPing>;
-    static_assert(std::tuple_size_v<EventPayloads> == meta::enum_count<Event>, "every Event needs a payload type");
+    // server-side calls and events
+    struct TextMessage {
+        std::string text;
+    };
+    struct PlayerText {
+        uint64_t player = 0;
+        std::string text;
+    };
+    struct OnlinePlayer {
+        uint64_t id = 0;
+        std::string name;
+        double x = 0, y = 0, z = 0;
+    };
+    struct OnlinePlayerList {
+        std::vector<OnlinePlayer> players;
+    };
+    struct ServerTeleport {
+        uint64_t player = 0;
+        double x = 0, y = 0, z = 0;
+    };
+    struct BlockCoord {
+        int32_t x = 0, y = 0, z = 0;
+    };
+    struct BlockWrite {
+        int32_t x = 0, y = 0, z = 0;
+        std::string block;
+    };
+    struct ServerStatus {
+        std::string name;
+        uint32_t players = 0, maxPlayers = 0;
+        uint64_t tick = 0;
+        std::string backend;
+    };
+    struct GiveItemRequest {
+        uint64_t player = 0;
+        std::string item;
+        uint32_t count = 1;
+    };
+    struct GiveItemResult {
+        // what did not fit in the inventory
+        uint32_t leftover = 0;
+    };
+    struct EventPlayer {
+        uint64_t player = 0;
+        std::string name;
+    };
+    struct EventPlayerChat {
+        uint64_t player = 0;
+        std::string name, message;
+    };
+    struct EventPlayerBlock {
+        uint64_t player = 0;
+        int32_t x = 0, y = 0, z = 0;
+        std::string block;
+    };
 
-    template <Event E>
-    using payload_t = std::tuple_element_t<static_cast<size_t>(E) - 1, EventPayloads>;
+    // which program answers a call or raises an event
+    enum class Hosts : uint8_t { Client = 1, Server = 2, Both = 3 };
+    // bytes encoded by hand on both sides
+    struct Raw {};
+    using Nothing = EventNothing;
+
+    // permission names for the table's permission column
+    namespace perm {
+        inline constexpr uint32_t None = 0;
+        inline constexpr uint32_t Network = static_cast<uint32_t>(Permission::Network);
+        inline constexpr uint32_t Packets = static_cast<uint32_t>(Permission::Packets);
+        inline constexpr uint32_t Control = static_cast<uint32_t>(Permission::Control);
+        inline constexpr uint32_t Storage = static_cast<uint32_t>(Permission::Storage);
+        inline constexpr uint32_t Files = static_cast<uint32_t>(Permission::Files);
+        inline constexpr uint32_t Native = static_cast<uint32_t>(Permission::Native);
+    }
+
+    template <Op O> struct OpSpec;
+#define PERLIN_X(Name, Id, Req, Res, Perm, Where)                                                            \
+    template <> struct OpSpec<Op::Name> {                                                                    \
+        using Request = Req;                                                                                 \
+        using Response = Res;                                                                                \
+        static constexpr uint32_t kPermission = [] {                                                         \
+            using namespace perm;                                                                            \
+            return uint32_t{Perm};                                                                           \
+        }();                                                                                                 \
+        static constexpr Hosts kHosts = Hosts::Where;                                                        \
+    };
+    PERLIN_ABI_OPS(PERLIN_X)
+#undef PERLIN_X
+
+    // permission bits a call needs
+    constexpr uint32_t PermissionOf(Op op) {
+        switch (op) {
+#define PERLIN_X(Name, Id, Req, Res, Perm, Where)                                                            \
+    case Op::Name: {                                                                                         \
+        using namespace perm;                                                                                \
+        return uint32_t{Perm};                                                                               \
+    }
+            PERLIN_ABI_OPS(PERLIN_X)
+#undef PERLIN_X
+        }
+        return 0;
+    }
+
+    constexpr Hosts HostsOf(Op op) {
+        switch (op) {
+#define PERLIN_X(Name, Id, Req, Res, Perm, Where)                                                            \
+    case Op::Name:                                                                                           \
+        return Hosts::Where;
+            PERLIN_ABI_OPS(PERLIN_X)
+#undef PERLIN_X
+        }
+        return Hosts::Both;
+    }
+
+    template <Event E> struct EventSpec;
+#define PERLIN_ABI_WIRING_Method true
+#define PERLIN_ABI_WIRING_Internal false
+#define PERLIN_X(Name, Id, Payload_, Where, Wiring)                                                          \
+    template <> struct EventSpec<Event::Name> {                                                              \
+        using Payload = Payload_;                                                                            \
+        static constexpr Hosts kHosts = Hosts::Where;                                                        \
+        static constexpr bool kMethod = PERLIN_ABI_WIRING_##Wiring;                                          \
+    };                                                                                                       \
+    static_assert(Id < 64, "event ids form one 64-bit subscription mask");
+    PERLIN_ABI_EVENTS(PERLIN_X)
+#undef PERLIN_X
+
+    template <Event E> using payload_t = typename EventSpec<E>::Payload;
+
+    constexpr std::string_view NameOf(Op op) {
+        switch (op) {
+#define PERLIN_X(Name, ...)                                                                                  \
+    case Op::Name:                                                                                           \
+        return #Name;
+            PERLIN_ABI_OPS(PERLIN_X)
+#undef PERLIN_X
+        }
+        return "?";
+    }
+
+    constexpr std::string_view NameOf(Event event) {
+        switch (event) {
+#define PERLIN_X(Name, ...)                                                                                  \
+    case Event::Name:                                                                                        \
+        return #Name;
+            PERLIN_ABI_EVENTS(PERLIN_X)
+#undef PERLIN_X
+        }
+        return "?";
+    }
+
 }

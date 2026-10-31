@@ -4,6 +4,7 @@
 #include "client/ClientControl.hpp"
 #include "client/FrameGenPacer.hpp"
 #include "client/Options.hpp"
+#include "client/ScreenManager.hpp"
 #include "client/audio/SoundSystem.hpp"
 #include "client/audio/Subtitles.hpp"
 #include "client/entity/EntityRenderer.hpp"
@@ -109,7 +110,7 @@ namespace perlin {
             bool shown = false;
             bool leftDown = false;
             std::string signature;
-            TimePoint openedAt{};
+            TimePoint openedAt;
         };
 
         // lifecycle (Perlin.cpp)
@@ -136,6 +137,7 @@ namespace perlin {
         void UpdateSession(FrameContext& f);
         void UpdateRiding(BedrockSession& live, const std::vector<entity::Entity>& entities);
         void UpdateEatingAndDrinking(FrameContext& f, BedrockSession& live);
+        void ReleaseHeldItem(BedrockSession* live, const ui::HudItem& held, const float eye[3]);
         void UpdateViewSettings(FrameContext& f);
         void ApplyRendererSwitch();
         void UpdateChat(FrameContext& f);
@@ -148,7 +150,7 @@ namespace perlin {
         void StopBreaking(BedrockSession* live);
         void SwingHand();
         void UpdatePreviewWorld(FrameContext& f);
-        void UpdateThirdPersonDistance(BedrockSession* live);
+        void UpdateThirdPersonDistance(BedrockSession* live, float dt);
         void SampleEyeEnvironment(FrameContext& f);
         void FillFrameHud(FrameContext& f);
         void HandleDebugKeys(FrameContext& f);
@@ -169,7 +171,8 @@ namespace perlin {
         void EndFrame(FrameContext& f);
         void PaceFrame(FrameContext& f);
 
-        // rml screens (PerlinScreens.cpp)
+        // rml screens (PerlinScreens.cpp); RegisterScreens lists them all, in the order they get the frame
+        void RegisterScreens();
         void UpdateServerLayer(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         void UpdateFormScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         void UpdateBedScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
@@ -411,7 +414,7 @@ namespace perlin {
         };
         struct RecentBreak {
             int x = 0, y = 0, z = 0;
-            TimePoint at{};
+            TimePoint at;
         };
         AimHit aimHit;
         uint32_t selfSwing = 0;
@@ -435,9 +438,9 @@ namespace perlin {
             int fps = 0;
             uint64_t rateTx = 0, rateRx = 0;
             int txRate = 0, rxRate = 0;
-            TimePoint rateAt{};
+            TimePoint rateAt;
             int heightSurface = 0;
-            TimePoint heightAt{};
+            TimePoint heightAt;
             int sky = 15, block = 0;
         } debug;
 
@@ -445,7 +448,7 @@ namespace perlin {
             uint64_t ticks = 0;
             int toolTimer = 0;
             ui::HudItem lastTool;
-            TimePoint titleAtSeen{}, actionAtSeen{};
+            TimePoint titleAtSeen, actionAtSeen;
             int overlayTime = 0, titleTime = 0, titleFadeIn = 10, titleStay = 70, titleFadeOut = 20;
             bool haveHealth = false;
             int lastHealth = 0;
@@ -456,8 +459,8 @@ namespace perlin {
         int previewSlot = 0;
         bool uiClickWasDown = false;
         ui::ChatLog chat;
-        TimePoint chatOpenedAt{};
-        TimePoint playersAt{};
+        TimePoint chatOpenedAt;
+        TimePoint playersAt;
         bool chatLeftDown = false;
 
         entity::EntityTracker previewEntities;
@@ -467,11 +470,13 @@ namespace perlin {
         std::string selfSkinKey;
         std::optional<entity::Entity> dollSelf;
         struct EntityLightEntry {
-            TimePoint at{};
+            TimePoint at;
             glm::vec3 colour{1.0f};
             int sky = 0, block = 0;
         };
         std::unordered_map<int64_t, EntityLightEntry> entityLight;
+
+        ScreenManager screens;
 
         struct ServerLayer {
             bool shown = false;
@@ -479,7 +484,7 @@ namespace perlin {
         } serverLayer;
         struct Toast {
             std::string text, title, message;
-            TimePoint at{};
+            TimePoint at;
         } toast;
 
         struct BedScreen : OverlayState {
@@ -488,12 +493,12 @@ namespace perlin {
 
         struct CreditsScreen : OverlayState {
             double scroll = 0;
-            TimePoint last{};
+            TimePoint last;
         } credits;
 
         struct DeathScreen : OverlayState {
             bool respawnSent = false, textMode = false, hoverLogged = false;
-            TimePoint sentAt{};
+            TimePoint sentAt;
             ui::TemplateSlot tmpl;
         } death;
 
@@ -504,7 +509,7 @@ namespace perlin {
             bool engine = false, engineFailed = false;
             float scroll = 0.0f, contentH = 0.0f, viewH = 0.0f;
             int dragSlider = -1;
-            TimePoint lastWarm{}, lastAnim{};
+            TimePoint lastWarm, lastAnim;
             bool previewOpened = false;
         } form;
 
@@ -514,12 +519,12 @@ namespace perlin {
             int hoverAddr = -1, picked = -1, hover = -1;
             std::string hoverId;
             bool workbench = false, book = false, horse = false, chest = false;
-            TimePoint mountAsk{};
+            TimePoint mountAsk;
             int dragButton = 0;
             std::vector<int> dragSlots;
             int bookPage = 0;
             std::vector<BedrockSession::RecipeEntry> recipeAll;
-            TimePoint recipeAt{};
+            TimePoint recipeAt;
             ui::TemplateSlot tmpl;
             float panel[4] = {};
             bool jsonPanel = false, closeClicked = false;
@@ -546,12 +551,12 @@ namespace perlin {
             int drag = -1, page = 0, sub = 0;
             int bindCapture = -1, controlsTab = 0, bindDevice = 0;
             bool bindWasCapturing = false;
-            TimePoint bindStartedAt{};
+            TimePoint bindStartedAt;
             bool touchEditing = false, touchEditHidden = false;
             float kbScroll = 0.0f, scroll = 0.0f;
             int scrollKey = -1;
             int hoverRow = -1;
-            TimePoint hoverSince{};
+            TimePoint hoverSince;
             std::map<std::string, std::pair<int, double>> worldOverride;
             std::string signature;
         } optionsUi;
@@ -569,7 +574,7 @@ namespace perlin {
             std::map<std::string, PackMetaCacheEntry> metaCache;
             std::map<std::string, std::string> modIconStamp;
             std::vector<std::string> foundCache;
-            TimePoint foundAt{};
+            TimePoint foundAt;
             std::vector<std::string> pending;
             bool pendingInit = false;
             std::vector<std::string> modRowTips;
@@ -583,7 +588,7 @@ namespace perlin {
             int previewSerial = 0;
             std::string previewKey, previewSource;
             std::vector<std::string> skins, capes;
-            TimePoint listedAt{};
+            TimePoint listedAt;
             std::unordered_map<std::string, std::string> stamp;
             std::unordered_map<std::string, bool> slimGuess;
             std::string skin, cape;
@@ -598,7 +603,7 @@ namespace perlin {
             bool returnToServers = false, returnToReplays = false;
             int openView = 1;
             int clickRow = -1;
-            TimePoint clickAt{};
+            TimePoint clickAt;
             ui::TitlePage lastPage = ui::TitlePage::Main;
         } titleScreen;
         ui::TitleModel title;
@@ -606,21 +611,21 @@ namespace perlin {
             uint32_t textures[6] = {};
             bool ready = false;
             uint64_t packStamp = 0;
-            TimePoint clock{}, retryAt{};
+            TimePoint clock, retryAt;
         } panorama;
-        TimePoint logoRetryAt{};
+        TimePoint logoRetryAt;
         bool logoBedrock = false;
 
         struct AssetScreen : OverlayState {
             bool skip = false;
-            TimePoint sampleAt{};
+            TimePoint sampleAt;
             uint64_t lastBytes[2] = {0, 0};
             double speed[2] = {0.0, 0.0};
         } asset;
 
         struct LoadingScreen : OverlayState {
             bool textMode = false, done = false, readyArmed = false;
-            TimePoint readyAt{}, startAt{};
+            TimePoint readyAt, startAt;
             int chunkBase = 0;
             ui::TemplateSlot tmpl;
         } loading;
@@ -638,7 +643,7 @@ namespace perlin {
             std::string tex, shader;
         };
         std::future<HotStamps> hotScan;
-        TimePoint hotPollAt{};
+        TimePoint hotPollAt;
         std::string hotTexStamp, hotShaderStamp, shaderBuildReport;
 
         // accounts; the sign-in runs on a worker
@@ -648,7 +653,7 @@ namespace perlin {
             std::shared_ptr<xbox::Account> account;
             std::string authFile, url, code, status, gamertag;
             std::vector<std::pair<std::string, std::string>> pendingRenames;
-            TimePoint gamertagFetchAt{};
+            TimePoint gamertagFetchAt;
             std::atomic<int> state{0};
         } signIn;
 
@@ -661,9 +666,9 @@ namespace perlin {
         bool tabDirty = false, realmJoinReady = false;
         std::atomic<bool> lanBusy{false}, realmsBusy{false}, friendsBusy{false}, realmJoinBusy{false};
         std::atomic<bool> featuredBusy{false}, featuredPing{false};
-        TimePoint featuredAt{};
+        TimePoint featuredAt;
         std::atomic<bool> realmAddBusy{false}, realmAddedFlag{false};
-        TimePoint realmAddedAt{};
+        TimePoint realmAddedAt;
         std::atomic<bool> leaseJoining{false}, leaseJoinFailed{false};
         std::shared_ptr<lan::Session> lanSession;
         std::mutex lanSessionMutex;
@@ -683,13 +688,13 @@ namespace perlin {
         struct ModAdvanced {
             std::mutex mutex;
             abi::CameraControlState camera;
-            TimePoint cameraUntil{};
+            TimePoint cameraUntil;
             abi::ModelPose pose;
             bool lookTaken = false;
             glm::dvec3 lookDir{0.0, 0.0, -1.0};
-            TimePoint poseUntil{};
+            TimePoint poseUntil;
             struct DrawSet {
-                TimePoint until{};
+                TimePoint until;
                 std::vector<entity::EntityRenderer::FrameIn::ModLine> lines;
             };
             std::map<std::string, DrawSet> lines;
@@ -704,15 +709,15 @@ namespace perlin {
             std::mutex mutex;
             std::map<std::string, std::map<abi::HudElement, abi::HudElementState>> hud;
             std::map<std::string, abi::DebugLinesData> debug;
-            std::pair<TimePoint, abi::FogOverride> fog{};
-            std::pair<TimePoint, abi::ScreenTintData> tint{};
+            std::pair<TimePoint, abi::FogOverride> fog;
+            std::pair<TimePoint, abi::ScreenTintData> tint;
             struct EntityRule {
-                TimePoint until{};
+                TimePoint until;
                 abi::EntityOverride rule;
             };
             std::map<std::string, std::map<std::string, EntityRule>> entities; // plugin -> "id:N" / "type:X"
             struct Mesh {
-                TimePoint until{};
+                TimePoint until;
                 abi::WorldMeshData data;
             };
             std::map<std::string, Mesh> meshes; // "plugin/id"
@@ -769,7 +774,7 @@ namespace perlin {
         std::unordered_set<uint64_t> modEntityIds;
         bool modEntitySeeded = false;
         std::string modToastText, modTitleText, modSubtitleText;
-        TimePoint modToastUntil{}, modTitleStart{};
+        TimePoint modToastUntil, modTitleStart;
         int modTitleFadeIn = 500, modTitleStay = 3500, modTitleFadeOut = 1000;
         uint64_t modLayerVersion = 0;
         int modLayerW = 0, modLayerH = 0;
@@ -787,11 +792,11 @@ namespace perlin {
             bool showPlayers = true, showEntities = true, showNametags = true, editorOverUi = false;
             float editorViewX0 = 0, editorViewY0 = 0, editorViewX1 = 1e9f, editorViewY1 = 1e9f;
             double lastScrubSeekMs = -1e9;
-            TimePoint lastScrubAt{};
+            TimePoint lastScrubAt;
             double scrubMs = -1, flySpeed = 16.0, inMs = -1, outMs = -1;
             int speedIdx = 3;
             std::string signature, status;
-            TimePoint openedAt{}, statusUntil{};
+            TimePoint openedAt, statusUntil;
             bool keyPrev[256] = {};
             float roll = 0, fovOverride = -1;
         } replayUi;
@@ -805,7 +810,7 @@ namespace perlin {
             float fov = 70, roll = 0, speed = 1.0f, timeTicks = 6000;
             std::string signature;
             bool leftDown = false;
-            TimePoint openedAt{};
+            TimePoint openedAt;
         } kfUi;
         struct EditorUi {
             bool open = false, leftDown = false;
@@ -814,7 +819,7 @@ namespace perlin {
             int drag = 0, dragTrack = -1;
             double dragOffset = 0;
             double lastSeekMs = -1e9;
-            TimePoint lastSeekAt{}, openedAt{};
+            TimePoint lastSeekAt, openedAt;
             std::string signature;
             bool keyPrev[256] = {};
         } editorUi;
@@ -822,7 +827,7 @@ namespace perlin {
         double replayPrevMs = 0;
         double replayWorldFromMs = 0;
         int replayClickRow = -1;
-        TimePoint replayClickAt{};
+        TimePoint replayClickAt;
 
         // export
         struct ExportUi {
@@ -834,7 +839,7 @@ namespace perlin {
             replay::ffmpeg::Catalog cat;
             std::unique_ptr<replay::ffmpeg::Downloader> downloader;
             std::vector<ExportRequest> queue;
-            TimePoint openedAt{}, caretAt{};
+            TimePoint openedAt, caretAt;
             bool caret = true;
             bool downloadHandled = false;
         } exportUi;
@@ -860,7 +865,7 @@ namespace perlin {
             } phase = Phase::Seeking;
             int settleIters = 0, quietIters = 0, waitIters = 0;
             long long virtualUs = 0;
-            TimePoint virtualBase{}, realStart{}, phaseStart{}, lastOverlay{};
+            TimePoint virtualBase, realStart, phaseStart, lastOverlay;
             struct CapturedFrame {
                 std::vector<uint8_t> data;
             };
@@ -874,7 +879,7 @@ namespace perlin {
             std::atomic<long long> written{0};
             long long maxInFlight = 6;
             std::string overlayRml;
-            TimePoint lastTitle{}, lastProgress{};
+            TimePoint lastTitle, lastProgress;
             long long lastWritten = 0;
             bool savedHideHud = true, savedPaused = false, savedMenu = false;
             double savedSpeed = 1, savedTimeMs = 0;

@@ -9,24 +9,31 @@
 
 namespace perlin::audio {
     namespace {
-        uint32_t U32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (static_cast<uint32_t>(p[3]) << 24); }
-        uint16_t U16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }
-        int16_t S16(const uint8_t* p) { return static_cast<int16_t>(U16(p)); }
+        uint32_t U32(const uint8_t* p) {
+            return p[0] | (p[1] << 8) | (p[2] << 16) | (static_cast<uint32_t>(p[3]) << 24);
+        }
+        uint16_t U16(const uint8_t* p) {
+            return static_cast<uint16_t>(p[0] | (p[1] << 8));
+        }
+        int16_t S16(const uint8_t* p) {
+            return static_cast<int16_t>(U16(p));
+        }
 
         void Fail(std::string* error, const char* message) {
             if (error)
                 *error = message;
         }
 
-        constexpr int8_t kFadpcmCoefs[8][2] = {{0, 0}, {60, 0}, {122, 60}, {115, 52}, {98, 55}, {0, 0}, {0, 0}, {0, 0}};
+        constexpr int8_t kFadpcmCoefs[8][2] = {{0, 0},   {60, 0}, {122, 60}, {115, 52},
+                                               {98, 55}, {0, 0},  {0, 0},    {0, 0}};
 
         bool DecodeFsb5(const std::vector<uint8_t>& b, Pcm& out, std::string* error) {
             if (b.size() < 0x40 || std::memcmp(b.data(), "FSB5", 4) != 0) {
                 Fail(error, "not an FSB5 file");
                 return false;
             }
-            const uint32_t version = U32(&b[4]), count = U32(&b[8]), headerBytes = U32(&b[12]), nameBytes = U32(&b[16]),
-                           dataBytes = U32(&b[20]), codec = U32(&b[24]);
+            const uint32_t version = U32(&b[4]), count = U32(&b[8]), headerBytes = U32(&b[12]),
+                           nameBytes = U32(&b[16]), dataBytes = U32(&b[20]), codec = U32(&b[24]);
             const size_t headerSize = version == 0 ? 0x40 : 0x3C;
             if (count < 1 || headerSize + headerBytes + nameBytes + dataBytes > b.size()) {
                 Fail(error, "truncated FSB5 file");
@@ -89,7 +96,8 @@ namespace perlin::audio {
                 out.samples.assign(samples * static_cast<size_t>(channels), 0);
                 for (int c = 0; c < channels; c++)
                     for (size_t f = 0; f < frames; f++) {
-                        const uint8_t* frame = data + (f * static_cast<size_t>(channels) + static_cast<size_t>(c)) * kFrameBytes;
+                        const uint8_t* frame =
+                            data + (f * static_cast<size_t>(channels) + static_cast<size_t>(c)) * kFrameBytes;
                         const uint32_t coefs = U32(frame), shifts = U32(frame + 4);
                         int32_t hist1 = S16(frame + 8), hist2 = S16(frame + 10);
                         size_t written = f * kFrameSamples;
@@ -107,7 +115,8 @@ namespace perlin::audio {
                                     hist2 = hist1;
                                     hist1 = s;
                                     if (written < samples)
-                                        out.samples[written * static_cast<size_t>(channels) + static_cast<size_t>(c)] = static_cast<int16_t>(s);
+                                        out.samples[written * static_cast<size_t>(channels) +
+                                                    static_cast<size_t>(c)] = static_cast<int16_t>(s);
                                     written++;
                                 }
                             }
@@ -120,7 +129,8 @@ namespace perlin::audio {
         }
 
         bool DecodeWav(const std::vector<uint8_t>& b, Pcm& out, std::string* error) {
-            if (b.size() < 44 || std::memcmp(b.data(), "RIFF", 4) != 0 || std::memcmp(&b[8], "WAVE", 4) != 0) {
+            if (b.size() < 44 || std::memcmp(b.data(), "RIFF", 4) != 0 ||
+                std::memcmp(&b[8], "WAVE", 4) != 0) {
                 Fail(error, "not a WAV file");
                 return false;
             }
@@ -174,7 +184,8 @@ namespace perlin::audio {
         bool DecodeOgg(const std::vector<uint8_t>& b, Pcm& out, std::string* error) {
             int channels = 0, rate = 0;
             short* decoded = nullptr;
-            const int frames = stb_vorbis_decode_memory(b.data(), static_cast<int>(b.size()), &channels, &rate, &decoded);
+            const int frames =
+                stb_vorbis_decode_memory(b.data(), static_cast<int>(b.size()), &channels, &rate, &decoded);
             if (frames <= 0 || !decoded || channels < 1) {
                 Fail(error, "invalid Ogg Vorbis data");
                 free(decoded);
@@ -184,7 +195,8 @@ namespace perlin::audio {
                 out.samples.resize(static_cast<size_t>(frames) * 2);
                 for (int i = 0; i < frames; i++) {
                     out.samples[static_cast<size_t>(i) * 2] = decoded[static_cast<size_t>(i) * channels];
-                    out.samples[static_cast<size_t>(i) * 2 + 1] = decoded[static_cast<size_t>(i) * channels + 1];
+                    out.samples[static_cast<size_t>(i) * 2 + 1] =
+                        decoded[static_cast<size_t>(i) * channels + 1];
                 }
                 channels = 2;
             } else {
@@ -197,7 +209,8 @@ namespace perlin::audio {
         }
     }
 
-    bool DecodeSound(const std::vector<uint8_t>& bytes, const std::string& extension, Pcm& out, std::string* error) {
+    bool DecodeSound(const std::vector<uint8_t>& bytes, const std::string& extension, Pcm& out,
+                     std::string* error) {
         out = Pcm();
         if (extension == ".fsb")
             return DecodeFsb5(bytes, out, error);

@@ -30,8 +30,11 @@ static void TestProgram() {
         std::printf("program: %s\n", error.c_str());
         return;
     }
-    std::printf("graph: %u nodes (%u at corners, %u per block, %zu for the climate), %zu interpolated inputs, %zu noise layers\n", program->nodeCount, program->innerCount,
-                program->outerCount, program->climateOrder.size(), program->interpolatedInputs.size(), program->layers.size() / vanilla::GpuProgram::kLayerStride);
+    std::printf("graph: %u nodes (%u at corners, %u per block, %zu for the climate), %zu interpolated "
+                "inputs, %zu noise layers\n",
+                program->nodeCount, program->innerCount, program->outerCount, program->climateOrder.size(),
+                program->interpolatedInputs.size(),
+                program->layers.size() / vanilla::GpuProgram::kLayerStride);
     CHECK(program->nodeCount <= vanilla::GpuProgram::kMaxNodes);
     CHECK(program->innerCount + program->outerCount == program->order.size());
     CHECK(!program->climateOrder.empty());
@@ -40,7 +43,8 @@ static void TestProgram() {
     for (int i = 1; i <= vanilla::GpuProgram::HMaterials; i++)
         CHECK(packed[static_cast<size_t>(i)] >= packed[static_cast<size_t>(i) - 1]);
     CHECK(packed[packed[vanilla::GpuProgram::HBiomes]] == static_cast<uint32_t>(vanilla::kBiomePointCount));
-    CHECK(packed.size() == packed[vanilla::GpuProgram::HMaterials] + 8 + static_cast<size_t>(vanilla::kBiomeCount) * 8);
+    CHECK(packed.size() ==
+          packed[vanilla::GpuProgram::HMaterials] + 8 + static_cast<size_t>(vanilla::kBiomeCount) * 8);
     // nothing in the block phase may read a node only the corner phase computes
     std::vector<char> inOuter(program->nodeCount, 0);
     for (uint32_t i = 0; i < program->outerCount; i++)
@@ -72,7 +76,8 @@ static bool Gpu(int64_t seed, bool& ran) {
     if (!cpu)
         return true;
 
-    const std::vector<ChunkPos> positions = {{0, 0}, {1, 0}, {0, 1}, {-1, -1}, {5, -7}, {-30, 12}, {123, 456}, {-777, 31}};
+    const std::vector<ChunkPos> positions = {{0, 0},  {1, 0},    {0, 1},     {-1, -1},
+                                             {5, -7}, {-30, 12}, {123, 456}, {-777, 31}};
     auto* density = dynamic_cast<DensityBackend*>(gpu.get());
     CHECK(density != nullptr);
     if (density) {
@@ -82,13 +87,16 @@ static bool Gpu(int64_t seed, bool& ran) {
         for (size_t n = 0; n < positions.size(); n++) {
             vanilla::DfCacheScope cache;
             for (int s = 0; s < 6000; s++) {
-                const int x = (s * 7) & 15, z = (s * 13 + s / 16) & 15, y = (s * 37 + 11 * static_cast<int>(n)) % kHeight;
+                const int x = (s * 7) & 15, z = (s * 13 + s / 16) & 15,
+                          y = (s * 37 + 11 * static_cast<int>(n)) % kHeight;
                 const float want = cpu->Density(positions[n].x * 16 + x, kMinY + y, positions[n].z * 16 + z);
                 const float got = d[n * 16 * 16 * kHeight + static_cast<size_t>((x * 16 + z) * kHeight + y)];
                 checked++;
                 if (std::memcmp(&want, &got, 4) != 0 && !(want != want && got != got)) {
                     if (bad++ < 3)
-                        std::fprintf(stderr, "density differs chunk (%d,%d) block (%d,%d,%d): cpu %.9g gpu %.9g\n", positions[n].x, positions[n].z, x, kMinY + y, z, want, got);
+                        std::fprintf(stderr,
+                                     "density differs chunk (%d,%d) block (%d,%d,%d): cpu %.9g gpu %.9g\n",
+                                     positions[n].x, positions[n].z, x, kMinY + y, z, want, got);
                 }
             }
         }
@@ -111,7 +119,8 @@ static bool Gpu(int64_t seed, bool& ran) {
                 for (int y = kMinY; y < kMinY + kHeight; y++)
                     if (a[n].Get(x, y, z) != b[n].Get(x, y, z))
                         differing++;
-    std::printf("%zu chunks: gpu %.0f ms, cpu %.0f ms (one thread); %zu blocks differ\n", positions.size(), gpuMs, cpuMs, differing);
+    std::printf("%zu chunks: gpu %.0f ms, cpu %.0f ms (one thread); %zu blocks differ\n", positions.size(),
+                gpuMs, cpuMs, differing);
     CHECK(differing == 0);
 
     // a bigger batch than one submit holds, to cover the split
@@ -130,7 +139,8 @@ static bool Gpu(int64_t seed, bool& ran) {
                 for (int y = kMinY; y < kMinY + kHeight; y++)
                     if (big[n].Get(x, y, z) != ref[n].Get(x, y, z))
                         bigDiff++;
-    std::printf("%zu chunks in %.0f ms on the gpu (%.1f ms each); %zu sampled blocks differ\n", many.size(), bigMs, bigMs / static_cast<double>(many.size()), bigDiff);
+    std::printf("%zu chunks in %.0f ms on the gpu (%.1f ms each); %zu sampled blocks differ\n", many.size(),
+                bigMs, bigMs / static_cast<double>(many.size()), bigDiff);
     CHECK(bigDiff == 0);
     return true;
 }

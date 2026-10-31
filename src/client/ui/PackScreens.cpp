@@ -70,7 +70,9 @@ div, mcimg { display: block; position: absolute; }
     }
 
     namespace {
-        std::string N(float v) { return std::to_string(static_cast<int>(std::lround(v))); }
+        std::string N(float v) {
+            return std::to_string(static_cast<int>(std::lround(v)));
+        }
 
         std::string Styles(int guiW, int guiH, int dim) {
             std::string d = ScreenTemplate("menu_screen.rml", kMenuHead);
@@ -80,33 +82,46 @@ div, mcimg { display: block; position: absolute; }
             return d;
         }
 
-        std::string Btn(const std::string& id, float x, float y, float w, const std::string& label, bool off) {
-            std::string b = "<div id=\"" + id + "\" class=\"btn" + (off ? " off" : "") + "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px;\">";
-            b += "<div class=\"rim\" style=\"width: " + N(w - 3) + "px;\"></div><div class=\"face\" style=\"width: " + N(w - 4) + "px;\"></div>";
-            b += "<div class=\"shade\" style=\"width: " + N(w - 2) + "px;\"></div><div class=\"edge\" style=\"left: " + N(w - 2) + "px;\"></div>";
+        std::string Btn(const std::string& id, float x, float y, float w, const std::string& label,
+                        bool off) {
+            std::string b = "<div id=\"" + id + "\" class=\"btn" + (off ? " off" : "") +
+                            "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px;\">";
+            b += "<div class=\"rim\" style=\"width: " + N(w - 3) +
+                 "px;\"></div><div class=\"face\" style=\"width: " + N(w - 4) + "px;\"></div>";
+            b += "<div class=\"shade\" style=\"width: " + N(w - 2) +
+                 "px;\"></div><div class=\"edge\" style=\"left: " + N(w - 2) + "px;\"></div>";
             b += "<div class=\"lbl\" style=\"width: " + N(w) + "px;\">" + EscapeRml(label) + "</div></div>\n";
             return b;
         }
 
-        std::string Mini(const std::string& id, float x, float y, float w, const std::string& label, bool off) {
-            return "<div id=\"" + id + "\" class=\"mini" + (off ? " off" : "") + "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) +
-                   "px;\"><div class=\"face\" style=\"width: " + N(w - 2) + "px;\"></div><div class=\"lbl\" style=\"width: " + N(w) + "px;\">" + EscapeRml(label) +
+        std::string Mini(const std::string& id, float x, float y, float w, const std::string& label,
+                         bool off) {
+            return "<div id=\"" + id + "\" class=\"mini" + (off ? " off" : "") + "\" style=\"left: " + N(x) +
+                   "px; top: " + N(y) + "px; width: " + N(w) +
+                   "px;\"><div class=\"face\" style=\"width: " + N(w - 2) +
+                   "px;\"></div><div class=\"lbl\" style=\"width: " + N(w) + "px;\">" + EscapeRml(label) +
                    "</div></div>\n";
         }
 
-        std::string Text(float x, float y, float w, const std::string& text, const char* cls, const char* color = nullptr, bool center = false) {
-            return "<div class=\"t " + std::string(cls) + (center ? " c" : "") + "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px;" +
-                   (color ? std::string(" color: ") + color + ";" : std::string()) + " overflow: hidden;\">" + FormatCodesToRml(text) + "</div>\n";
+        std::string Text(float x, float y, float w, const std::string& text, const char* cls,
+                         const char* color = nullptr, bool center = false) {
+            return "<div class=\"t " + std::string(cls) + (center ? " c" : "") + "\" style=\"left: " + N(x) +
+                   "px; top: " + N(y) + "px; width: " + N(w) + "px;" +
+                   (color ? std::string(" color: ") + color + ";" : std::string()) + " overflow: hidden;\">" +
+                   FormatCodesToRml(text) + "</div>\n";
         }
 
         std::string FormattedText(float x, float y, float w, const std::string& text) {
-            return "<div class=\"t\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px; overflow: hidden;\">" + FormatCodesToRml(text) + "</div>\n";
+            return "<div class=\"t\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) +
+                   "px; overflow: hidden;\">" + FormatCodesToRml(text) + "</div>\n";
         }
 
         std::string Img(const std::string& src, float x, float y, float s) {
             if (src.empty())
-                return "<div style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(s) + "px; height: " + N(s) + "px; background-color: #555555;\"></div>\n";
-            return "<mcimg src=\"" + EscapeRml(src) + "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(s) + "px; height: " + N(s) + "px;\"></mcimg>\n";
+                return "<div style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(s) +
+                       "px; height: " + N(s) + "px; background-color: #555555;\"></div>\n";
+            return "<mcimg src=\"" + EscapeRml(src) + "\" style=\"left: " + N(x) + "px; top: " + N(y) +
+                   "px; width: " + N(s) + "px; height: " + N(s) + "px;\"></mcimg>\n";
         }
 
         std::string Bar(float x, float top, float h, float content, float scroll, float maxScroll) {
@@ -114,19 +129,25 @@ div, mcimg { display: block; position: absolute; }
                 return {};
             const float th = std::max(16.0f, h * h / content);
             const float ty = top + (h - th) * (std::clamp(scroll, 0.0f, maxScroll) / maxScroll);
-            return "<div class=\"track\" style=\"left: " + N(x) + "px; top: " + N(top) + "px; height: " + N(h) + "px;\"></div>\n<div class=\"thumb\" style=\"left: " + N(x) +
+            return "<div class=\"track\" style=\"left: " + N(x) + "px; top: " + N(top) +
+                   "px; height: " + N(h) + "px;\"></div>\n<div class=\"thumb\" style=\"left: " + N(x) +
                    "px; top: " + N(ty) + "px; height: " + N(th) + "px;\"></div>\n";
         }
 
-        const char* BadgeColor(int c) { return c == 1 ? "#ff5555" : c == 2 ? "#55ff55" : c == 3 ? "#aaaaaa" : "#5555ff"; }
+        const char* BadgeColor(int c) {
+            return c == 1 ? "#ff5555" : c == 2 ? "#55ff55" : c == 3 ? "#aaaaaa" : "#5555ff";
+        }
 
         std::string Badge(float x, float y, const std::string& text, int color) {
             const float w = static_cast<float>(text.size()) * 6.0f + 6.0f;
-            return "<div style=\"left: " + N(x) + "px; top: " + N(y - 1) + "px; width: " + N(w) + "px; height: 11px; background-color: rgba(0,0,0,150); z-index: 4;\"></div>\n" +
+            return "<div style=\"left: " + N(x) + "px; top: " + N(y - 1) + "px; width: " + N(w) +
+                   "px; height: 11px; background-color: rgba(0,0,0,150); z-index: 4;\"></div>\n" +
                    Text(x + 3, y, w, text, "", BadgeColor(color));
         }
 
-        float BadgeWidth(const std::string& text) { return static_cast<float>(text.size()) * 6.0f + 6.0f; }
+        float BadgeWidth(const std::string& text) {
+            return static_cast<float>(text.size()) * 6.0f + 6.0f;
+        }
 
         float EstimateWrapHeight(const std::string& text, float width) {
             const int perLine = std::max(1, static_cast<int>(width / 6.0f));
@@ -164,10 +185,14 @@ div, mcimg { display: block; position: absolute; }
         return l;
     }
 
-    std::string BuildPackScreenRml(const std::vector<PackEntry>& available, const std::vector<PackEntry>& selected, const std::string& title,
-                                   const std::string& subtitle, const std::string& availableLabel, const std::string& selectedLabel,
-                                   const std::string& open, const std::string& done, float scrollA, float scrollB, int guiW, int guiH) {
-        const PackScreenLayout l = ComputePackScreenLayout(static_cast<int>(available.size()), static_cast<int>(selected.size()), guiW, guiH);
+    std::string BuildPackScreenRml(const std::vector<PackEntry>& available,
+                                   const std::vector<PackEntry>& selected, const std::string& title,
+                                   const std::string& subtitle, const std::string& availableLabel,
+                                   const std::string& selectedLabel, const std::string& open,
+                                   const std::string& done, float scrollA, float scrollB, int guiW,
+                                   int guiH) {
+        const PackScreenLayout l = ComputePackScreenLayout(static_cast<int>(available.size()),
+                                                           static_cast<int>(selected.size()), guiW, guiH);
         const float h = l.bottom - l.top;
         std::string d = Styles(guiW, guiH, 150);
         const float cx = static_cast<float>(guiW) / 2.0f;
@@ -189,42 +214,60 @@ div, mcimg { display: block; position: absolute; }
                         px = static_cast<float>(k), py = static_cast<float>(4 - r);
                     else
                         px = static_cast<float>(k), py = static_cast<float>(r);
-                    out += "<div class=\"" + std::string(cls) + "\" style=\"left: " + N(x + px * 2.0f) + "px; top: " + N(y + py * 2.0f) + "px; width: 2px; height: 2px;\"></div>";
+                    out += "<div class=\"" + std::string(cls) + "\" style=\"left: " + N(x + px * 2.0f) +
+                           "px; top: " + N(y + py * 2.0f) + "px; width: 2px; height: 2px;\"></div>";
                 }
             }
             return out;
         };
-        const auto column = [&](const std::vector<PackEntry>& items, float x, float scroll, float maxScroll, const std::string& label, char prefix) {
+        const auto column = [&](const std::vector<PackEntry>& items, float x, float scroll, float maxScroll,
+                                const std::string& label, char prefix) {
             d += Text(x, 26, l.panelW, label, "", nullptr, true);
-            d += "<div class=\"sep\" style=\"left: " + N(x + l.panelW / 2.0f - static_cast<float>(label.size()) * 2.5f) + "px; top: " + N(36) + "px; width: " +
-                 N(static_cast<float>(label.size()) * 5.0f) + "px;\"></div>\n";
-            d += "<div class=\"panel\" style=\"left: " + N(x) + "px; top: " + N(l.top) + "px; width: " + N(l.panelW) + "px; height: " + N(h) + "px;\">\n";
+            d += "<div class=\"sep\" style=\"left: " +
+                 N(x + l.panelW / 2.0f - static_cast<float>(label.size()) * 2.5f) + "px; top: " + N(36) +
+                 "px; width: " + N(static_cast<float>(label.size()) * 5.0f) + "px;\"></div>\n";
+            d += "<div class=\"panel\" style=\"left: " + N(x) + "px; top: " + N(l.top) +
+                 "px; width: " + N(l.panelW) + "px; height: " + N(h) + "px;\">\n";
             for (int i = 0; i < static_cast<int>(items.size()); i++) {
                 const float y = l.RowY(i, scroll) - l.top;
                 if (y + l.rowH < 0.0f || y > h)
                     continue;
                 const PackEntry& e = items[static_cast<size_t>(i)];
                 const float textW = l.panelW - 44.0f - (maxScroll > 0 ? 8.0f : 0.0f);
-                d += "<div id=\"" + std::string(1, prefix) + "p" + std::to_string(i) + "\" class=\"prow\" style=\"left: 2px; top: " + N(y) + "px; width: " +
-                     N(l.panelW - 4.0f - (maxScroll > 0 ? 6.0f : 0.0f)) + "px;\"></div>\n";
+                d += "<div id=\"" + std::string(1, prefix) + "p" + std::to_string(i) +
+                     "\" class=\"prow\" style=\"left: 2px; top: " + N(y) +
+                     "px; width: " + N(l.panelW - 4.0f - (maxScroll > 0 ? 6.0f : 0.0f)) + "px;\"></div>\n";
                 d += Img(e.icon, 4, y + 1, 32);
                 d += FormattedText(40, y + 2, textW, e.name);
-                d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(textW) + "px; height: 18px; z-index: 2;\">" + FormatCodesToRml(e.desc) + "</div>\n";
+                d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(textW) +
+                     "px; height: 18px; z-index: 2;\">" + FormatCodesToRml(e.desc) + "</div>\n";
                 const std::string id = std::string(1, prefix) + std::to_string(i);
                 if (e.canSelect) {
-                    d += "<div id=\"" + id + "i\" class=\"ico\" style=\"left: 4px; top: " + N(y + 1) + "px;\"><div class=\"ov\"></div>" + chevron('>', 11, 7, "ch") + "</div>\n";
+                    d += "<div id=\"" + id + "i\" class=\"ico\" style=\"left: 4px; top: " + N(y + 1) +
+                         "px;\"><div class=\"ov\"></div>" + chevron('>', 11, 7, "ch") + "</div>\n";
                 } else if (e.canUnselect || e.canUp || e.canDown) {
                     std::string zones;
                     if (e.canUnselect)
-                        zones += "<div id=\"" + id + "x\" class=\"zone\" style=\"left: 0px; top: 0px; width: 16px; height: 32px;\">" + chevron('<', 3, 7, "ch") + "</div>";
+                        zones +=
+                            "<div id=\"" + id +
+                            "x\" class=\"zone\" style=\"left: 0px; top: 0px; width: 16px; height: 32px;\">" +
+                            chevron('<', 3, 7, "ch") + "</div>";
                     if (e.canUp)
-                        zones += "<div id=\"" + id + "u\" class=\"zone\" style=\"left: 16px; top: 0px; width: 16px; height: 16px;\">" + chevron('^', -1, 3, "ch") + "</div>";
+                        zones +=
+                            "<div id=\"" + id +
+                            "u\" class=\"zone\" style=\"left: 16px; top: 0px; width: 16px; height: 16px;\">" +
+                            chevron('^', -1, 3, "ch") + "</div>";
                     if (e.canDown)
-                        zones += "<div id=\"" + id + "d\" class=\"zone\" style=\"left: 16px; top: 16px; width: 16px; height: 16px;\">" + chevron('v', -1, 3, "ch") + "</div>";
-                    d += "<div class=\"ico\" style=\"left: 4px; top: " + N(y + 1) + "px;\"><div class=\"ov\"></div>" + zones + "</div>\n";
+                        zones += "<div id=\"" + id +
+                                 "d\" class=\"zone\" style=\"left: 16px; top: 16px; width: 16px; height: "
+                                 "16px;\">" +
+                                 chevron('v', -1, 3, "ch") + "</div>";
+                    d += "<div class=\"ico\" style=\"left: 4px; top: " + N(y + 1) +
+                         "px;\"><div class=\"ov\"></div>" + zones + "</div>\n";
                 }
             }
-            d += Bar(l.panelW - 6.0f, 0, h, static_cast<float>(items.size()) * l.rowH + 4.0f, scroll, maxScroll);
+            d += Bar(l.panelW - 6.0f, 0, h, static_cast<float>(items.size()) * l.rowH + 4.0f, scroll,
+                     maxScroll);
             d += "</div>\n";
         };
         column(available, l.leftX, scrollA, l.maxScrollA, availableLabel, 'a');
@@ -257,19 +300,26 @@ div, mcimg { display: block; position: absolute; }
         return l;
     }
 
-    std::string BuildShaderScreenRml(const std::vector<std::string>& rows, int selectedRow, int toggleRow, const std::string& title,
-                                     const std::string& subtitle, const std::string& dragText, const std::string& open,
-                                     const std::string& settings, const std::string& cancel, const std::string& apply,
-                                     const std::string& done, float scroll, int guiW, int guiH) {
+    std::string BuildShaderScreenRml(const std::vector<std::string>& rows, int selectedRow, int toggleRow,
+                                     const std::string& title, const std::string& subtitle,
+                                     const std::string& dragText, const std::string& open,
+                                     const std::string& settings, const std::string& cancel,
+                                     const std::string& apply, const std::string& done, float scroll,
+                                     int guiW, int guiH) {
         const ShaderScreenLayout l = ComputeShaderScreenLayout(static_cast<int>(rows.size()) + 1, guiW, guiH);
         const float h = l.listBottom - l.listTop;
         std::string d = Styles(guiW, guiH, 140);
         d += Text(0, 8, static_cast<float>(guiW), title, "", nullptr, true);
         d += Text(0, 19, static_cast<float>(guiW), subtitle, "g", nullptr, true);
-        d += "<div style=\"left: 0px; top: " + N(l.listTop - 1.0f) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
-        d += "<div style=\"left: 0px; top: " + N(l.listBottom) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
-        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: " + N(h) + "px; background-color: rgba(0,0,0,60);\"></div>\n";
-        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: " + N(h) + "px; overflow: hidden;\">\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listTop - 1.0f) +
+             "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listBottom) + "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: " + N(h) + "px; background-color: rgba(0,0,0,60);\"></div>\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: " + N(h) + "px; overflow: hidden;\">\n";
         for (int i = 0; i < static_cast<int>(rows.size()); i++) {
             const float y = l.RowY(i, scroll) - l.listTop;
             if (y < 0.0f || y + 18.0f > h)
@@ -277,19 +327,29 @@ div, mcimg { display: block; position: absolute; }
             const bool selected = i == selectedRow;
             const bool toggle = i == toggleRow;
             if (selected || toggle)
-                d += "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) + "px; width: " + N(l.colW + 2) + "px; height: 20px; background-color: " +
-                     (toggle ? "rgba(0,0,0,150)" : "rgba(0,0,0,110)") + ";\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) + "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y + 18) + "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) + "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX + l.colW) + "px; top: " + N(y - 1) + "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n";
-            d += "<div id=\"sh" + std::to_string(i) + "\" class=\"srow\" style=\"left: " + N(l.colX) + "px; top: " + N(y) + "px; width: " + N(l.colW) + "px;\"></div>\n";
-            d += Text(l.colX, y + 5, l.colW, rows[static_cast<size_t>(i)], "", selected && !toggle ? "#ffff55" : nullptr, true);
+                d +=
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) +
+                    "px; width: " + N(l.colW + 2) + "px; height: 20px; background-color: " +
+                    (toggle ? "rgba(0,0,0,150)" : "rgba(0,0,0,110)") + ";\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) +
+                    "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y + 18) +
+                    "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) +
+                    "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX + l.colW) + "px; top: " + N(y - 1) +
+                    "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n";
+            d += "<div id=\"sh" + std::to_string(i) + "\" class=\"srow\" style=\"left: " + N(l.colX) +
+                 "px; top: " + N(y) + "px; width: " + N(l.colW) + "px;\"></div>\n";
+            d += Text(l.colX, y + 5, l.colW, rows[static_cast<size_t>(i)], "",
+                      selected && !toggle ? "#ffff55" : nullptr, true);
         }
-        d += Text(l.colX, l.RowY(static_cast<int>(rows.size()), scroll) - l.listTop + 5, l.colW, dragText, "g", nullptr, true);
+        d += Text(l.colX, l.RowY(static_cast<int>(rows.size()), scroll) - l.listTop + 5, l.colW, dragText,
+                  "g", nullptr, true);
         d += "</div>\n";
         if (l.maxScroll > 0.0f)
-            d += Bar(static_cast<float>(guiW) / 2.0f + l.colW / 2.0f + 6.0f, l.listTop, h, l.contentH, scroll, l.maxScroll);
+            d += Bar(static_cast<float>(guiW) / 2.0f + l.colW / 2.0f + 6.0f, l.listTop, h, l.contentH, scroll,
+                     l.maxScroll);
         d += Btn("shopen", l.openX, l.row1Y, l.btnW1, open, false);
         d += Btn("shsettings", l.settingsX, l.row1Y, l.btnW1, settings, false);
         d += Btn("shcancel", l.cancelX, l.row2Y, l.thirdW, cancel, false);
@@ -328,24 +388,32 @@ div, mcimg { display: block; position: absolute; }
         l.detailTextBottom = l.listBottom;
         l.maxScroll = std::max(0.0f, static_cast<float>(rows) * l.rowH + 4.0f - (l.listBottom - l.listTop));
         if (detail.valid)
-            l.maxDetailScroll = std::max(0.0f, EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 8.0f - (l.detailTextBottom - l.detailTextTop));
+            l.maxDetailScroll = std::max(0.0f, EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 8.0f -
+                                                   (l.detailTextBottom - l.detailTextTop));
         return l;
     }
 
-    std::string BuildModScreenRml(const std::vector<ModEntry>& rows, int selected, const ModDetail& detail, const std::string& title,
-                                  const std::string& search, bool caret, const std::string& showing, const std::string& hint,
-                                  const std::string& open, const std::string& done, float scroll, float detailScroll, int guiW, int guiH) {
+    std::string BuildModScreenRml(const std::vector<ModEntry>& rows, int selected, const ModDetail& detail,
+                                  const std::string& title, const std::string& search, bool caret,
+                                  const std::string& showing, const std::string& hint,
+                                  const std::string& open, const std::string& done, float scroll,
+                                  float detailScroll, int guiW, int guiH) {
         const ModScreenLayout l = ComputeModScreenLayout(static_cast<int>(rows.size()), detail, guiW, guiH);
         const float listH = l.listBottom - l.listTop;
         std::string d = Styles(guiW, guiH, 140);
         d += Text(l.leftX, 6, l.leftW, title, "", nullptr, true);
-        d += "<div style=\"left: " + N(l.leftX) + "px; top: " + N(l.searchY) + "px; width: " + N(l.leftW) + "px; height: " + N(l.searchH) +
-             "px; background-color: #a0a0a0; z-index: 3;\"></div>\n<div style=\"left: " + N(l.leftX + 1) + "px; top: " + N(l.searchY + 1) + "px; width: " + N(l.leftW - 2) +
+        d += "<div style=\"left: " + N(l.leftX) + "px; top: " + N(l.searchY) + "px; width: " + N(l.leftW) +
+             "px; height: " + N(l.searchH) +
+             "px; background-color: #a0a0a0; z-index: 3;\"></div>\n<div style=\"left: " + N(l.leftX + 1) +
+             "px; top: " + N(l.searchY + 1) + "px; width: " + N(l.leftW - 2) +
              "px; height: " + N(l.searchH - 2) + "px; background-color: #000000; z-index: 3;\"></div>\n";
-        d += "<div class=\"t\" style=\"left: " + N(l.leftX + 5) + "px; top: " + N(l.searchY + 5) + "px; width: " + N(l.leftW - 10) + "px; z-index: 4; overflow: hidden;" +
-             (search.empty() ? std::string(" color: #808080;") : std::string()) + "\">" + (search.empty() ? EscapeRml(hint) : TextFieldRml(search, caret)) + "</div>\n";
+        d += "<div class=\"t\" style=\"left: " + N(l.leftX + 5) + "px; top: " + N(l.searchY + 5) +
+             "px; width: " + N(l.leftW - 10) + "px; z-index: 4; overflow: hidden;" +
+             (search.empty() ? std::string(" color: #808080;") : std::string()) + "\">" +
+             (search.empty() ? EscapeRml(hint) : TextFieldRml(search, caret)) + "</div>\n";
         d += Text(l.leftX, l.searchY + l.searchH + 6, l.leftW, showing, "");
-        d += "<div class=\"panel\" style=\"left: " + N(l.leftX) + "px; top: " + N(l.listTop) + "px; width: " + N(l.leftW) + "px; height: " + N(listH) + "px;\">\n";
+        d += "<div class=\"panel\" style=\"left: " + N(l.leftX) + "px; top: " + N(l.listTop) +
+             "px; width: " + N(l.leftW) + "px; height: " + N(listH) + "px;\">\n";
         for (int i = 0; i < static_cast<int>(rows.size()); i++) {
             const float y = l.RowY(i, scroll) - l.listTop;
             if (y + l.rowH < 0.0f || y > listH)
@@ -353,33 +421,52 @@ div, mcimg { display: block; position: absolute; }
             const ModEntry& e = rows[static_cast<size_t>(i)];
             const float rowW = l.leftW - 2.0f - (l.maxScroll > 0 ? 8.0f : 0.0f);
             if (i == selected)
-                d += "<div style=\"left: 1px; top: " + N(y) + "px; width: " + N(rowW) + "px; height: 34px; background-color: #ffffff;\"></div>\n<div style=\"left: 2px; top: " +
-                     N(y + 1) + "px; width: " + N(rowW - 2) + "px; height: 32px; background-color: #000000;\"></div>\n";
-            d += "<div id=\"md" + std::to_string(i) + "\" class=\"prow\" style=\"left: 1px; top: " + N(y) + "px; width: " + N(rowW) + "px;\"></div>\n";
+                d += "<div style=\"left: 1px; top: " + N(y) + "px; width: " + N(rowW) +
+                     "px; height: 34px; background-color: #ffffff;\"></div>\n<div style=\"left: 2px; top: " +
+                     N(y + 1) + "px; width: " + N(rowW - 2) +
+                     "px; height: 32px; background-color: #000000;\"></div>\n";
+            d += "<div id=\"md" + std::to_string(i) + "\" class=\"prow\" style=\"left: 1px; top: " + N(y) +
+                 "px; width: " + N(rowW) + "px;\"></div>\n";
             d += Img(e.icon, 4, y + 1, 32);
-            d += FormattedText(40, y + 2, rowW - 40.0f - (e.badge.empty() ? 0.0f : BadgeWidth(e.badge) + 6.0f), e.name);
+            d += FormattedText(40, y + 2,
+                               rowW - 40.0f - (e.badge.empty() ? 0.0f : BadgeWidth(e.badge) + 6.0f), e.name);
             if (!e.badge.empty())
-                d += Badge(40.0f + std::min(static_cast<float>(e.name.size()) * 6.0f + 6.0f, rowW - 40.0f - BadgeWidth(e.badge)), y + 2, e.badge, e.badgeColor);
-            d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(rowW - 44.0f) + "px; height: 18px; z-index: 2;\">" + FormatCodesToRml(e.desc) + "</div>\n";
+                d += Badge(40.0f + std::min(static_cast<float>(e.name.size()) * 6.0f + 6.0f,
+                                            rowW - 40.0f - BadgeWidth(e.badge)),
+                           y + 2, e.badge, e.badgeColor);
+            d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) +
+                 "px; width: " + N(rowW - 44.0f) + "px; height: 18px; z-index: 2;\">" +
+                 FormatCodesToRml(e.desc) + "</div>\n";
         }
-        d += Bar(l.leftW - 6.0f, 0, listH, static_cast<float>(rows.size()) * l.rowH + 4.0f, scroll, l.maxScroll);
+        d += Bar(l.leftW - 6.0f, 0, listH, static_cast<float>(rows.size()) * l.rowH + 4.0f, scroll,
+                 l.maxScroll);
         d += "</div>\n";
         if (detail.valid) {
             d += Img(detail.icon, l.rightX, 18, 32);
             d += Text(l.rightX + 36, 20, l.rightW - 36, detail.name, "");
             if (!detail.badge.empty())
-                d += Badge(l.rightX + 36 + std::min(static_cast<float>(detail.name.size()) * 6.0f + 6.0f, l.rightW - 36.0f - BadgeWidth(detail.badge)), 20, detail.badge, detail.badgeColor);
+                d += Badge(l.rightX + 36 +
+                               std::min(static_cast<float>(detail.name.size()) * 6.0f + 6.0f,
+                                        l.rightW - 36.0f - BadgeWidth(detail.badge)),
+                           20, detail.badge, detail.badgeColor);
             d += Text(l.rightX + 36, 31, l.rightW - 36, detail.version, "g");
             d += Text(l.rightX + 36, 42, l.rightW - 36, detail.author, "g");
             d += Btn("mdtoggle", l.toggleX, l.detailBtnY - 1, l.toggleW, detail.toggleLabel, false);
-            d += Btn("mdreload", l.reloadX, l.detailBtnY - 1, l.reloadW, detail.reloadLabel, !detail.toggleEnabled);
+            d += Btn("mdreload", l.reloadX, l.detailBtnY - 1, l.reloadW, detail.reloadLabel,
+                     !detail.toggleEnabled);
             if (detail.hasSettings)
-                d += Btn("mdsettings", l.settingsX, l.detailBtnY - 1, l.settingsW, detail.settingsLabel, false);
+                d += Btn("mdsettings", l.settingsX, l.detailBtnY - 1, l.settingsW, detail.settingsLabel,
+                         false);
             const float th = l.detailTextBottom - l.detailTextTop;
-            d += "<div class=\"panel\" style=\"left: " + N(l.rightX) + "px; top: " + N(l.detailTextTop) + "px; width: " + N(l.rightW) + "px; height: " + N(th) + "px;\">\n";
-            d += "<div class=\"wrap\" style=\"left: 6px; top: " + N(4.0f - detailScroll) + "px; width: " + N(l.rightW - 20.0f) + "px; height: " +
-                 N(EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 9.0f) + "px; color: #e0e0e0; overflow: visible;\">" + FormatCodesToRmlLines(detail.body) + "</div>\n";
-            d += Bar(l.rightW - 6.0f, 0, th, EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 8.0f, detailScroll, l.maxDetailScroll);
+            d += "<div class=\"panel\" style=\"left: " + N(l.rightX) + "px; top: " + N(l.detailTextTop) +
+                 "px; width: " + N(l.rightW) + "px; height: " + N(th) + "px;\">\n";
+            d += "<div class=\"wrap\" style=\"left: 6px; top: " + N(4.0f - detailScroll) +
+                 "px; width: " + N(l.rightW - 20.0f) +
+                 "px; height: " + N(EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 9.0f) +
+                 "px; color: #e0e0e0; overflow: visible;\">" + FormatCodesToRmlLines(detail.body) +
+                 "</div>\n";
+            d += Bar(l.rightW - 6.0f, 0, th, EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 8.0f,
+                     detailScroll, l.maxDetailScroll);
             d += "</div>\n";
         }
         d += Btn("mdopen", l.openX, l.btnY, l.btnW, open, false);
@@ -388,7 +475,8 @@ div, mcimg { display: block; position: absolute; }
         return d;
     }
 
-    WardrobeLayout ComputeWardrobeLayout(int skinCards, int capeCards, bool skinOpen, bool capeOpen, int firstLine, int guiW, int guiH) {
+    WardrobeLayout ComputeWardrobeLayout(int skinCards, int capeCards, bool skinOpen, bool capeOpen,
+                                         int firstLine, int guiW, int guiH) {
         WardrobeLayout l;
         l.doneW = 200.0f;
         l.doneX = (static_cast<float>(guiW) - l.doneW) / 2.0f;
@@ -420,7 +508,9 @@ div, mcimg { display: block; position: absolute; }
         };
         addSection(0, skinCards, skinOpen);
         addSection(2, capeCards, capeOpen);
-        const auto height = [&](const WardrobeLine& line) { return line.kind % 2 == 0 ? l.headH + 2.0f : rowH; };
+        const auto height = [&](const WardrobeLine& line) {
+            return line.kind % 2 == 0 ? l.headH + 2.0f : rowH;
+        };
         const float avail = l.listBottom - l.listTop;
         l.totalLines = static_cast<int>(all.size());
         l.maxFirst = 0;
@@ -447,16 +537,22 @@ div, mcimg { display: block; position: absolute; }
         return l;
     }
 
-    std::string BuildWardrobeRml(const std::vector<WardrobeCard>& skins, const std::vector<WardrobeCard>& capes, bool skinOpen, bool capeOpen,
-                                 int firstLine, const std::string& previewImg, const std::string& previewName, bool slim, bool canTrashSkin,
-                                 bool canTrashCape, const WardrobeText& t, int guiW, int guiH) {
-        const WardrobeLayout l = ComputeWardrobeLayout(static_cast<int>(skins.size()), static_cast<int>(capes.size()), skinOpen, capeOpen, firstLine, guiW, guiH);
+    std::string BuildWardrobeRml(const std::vector<WardrobeCard>& skins,
+                                 const std::vector<WardrobeCard>& capes, bool skinOpen, bool capeOpen,
+                                 int firstLine, const std::string& previewImg, const std::string& previewName,
+                                 bool slim, bool canTrashSkin, bool canTrashCape, const WardrobeText& t,
+                                 int guiW, int guiH) {
+        const WardrobeLayout l =
+            ComputeWardrobeLayout(static_cast<int>(skins.size()), static_cast<int>(capes.size()), skinOpen,
+                                  capeOpen, firstLine, guiW, guiH);
         std::string d = Styles(guiW, guiH, 70);
         const auto box = [&](float x, float y, float w, float h, const char* color) {
-            return "<div style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px; height: " + N(h) + "px; background-color: " + color + ";\"></div>\n";
+            return "<div style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) +
+                   "px; height: " + N(h) + "px; background-color: " + color + ";\"></div>\n";
         };
         const auto icon = [&](const char* src, float x, float y, float w, float h) {
-            return "<mcimg src=\"" + std::string(src) + "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px; height: " + N(h) + "px; z-index: 8;\"></mcimg>\n";
+            return "<mcimg src=\"" + std::string(src) + "\" style=\"left: " + N(x) + "px; top: " + N(y) +
+                   "px; width: " + N(w) + "px; height: " + N(h) + "px; z-index: 8;\"></mcimg>\n";
         };
         d += Text(0, 6, static_cast<float>(guiW), t.title, "", nullptr, true);
         for (const WardrobeLine& line : l.lines) {
@@ -465,14 +561,20 @@ div, mcimg { display: block; position: absolute; }
             if (line.kind % 2 == 0) {
                 const bool open = isSkin ? skinOpen : capeOpen;
                 const std::string count = std::to_string(cards.size() - 1);
-                d += "<div id=\"" + std::string(isSkin ? "wdhs" : "wdhc") + "\" class=\"prow\" style=\"left: " + N(l.listX) + "px; top: " + N(line.y) + "px; width: " +
-                     N(l.ToggleW()) + "px; height: " + N(l.headH) + "px;\"></div>\n";
-                d += icon(open ? "textures/ui/chevron_white_down.png" : "textures/ui/chevron_white_up.png", l.listX + 4.0f, line.y + 6.0f, 8.0f, 8.0f);
-                d += Text(l.listX + 18.0f, line.y + 6.0f, l.ToggleW() - 20.0f, (isSkin ? t.skins : t.capes) + " [" + count + "]", "", isSkin ? "#ff99ff" : "#ffcc55");
+                d += "<div id=\"" + std::string(isSkin ? "wdhs" : "wdhc") +
+                     "\" class=\"prow\" style=\"left: " + N(l.listX) + "px; top: " + N(line.y) +
+                     "px; width: " + N(l.ToggleW()) + "px; height: " + N(l.headH) + "px;\"></div>\n";
+                d += icon(open ? "textures/ui/chevron_white_down.png" : "textures/ui/chevron_white_up.png",
+                          l.listX + 4.0f, line.y + 6.0f, 8.0f, 8.0f);
+                d += Text(l.listX + 18.0f, line.y + 6.0f, l.ToggleW() - 20.0f,
+                          (isSkin ? t.skins : t.capes) + " [" + count + "]", "",
+                          isSkin ? "#ff99ff" : "#ffcc55");
                 const bool canTrash = isSkin ? canTrashSkin : canTrashCape;
                 d += Btn(isSkin ? "wdtrashs" : "wdtrashc", l.TrashX(), line.y, l.trashW, "", !canTrash);
-                d += icon("textures/ui/icon_trash.png", l.TrashX() + (l.trashW - 10.0f) / 2.0f, line.y + 4.0f, 10.0f, 11.0f);
-                d += Btn(isSkin ? "wdaddskin" : "wdaddcape", l.AddX(), line.y, l.addW, isSkin ? t.addSkin : t.addCape, false);
+                d += icon("textures/ui/icon_trash.png", l.TrashX() + (l.trashW - 10.0f) / 2.0f, line.y + 4.0f,
+                          10.0f, 11.0f);
+                d += Btn(isSkin ? "wdaddskin" : "wdaddcape", l.AddX(), line.y, l.addW,
+                         isSkin ? t.addSkin : t.addCape, false);
                 d += icon("textures/ui/plus.png", l.AddX() + 6.0f, line.y + 5.0f, 9.0f, 9.0f);
             } else {
                 for (int c = 0; c < l.cols; c++) {
@@ -481,8 +583,10 @@ div, mcimg { display: block; position: absolute; }
                         break;
                     const WardrobeCard& card = cards[static_cast<size_t>(i)];
                     const float x = l.CardX(i), y = line.y;
-                    d += "<div id=\"" + std::string(isSkin ? "wds" : "wdp") + std::to_string(i) + "\" class=\"prow\" style=\"left: " + N(x) + "px; top: " + N(y) +
-                         "px; width: " + N(l.cardW) + "px; height: " + N(l.cardH) + "px;" + (card.selected ? " background-color: rgba(255,255,255,34);" : "") + "\"></div>\n";
+                    d += "<div id=\"" + std::string(isSkin ? "wds" : "wdp") + std::to_string(i) +
+                         "\" class=\"prow\" style=\"left: " + N(x) + "px; top: " + N(y) +
+                         "px; width: " + N(l.cardW) + "px; height: " + N(l.cardH) + "px;" +
+                         (card.selected ? " background-color: rgba(255,255,255,34);" : "") + "\"></div>\n";
                     if (card.selected) {
                         d += box(x, y, l.cardW, 1, "#f0f0f0");
                         d += box(x, y + l.cardH - 1, l.cardW, 1, "#f0f0f0");
@@ -490,17 +594,24 @@ div, mcimg { display: block; position: absolute; }
                         d += box(x + l.cardW - 1, y, 1, l.cardH, "#f0f0f0");
                     }
                     if (!card.img.empty())
-                        d += "<mcimg src=\"" + EscapeRml(card.img) + "\" style=\"left: " + N(x + (l.cardW - 36.0f) / 2.0f) + "px; top: " + N(y + 2.0f) +
-                             "px; width: 36px; height: 52px;\"></mcimg>\n";
-                    d += Text(x, y + l.cardH - 11.0f, l.cardW, card.name, "", card.selected ? "#ffff55" : nullptr, true);
+                        d += "<mcimg src=\"" + EscapeRml(card.img) +
+                             "\" style=\"left: " + N(x + (l.cardW - 36.0f) / 2.0f) +
+                             "px; top: " + N(y + 2.0f) + "px; width: 36px; height: 52px;\"></mcimg>\n";
+                    d += Text(x, y + l.cardH - 11.0f, l.cardW, card.name, "",
+                              card.selected ? "#ffff55" : nullptr, true);
                 }
             }
         }
         if (l.maxFirst > 0)
-            d += Bar(l.listX + l.listW + 3.0f, l.listTop, l.listBottom - l.listTop, (l.listBottom - l.listTop) * static_cast<float>(l.totalLines) / static_cast<float>(l.totalLines - l.maxFirst), static_cast<float>(l.firstLine), static_cast<float>(l.maxFirst));
+            d += Bar(l.listX + l.listW + 3.0f, l.listTop, l.listBottom - l.listTop,
+                     (l.listBottom - l.listTop) * static_cast<float>(l.totalLines) /
+                         static_cast<float>(l.totalLines - l.maxFirst),
+                     static_cast<float>(l.firstLine), static_cast<float>(l.maxFirst));
         d += Text(l.rightX, l.nameY, l.rightW, previewName, "", nullptr, true);
         if (!previewImg.empty())
-            d += "<mcimg src=\"" + EscapeRml(previewImg) + "\" style=\"left: " + N(l.prevX) + "px; top: " + N(l.prevY) + "px; width: " + N(l.prevW) + "px; height: " + N(l.prevH) + "px;\"></mcimg>\n";
+            d += "<mcimg src=\"" + EscapeRml(previewImg) + "\" style=\"left: " + N(l.prevX) +
+                 "px; top: " + N(l.prevY) + "px; width: " + N(l.prevW) + "px; height: " + N(l.prevH) +
+                 "px;\"></mcimg>\n";
         d += Text(l.rightX, l.prevY + l.prevH + 1.0f, l.rightW, t.dragHint, "g", nullptr, true);
         d += Btn("wdslim", l.slimX, l.slimY, l.slimW, t.slim + ": " + (slim ? t.slimOn : t.slimOff), false);
         const float hintW = static_cast<float>(t.dropHint.size()) * 6.0f + 10.0f;
@@ -511,34 +622,50 @@ div, mcimg { display: block; position: absolute; }
         return d;
     }
 
-    std::string BuildLanguageScreenRml(const std::vector<std::string>& rows, int selectedRow, const std::string& title, const std::string& subtitle,
+    std::string BuildLanguageScreenRml(const std::vector<std::string>& rows, int selectedRow,
+                                       const std::string& title, const std::string& subtitle,
                                        const std::string& done, float scroll, int guiW, int guiH) {
         const ShaderScreenLayout l = ComputeShaderScreenLayout(static_cast<int>(rows.size()), guiW, guiH);
         const float h = l.listBottom - l.listTop;
         std::string d = Styles(guiW, guiH, 140);
         d += Text(0, 8, static_cast<float>(guiW), title, "", nullptr, true);
         d += Text(0, 19, static_cast<float>(guiW), subtitle, "g", nullptr, true);
-        d += "<div style=\"left: 0px; top: " + N(l.listTop - 1.0f) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
-        d += "<div style=\"left: 0px; top: " + N(l.listBottom) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
-        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: " + N(h) + "px; background-color: rgba(0,0,0,60);\"></div>\n";
-        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: " + N(h) + "px; overflow: hidden;\">\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listTop - 1.0f) +
+             "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listBottom) + "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: 1px; background-color: rgba(255,255,255,200);\"></div>\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: " + N(h) + "px; background-color: rgba(0,0,0,60);\"></div>\n";
+        d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) +
+             "px; height: " + N(h) + "px; overflow: hidden;\">\n";
         for (int i = 0; i < static_cast<int>(rows.size()); i++) {
             const float y = l.RowY(i, scroll) - l.listTop;
             if (y < 0.0f || y + 18.0f > h)
                 continue;
             const bool selected = i == selectedRow;
             if (selected)
-                d += "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) + "px; width: " + N(l.colW + 2) + "px; height: 20px; background-color: rgba(0,0,0,110);\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) + "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y + 18) + "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) + "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n" +
-                     "<div style=\"left: " + N(l.colX + l.colW) + "px; top: " + N(y - 1) + "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n";
-            d += "<div id=\"lg" + std::to_string(i) + "\" class=\"srow\" style=\"left: " + N(l.colX) + "px; top: " + N(y) + "px; width: " + N(l.colW) + "px;\"></div>\n";
-            d += Text(l.colX, y + 5, l.colW, rows[static_cast<size_t>(i)], "", selected ? "#ffff55" : nullptr, true);
+                d +=
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) +
+                    "px; width: " + N(l.colW + 2) +
+                    "px; height: 20px; background-color: rgba(0,0,0,110);\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) +
+                    "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y + 18) +
+                    "px; width: " + N(l.colW + 2) + "px; height: 1px; background-color: #d0d0d0;\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX - 1) + "px; top: " + N(y - 1) +
+                    "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n" +
+                    "<div style=\"left: " + N(l.colX + l.colW) + "px; top: " + N(y - 1) +
+                    "px; width: 1px; height: 20px; background-color: #d0d0d0;\"></div>\n";
+            d += "<div id=\"lg" + std::to_string(i) + "\" class=\"srow\" style=\"left: " + N(l.colX) +
+                 "px; top: " + N(y) + "px; width: " + N(l.colW) + "px;\"></div>\n";
+            d += Text(l.colX, y + 5, l.colW, rows[static_cast<size_t>(i)], "", selected ? "#ffff55" : nullptr,
+                      true);
         }
         d += "</div>\n";
         if (l.maxScroll > 0.0f)
-            d += Bar(static_cast<float>(guiW) / 2.0f + l.colW / 2.0f + 6.0f, l.listTop, h, l.contentH, scroll, l.maxScroll);
+            d += Bar(static_cast<float>(guiW) / 2.0f + l.colW / 2.0f + 6.0f, l.listTop, h, l.contentH, scroll,
+                     l.maxScroll);
         d += Btn("lgdone", l.colX + (l.colW - 200.0f) / 2.0f, l.row1Y + 12.0f, 200.0f, done, false);
         d += "</body>\n</rml>\n";
         return d;

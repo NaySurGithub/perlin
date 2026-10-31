@@ -19,16 +19,15 @@ namespace perlin::render {
     };
     struct UnitKeyHash {
         size_t operator()(const UnitKey& k) const {
-            uint64_t h = (static_cast<uint64_t>(static_cast<uint32_t>(k.x)) << 32) | static_cast<uint32_t>(k.z);
+            uint64_t h =
+                (static_cast<uint64_t>(static_cast<uint32_t>(k.x)) << 32) | static_cast<uint32_t>(k.z);
             h ^= static_cast<uint64_t>(k.level) * 0x9E3779B97F4A7C15ull;
             h *= 0xFF51AFD7ED558CCDull;
             return static_cast<size_t>(h ^ (h >> 32));
         }
     };
     struct ColumnPosHash {
-        size_t operator()(const ColumnPos& p) const {
-            return UnitKeyHash()(UnitKey{0, p.x, p.z});
-        }
+        size_t operator()(const ColumnPos& p) const { return UnitKeyHash()(UnitKey{0, p.x, p.z}); }
     };
 
     struct ResidencyConfig {
@@ -61,7 +60,10 @@ namespace perlin::render {
     struct Plan {
         std::vector<BuildRequest> build;
         std::vector<UnitKey> evict;
-        void Clear() { build.clear(); evict.clear(); }
+        void Clear() {
+            build.clear();
+            evict.clear();
+        }
     };
 
     struct ResidencyStats {
@@ -103,7 +105,7 @@ namespace perlin::render {
         void CollectDraw(std::vector<DrawItem>& out) const;
 
         ResidencyStats Stats() const;
-        bool HasMesh(const UnitKey& unit) const { return units.count(unit) && units.at(unit).hasMesh; }
+        bool HasMesh(const UnitKey& unit) const { return units.contains(unit) && units.at(unit).hasMesh; }
         bool IsRetained(const UnitKey& unit) const {
             const auto it = units.find(unit);
             return it != units.end() && it->second.hasMesh && !it->second.wanted;

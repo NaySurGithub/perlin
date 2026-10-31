@@ -28,14 +28,21 @@ namespace perlin {
         static constexpr int kRealChunks = 32;
         static constexpr int kTileChunks = 4;
 
-        static int TileOf(int chunk) { return chunk >= 0 ? chunk / kTileChunks : -((-chunk + kTileChunks - 1) / kTileChunks); }
+        static int TileOf(int chunk) {
+            return chunk >= 0 ? chunk / kTileChunks : -((-chunk + kTileChunks - 1) / kTileChunks);
+        }
 
-        bool Capture(const Level& level, const ChunkPos& pos, const BlockLibrary& blocks, const BiomeTints& tints);
+        bool Capture(const Level& level, const ChunkPos& pos, const BlockLibrary& blocks,
+                     const BiomeTints& tints);
         void Remove(const ChunkPos& pos) {
             if (columns.erase(pos))
                 DropFromTile(pos);
         }
-        void Clear() { columns.clear(); tiles.clear(); colours.clear(); }
+        void Clear() {
+            columns.clear();
+            tiles.clear();
+            colours.clear();
+        }
         void InvalidateColours() { colours.clear(); }
         const LodColumn* Find(const ChunkPos& pos) const {
             const auto it = columns.find(pos);
@@ -46,13 +53,17 @@ namespace perlin {
         const std::unordered_map<ChunkPos, LodColumn, ChunkPosHash>& All() const { return columns; }
         // tile key -> number of captured columns in it: lets distance scans walk tiles instead of every column
         const std::unordered_map<int64_t, int>& Tiles() const { return tiles; }
-        static int64_t TileKeyOf(int tx, int tz) { return (static_cast<int64_t>(tx) << 32) | static_cast<uint32_t>(tz); }
+        static int64_t TileKeyOf(int tx, int tz) {
+            return (static_cast<int64_t>(tx) << 32) | static_cast<uint32_t>(tz);
+        }
 
         bool BuildTile(int tileX, int tileZ, int stride, const std::function<bool(const ChunkPos&)>& hidden,
                        Tessellator& out) const;
 
     private:
-        struct Rgb { uint8_t r, g, b; };
+        struct Rgb {
+            uint8_t r, g, b;
+        };
         Rgb ColourOf(uint16_t id, int biome, bool top, const BlockLibrary& blocks, const BiomeTints& tints);
         std::unordered_map<ChunkPos, LodColumn, ChunkPosHash> columns;
         std::unordered_map<uint32_t, Rgb> colours;

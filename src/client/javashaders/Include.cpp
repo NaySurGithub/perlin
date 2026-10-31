@@ -8,7 +8,9 @@
 namespace perlin::jshader {
     namespace {
 
-        bool IsIdent(char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; }
+        bool IsIdent(char c) {
+            return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+        }
 
         std::vector<std::string> ParseValueList(const std::string& comment) {
             std::vector<std::string> out;
@@ -30,25 +32,30 @@ namespace perlin::jshader {
 
         bool ParseDefine(const std::string& line, DefineLine& d) {
             size_t i = 0;
-            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+                i++;
             d.indent = line.substr(0, i);
             if (line.compare(i, 2, "//") == 0) {
                 d.commentedOut = true;
                 i += 2;
-                while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+                while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+                    i++;
             }
             if (i >= line.size() || line[i] != '#')
                 return false;
             i++;
-            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+                i++;
             if (line.compare(i, 6, "define") != 0)
                 return false;
             i += 6;
             if (i >= line.size() || (line[i] != ' ' && line[i] != '\t'))
                 return false;
-            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+                i++;
             size_t n = i;
-            while (n < line.size() && IsIdent(line[n])) n++;
+            while (n < line.size() && IsIdent(line[n]))
+                n++;
             if (n == i)
                 return false;
             d.name = line.substr(i, n - i);
@@ -70,26 +77,33 @@ namespace perlin::jshader {
 
         bool ParseConst(const std::string& line, ConstLine& c) {
             size_t i = 0;
-            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+                i++;
             c.indent = line.substr(0, i);
-            if (line.compare(i, 5, "const") != 0 || i + 5 >= line.size() || !std::isspace(static_cast<unsigned char>(line[i + 5])))
+            if (line.compare(i, 5, "const") != 0 || i + 5 >= line.size() ||
+                !std::isspace(static_cast<unsigned char>(line[i + 5])))
                 return false;
             i += 5;
-            while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) i++;
+            while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i])))
+                i++;
             size_t t = i;
-            while (t < line.size() && IsIdent(line[t])) t++;
+            while (t < line.size() && IsIdent(line[t]))
+                t++;
             c.type = line.substr(i, t - i);
             if (c.type != "int" && c.type != "float" && c.type != "bool")
                 return false;
             i = t;
-            while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) i++;
+            while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i])))
+                i++;
             size_t n = i;
-            while (n < line.size() && IsIdent(line[n])) n++;
+            while (n < line.size() && IsIdent(line[n]))
+                n++;
             if (n == i)
                 return false;
             c.name = line.substr(i, n - i);
             i = n;
-            while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) i++;
+            while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i])))
+                i++;
             if (i >= line.size() || line[i] != '=')
                 return false;
             i++;
@@ -133,7 +147,8 @@ namespace perlin::jshader {
                         const auto it = ctx.overrides->find(d.name);
                         if (it != ctx.overrides->end()) {
                             const bool on = it->second == "true" || it->second == "1" || it->second == "on";
-                            return d.indent + (on ? "" : "//") + "#define " + d.name + (d.comment.empty() ? "" : " //" + d.comment);
+                            return d.indent + (on ? "" : "//") + "#define " + d.name +
+                                   (d.comment.empty() ? "" : " //" + d.comment);
                         }
                     }
                     return line;
@@ -168,13 +183,15 @@ namespace perlin::jshader {
                 if (ctx.overrides) {
                     const auto it = ctx.overrides->find(c.name);
                     if (it != ctx.overrides->end())
-                        return c.indent + "const " + c.type + " " + c.name + " = " + it->second + ";" + c.tail;
+                        return c.indent + "const " + c.type + " " + c.name + " = " + it->second + ";" +
+                               c.tail;
                 }
             }
             return line;
         }
 
-        void Expand(IncludeContext& ctx, const std::string& path, const std::string& text, ExpandedSource& out, int depth) {
+        void Expand(IncludeContext& ctx, const std::string& path, const std::string& text,
+                    ExpandedSource& out, int depth) {
             out.files.insert(path);
             std::istringstream in(text);
             std::string line;
@@ -184,7 +201,8 @@ namespace perlin::jshader {
                 if (!line.empty() && line.back() == '\r')
                     line.pop_back();
                 const std::string t = str::Trim(line);
-                if (t.compare(0, 8, "#include") == 0 || (t.size() > 2 && t[0] == '#' && str::Trim(t.substr(1)).compare(0, 7, "include") == 0)) {
+                if (t.compare(0, 8, "#include") == 0 ||
+                    (t.size() > 2 && t[0] == '#' && str::Trim(t.substr(1)).compare(0, 7, "include") == 0)) {
                     const size_t q1 = t.find_first_of("\"<");
                     const size_t q2 = q1 == std::string::npos ? q1 : t.find_first_of("\">", q1 + 1);
                     if (q1 != std::string::npos && q2 != std::string::npos) {

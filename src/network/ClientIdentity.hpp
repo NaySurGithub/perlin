@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-typedef struct ec_key_st EC_KEY;
+using EC_KEY = struct ec_key_st;
 
 namespace perlin {
 

@@ -25,6 +25,7 @@ static int fails = 0;
 static ChunkCodec::CellIds MakeCells(int distinct, uint32_t seed) {
     std::mt19937 rng(seed);
     std::vector<int32_t> vals;
+    vals.reserve(distinct);
     for (int i = 0; i < distinct; i++)
         vals.push_back((int32_t)rng());
     ChunkCodec::CellIds c;
@@ -36,7 +37,8 @@ static ChunkCodec::CellIds MakeCells(int distinct, uint32_t seed) {
 int main() {
     {
         ChunkCodec::CellIds first, second;
-        first.fill(5); second.fill(19);
+        first.fill(5);
+        second.fill(19);
         std::vector<uint8_t> column;
         ChunkCodec::WriteSubChunk(column, -4, first);
         const size_t firstSize = column.size();
@@ -98,7 +100,6 @@ int main() {
         CHECK(ChunkCodec::ParseColumn(nullptr, 0, 0, -4, 24, parsed, consumed));
         CHECK(parsed.empty() && consumed == 0);
     }
-
 
     for (int distinct : {1, 2, 3, 4, 5, 9, 17, 40, 65, 200, 300}) {
         auto cells = MakeCells(distinct, 1000 + distinct);
@@ -218,12 +219,15 @@ int main() {
         p.dimension = 0;
         p.origin = {4, 0, -2};
         SubChunkEntryEntry e0;
-        e0.dx = 0; e0.dy = 5; e0.dz = 0;
+        e0.dx = 0;
+        e0.dy = 5;
+        e0.dz = 0;
         e0.result = SubChunkEntryEntryResult::Success;
         e0.payload = sub;
         e0.heightmapType = HeightMapDataType::HasData;
         std::array<std::vector<int8_t>, 16> hm;
-        for (auto& row : hm) row.assign(16, 7);
+        for (auto& row : hm)
+            row.assign(16, 7);
         e0.heightmap = hm;
         e0.renderHeightmapType = HeightMapDataType::NoData;
         SubChunkEntryEntry e1;

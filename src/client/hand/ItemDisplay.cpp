@@ -83,7 +83,8 @@ namespace perlin::itemdisplay {
                     styles.push_back(s);
                 for (const auto [name, row] : root["items"].members()) {
                     t.hand[std::string(name)] = Build(row["hand"], styles);
-                    t.ground[std::string(name)] = Build(row["ground"].isArray() ? row["ground"] : row["hand"], styles);
+                    t.ground[std::string(name)] =
+                        Build(row["ground"].isArray() ? row["ground"] : row["hand"], styles);
                 }
                 return t;
             }();
@@ -109,7 +110,8 @@ namespace perlin::itemdisplay {
             rz = -rz;
         }
         const float side = leftHand ? -1.0f : 1.0f;
-        glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(side * t.translation.x, t.translation.y, t.translation.z) / 16.0f);
+        glm::mat4 m = glm::translate(
+            glm::mat4(1.0f), glm::vec3(side * t.translation.x, t.translation.y, t.translation.z) / 16.0f);
         m = glm::rotate(m, t.rotation.x * k, glm::vec3(1, 0, 0));
         m = glm::rotate(m, ry * k, glm::vec3(0, 1, 0));
         m = glm::rotate(m, rz * k, glm::vec3(0, 0, 1));

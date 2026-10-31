@@ -22,8 +22,8 @@ namespace perlin {
                     if (!field)
                         return true;
                     constexpr double maximum = std::numeric_limits<float>::max();
-                    if (!field->IsNumber() || !std::isfinite(field->number) ||
-                        field->number < -maximum || field->number > maximum)
+                    if (!field->IsNumber() || !std::isfinite(field->number) || field->number < -maximum ||
+                        field->number > maximum)
                         return false;
                     out = static_cast<float>(field->number);
                     return std::isfinite(out);
@@ -35,7 +35,8 @@ namespace perlin {
             }
             if (const auto* steps = axis->Find("steps")) {
                 if (!steps->IsNumber() || !std::isfinite(steps->number) || steps->number < 0 ||
-                    steps->number > std::numeric_limits<uint32_t>::max() || std::floor(steps->number) != steps->number)
+                    steps->number > std::numeric_limits<uint32_t>::max() ||
+                    std::floor(steps->number) != steps->number)
                     return std::nullopt;
                 description[i].steps = static_cast<uint32_t>(steps->number);
             }

@@ -11,7 +11,9 @@
 
 namespace perlin::server::auth {
     namespace {
-        struct PkeyFree { void operator()(EVP_PKEY* k) const { EVP_PKEY_free(k); } };
+        struct PkeyFree {
+            void operator()(EVP_PKEY* k) const { EVP_PKEY_free(k); }
+        };
         using Pkey = std::unique_ptr<EVP_PKEY, PkeyFree>;
 
         Pkey LoadKey(const std::string& b64) {
@@ -25,18 +27,24 @@ namespace perlin::server::auth {
             std::string out;
             for (size_t i = 0; i < s.size(); i += 3) {
                 uint32_t v = static_cast<unsigned char>(s[i]) << 16;
-                if (i + 1 < s.size()) v |= static_cast<unsigned char>(s[i + 1]) << 8;
-                if (i + 2 < s.size()) v |= static_cast<unsigned char>(s[i + 2]);
+                if (i + 1 < s.size())
+                    v |= static_cast<unsigned char>(s[i + 1]) << 8;
+                if (i + 2 < s.size())
+                    v |= static_cast<unsigned char>(s[i + 2]);
                 out += t[(v >> 18) & 63];
                 out += t[(v >> 12) & 63];
-                if (i + 1 < s.size()) out += t[(v >> 6) & 63];
-                if (i + 2 < s.size()) out += t[v & 63];
+                if (i + 1 < s.size())
+                    out += t[(v >> 6) & 63];
+                if (i + 2 < s.size())
+                    out += t[v & 63];
             }
             return out;
         }
 
         int64_t Now() {
-            return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            return std::chrono::duration_cast<std::chrono::seconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
+                .count();
         }
 
         struct Jwt {
@@ -77,12 +85,15 @@ namespace perlin::server::auth {
     const std::vector<std::string>& DefaultRootKeys() {
         static const std::vector<std::string> keys = {
             // the current root, and the one used before 2020 (old clients and some relays still chain to it)
-            "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAECRXueJeTDqNRRgJi/vlRufByu/2G0i2Ebt6YMar5QX/R0DIIyrJMcUpruK4QveTfJSTp3Shlq4Gk34cD/4GUWwkv0DVuzeuB+tXija7HBxii03NHDbPAD0AKnLr2wdAp",
-            "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE8ELkixyLcwlZryUQcu1TvPOmI2B7vX83ndnWRUaXm74wFfa5f/lwQNTfrLVHa2PmenpGI6JhIMUJaWZrjmMj90NoKNFSNBuKdm8rYiXsfaz3K36x/1U26HpG0ZxK/V1V"};
+            "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAECRXueJeTDqNRRgJi/vlRufByu/2G0i2Ebt6YMar5QX/"
+            "R0DIIyrJMcUpruK4QveTfJSTp3Shlq4Gk34cD/4GUWwkv0DVuzeuB+tXija7HBxii03NHDbPAD0AKnLr2wdAp",
+            "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE8ELkixyLcwlZryUQcu1TvPOmI2B7vX83ndnWRUaXm74wFfa5f/"
+            "lwQNTfrLVHa2PmenpGI6JhIMUJaWZrjmMj90NoKNFSNBuKdm8rYiXsfaz3K36x/1U26HpG0ZxK/V1V"};
         return keys;
     }
 
-    bool VerifyEs384(const std::string& signingInput, const std::string& raw, const std::string& publicKeyB64) {
+    bool VerifyEs384(const std::string& signingInput, const std::string& raw,
+                     const std::string& publicKeyB64) {
         if (raw.size() != 96)
             return false;
         const Pkey key = LoadKey(publicKeyB64);
@@ -112,7 +123,8 @@ namespace perlin::server::auth {
         return ok;
     }
 
-    Login VerifyLogin(const std::string& identityJson, const std::string& clientToken, const std::vector<std::string>& rootKeys) {
+    Login VerifyLogin(const std::string& identityJson, const std::string& clientToken,
+                      const std::vector<std::string>& rootKeys) {
         Login out;
         json::Value identity;
         if (!json::Parse(identityJson, identity)) {
@@ -151,11 +163,13 @@ namespace perlin::server::auth {
             }
             // the first link vouches for itself; every other link must be signed by the key the one before named
             if (i > 0 && jwt.x5u != expectedKey) {
-                out.error = "certificate link " + std::to_string(i) + " is not signed by the key the previous link named";
+                out.error = "certificate link " + std::to_string(i) +
+                            " is not signed by the key the previous link named";
                 return out;
             }
             if (!VerifyEs384(jwt.signingInput, jwt.signature, jwt.x5u) || !InTime(jwt.payload)) {
-                out.error = "certificate link " + std::to_string(i) + " has a bad signature or is out of date";
+                out.error =
+                    "certificate link " + std::to_string(i) + " has a bad signature or is out of date";
                 return out;
             }
             for (const std::string& root : rootKeys)
@@ -190,8 +204,8 @@ namespace perlin::server::auth {
         }
 
         Jwt client;
-        if (Split(clientToken, client) && client.x5u == out.clientKey && VerifyEs384(client.signingInput, client.signature, out.clientKey) &&
-            InTime(client.payload)) {
+        if (Split(clientToken, client) && client.x5u == out.clientKey &&
+            VerifyEs384(client.signingInput, client.signature, out.clientKey) && InTime(client.payload)) {
             out.clientData = client.payload;
             out.clientDataValid = true;
         } else {
@@ -218,7 +232,8 @@ namespace perlin::server::auth {
                 const size_t sp = rest.find(' ');
                 if (sp == std::string::npos)
                     continue;
-                payload += std::string(first ? "" : ",") + "{\"algorithm\":\"" + json::Escape(rest.substr(0, sp)) + "\",\"digest\":\"" +
+                payload += std::string(first ? "" : ",") + "{\"algorithm\":\"" +
+                           json::Escape(rest.substr(0, sp)) + "\",\"digest\":\"" +
                            json::Escape(rest.substr(sp + 1)) + "\"}";
                 first = false;
             } else if (line.starts_with("a=identity:") && assertionAttr.empty()) {
@@ -235,7 +250,8 @@ namespace perlin::server::auth {
             return false;
         }
         json::Value envelope, assertion;
-        if (!json::Parse(json::Base64UrlDecode(assertionAttr), envelope) || !json::Parse(envelope["assertion"].String(), assertion)) {
+        if (!json::Parse(json::Base64UrlDecode(assertionAttr), envelope) ||
+            !json::Parse(envelope["assertion"].String(), assertion)) {
             error = "the identity assertion is malformed";
             return false;
         }

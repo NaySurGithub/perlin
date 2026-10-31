@@ -14,5 +14,6 @@ namespace perlin::audio {
     };
     using PcmPtr = std::shared_ptr<const Pcm>;
 
-    bool DecodeSound(const std::vector<uint8_t>& bytes, const std::string& extension, Pcm& out, std::string* error = nullptr);
+    bool DecodeSound(const std::vector<uint8_t>& bytes, const std::string& extension, Pcm& out,
+                     std::string* error = nullptr);
 }

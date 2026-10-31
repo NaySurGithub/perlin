@@ -18,7 +18,8 @@ namespace perlin::jshader {
         float shadowProjection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         double cameraPosition[3] = {0, 0, 0};
         double previousCameraPosition[3] = {0, 0, 0};
-        float sunPosition[3] = {0, 100, 0}, moonPosition[3] = {0, -100, 0}, shadowLightPosition[3] = {0, 100, 0};
+        float sunPosition[3] = {0, 100, 0}, moonPosition[3] = {0, -100, 0},
+              shadowLightPosition[3] = {0, 100, 0};
         float upPosition[3] = {0, 100, 0};
         float sunAngle = 0.0f, shadowAngle = 0.0f;
         float fogColor[3] = {0.7f, 0.8f, 1.0f}, skyColor[3] = {0.5f, 0.7f, 1.0f};
@@ -42,8 +43,10 @@ namespace perlin::jshader {
         int atlasSize[2] = {0, 0};
         float biomeTemperature = 0.8f, biomeRainfall = 0.4f;
         int biome = 0, biomeCategory = 0, biomePrecipitation = 0;
-        float playerHealth = 20.0f, maxPlayerHealth = 20.0f, playerHunger = 20.0f, playerAir = 300.0f, maxPlayerAir = 300.0f;
-        bool isSpectator = false, isHurt = false, isInvisible = false, isBurning = false, isSneaking = false, isSprinting = false;
+        float playerHealth = 20.0f, maxPlayerHealth = 20.0f, playerHunger = 20.0f, playerAir = 300.0f,
+              maxPlayerAir = 300.0f;
+        bool isSpectator = false, isHurt = false, isInvisible = false, isBurning = false, isSneaking = false,
+             isSprinting = false;
         bool isOnGround = true, isRightHanded = true;
         float cameraYaw = 0.0f, cameraPitch = 0.0f;
         float lightningBoltPosition[4] = {0, 0, 0, 0};

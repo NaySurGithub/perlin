@@ -62,8 +62,8 @@ int main(int argc, char** argv) {
             !stored.randomOffset)
             return 1;
         const physics::bds::BlockPosition position{std::bit_cast<int32_t>(words[0]),
-                                                 std::bit_cast<int32_t>(words[1]),
-                                                 std::bit_cast<int32_t>(words[2])};
+                                                   std::bit_cast<int32_t>(words[1]),
+                                                   std::bit_cast<int32_t>(words[2])};
         const auto result = physics::bds::GenerateBlockOffset(*stored.randomOffset, position);
         if (std::bit_cast<uint32_t>(result.x) != words[12] ||
             std::bit_cast<uint32_t>(result.y) != words[13] || std::bit_cast<uint32_t>(result.z) != words[14])
@@ -72,10 +72,9 @@ int main(int argc, char** argv) {
     }
     if (!input.eof() || cases != 959)
         return 1;
-    for (const char* text : {"false", "{\"x\":3}", "{\"x\":{\"steps\":-1}}",
-                            "{\"x\":{\"steps\":0.5}}", "{\"x\":{\"steps\":4294967296}}",
-                            "{\"z\":{\"range\":{\"min\":2,\"max\":1}}}",
-                            "{\"x\":{\"range\":{\"min\":-1e99,\"max\":0}}}"}) {
+    for (const char* text : {"false", "{\"x\":3}", "{\"x\":{\"steps\":-1}}", "{\"x\":{\"steps\":0.5}}",
+                             "{\"x\":{\"steps\":4294967296}}", "{\"z\":{\"range\":{\"min\":2,\"max\":1}}}",
+                             "{\"x\":{\"range\":{\"min\":-1e99,\"max\":0}}}"}) {
         ui::Json value;
         std::string error;
         if (!ui::Json::Parse(text, value, error) || ParseBlockOffsetDefinition(&value))

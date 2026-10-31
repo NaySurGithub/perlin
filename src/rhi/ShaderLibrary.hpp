@@ -51,7 +51,8 @@ namespace rhi {
         const TextureSlot* FindTexture(std::string_view name) const;
         const ProgramInfo* Find(std::string_view name) const;
         // empty when the program lacks that stage or the pack was built without the target
-        std::span<const uint8_t> Code(const ProgramInfo& program, ShaderStage stage, ShaderTarget target) const;
+        std::span<const uint8_t> Code(const ProgramInfo& program, ShaderStage stage,
+                                      ShaderTarget target) const;
 
         static ShaderTarget TargetFor(Api api);
         static ShaderFormat FormatFor(ShaderTarget target);

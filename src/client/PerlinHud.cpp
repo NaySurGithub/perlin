@@ -721,7 +721,8 @@ namespace perlin {
                 }
                 previewEntities.SetSkin("preview" + std::to_string(i), skin);
             } else {
-                const uint64_t flags = variant.contains("baby") ? static_cast<uint64_t>(entity::flag::Baby) : 0;
+                const uint64_t flags =
+                    variant.contains("baby") ? static_cast<uint64_t>(entity::flag::Baby) : 0;
                 // "namespace/name" previews a server pack's entity; anything else is a vanilla one.
                 std::string id = "minecraft:" + type;
                 if (const size_t slash = type.find('/'); slash != std::string::npos)

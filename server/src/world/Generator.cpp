@@ -35,7 +35,8 @@ namespace perlin::server {
                 for (int x = 0; x < 16; x++)
                     for (int z = 0; z < 16; z++)
                         for (int y = 0; y < 16; y++)
-                            cells[static_cast<size_t>(CellIndex(x, y, z))] = profile[static_cast<size_t>(sec * 16 + y)];
+                            cells[static_cast<size_t>(CellIndex(x, y, z))] =
+                                profile[static_cast<size_t>(sec * 16 + y)];
                 column.SetSection(sec, cells.data());
             }
         }

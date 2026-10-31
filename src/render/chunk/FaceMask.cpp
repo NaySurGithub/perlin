@@ -5,9 +5,21 @@
 namespace perlin::render {
     void ColumnCoords(int axis, int p, int q, int depth, int& x, int& y, int& z) {
         switch (axis) {
-        case 0: x = depth; y = p; z = q; break;
-        case 1: x = p; y = depth; z = q; break;
-        default: x = p; y = q; z = depth; break;
+        case 0:
+            x = depth;
+            y = p;
+            z = q;
+            break;
+        case 1:
+            x = p;
+            y = depth;
+            z = q;
+            break;
+        default:
+            x = p;
+            y = q;
+            z = depth;
+            break;
         }
     }
 
@@ -19,7 +31,8 @@ namespace perlin::render {
         };
     }
 
-    FaceMask ComputeFaceMask(const SectionBlocks& section, const SectionNeighbours& nb, const BlockTable& table) {
+    FaceMask ComputeFaceMask(const SectionBlocks& section, const SectionNeighbours& nb,
+                             const BlockTable& table) {
         FaceMask out;
         // one pass over the cells fills the three axis views of the opaque and meshed sets
         std::array<std::array<Column, 256>, 3> cols{};
@@ -66,7 +79,8 @@ namespace perlin::render {
                     if (known) {
                         int x, y, z;
                         ColumnCoords(axis, p, q, pos ? 0 : 15, x, y, z);
-                        edgeOpaque = (table.Flags(nb.section[static_cast<size_t>(face)].At(x, y, z)) & BlockTable::Opaque) != 0;
+                        edgeOpaque = (table.Flags(nb.section[static_cast<size_t>(face)].At(x, y, z)) &
+                                      BlockTable::Opaque) != 0;
                     }
                     uint16_t hidden;
                     if (pos)

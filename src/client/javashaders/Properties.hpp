@@ -10,7 +10,7 @@ namespace perlin::jshader {
         std::vector<std::pair<std::string, std::string>> entries;
         std::map<std::string, std::string> map;
 
-        bool Has(const std::string& key) const { return map.count(key) != 0; }
+        bool Has(const std::string& key) const { return map.contains(key); }
         std::string Get(const std::string& key, const std::string& fallback = {}) const {
             const auto it = map.find(key);
             return it == map.end() ? fallback : it->second;
