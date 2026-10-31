@@ -537,9 +537,10 @@ namespace perlin {
         in.gliding = gliding;
         in.crawl = crawling;
         in.forceCrouch = forcedSneak;
-        // isInWaterOrRain 0x140BA14A0 and not a passenger; TODO: rain at the position (rain level > 0.2, sky open, biome warm)
-        if (pendingRiptide > 0 && simulate && state.inWater && !rideLock)
+        if (pendingRiptide > 0 && simulate)
             in.riptideLevel = pendingRiptide;
+        if (in.riptideLevel > 0 || state.spinAttack)
+            in.mobBoxes = mobBoxes;
         pendingRiptide = 0;
         in.pitch = BedrockPitch(camera.pitch);
         in.swimming = swimming && !gliding;

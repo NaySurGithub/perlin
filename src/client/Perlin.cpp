@@ -7416,9 +7416,21 @@ namespace perlin {
                     if (!seated)
                         player.SetRidePosition(false, 0, 0, 0);
                     const double feetY = player.State().y;
+                    std::vector<physics::Box> mobs;
                     for (const entity::Entity& e : frameEntities) {
                         if (e.runtimeId == live->GetRuntimeId() || (seated && e.uniqueId == rideUid))
                             continue;
+                        // riptide hits only mobs (MobFlagComponent, 0x14B316910): actors with health stand in for it
+                        if (e.isPlayer || e.attributes.contains("minecraft:health")) {
+                            float w = 0.6f, h = 1.8f;
+                            entityRenderer.CollisionBoxOf(e.type, w, h);
+                            if (e.boxWidth > 0.0f && e.boxHeight > 0.0f) {
+                                w = e.boxWidth;
+                                h = e.boxHeight;
+                            }
+                            const float x = static_cast<float>(e.pos.x), y = static_cast<float>(e.pos.y), z = static_cast<float>(e.pos.z);
+                            mobs.push_back({x - w * 0.5f, y, z - w * 0.5f, x + w * 0.5f, y + h, z + w * 0.5f});
+                        }
                         // stackable actors are solid to movers (0x143A10780); falling blocks only once below the feet (0x143A10AC0)
                         const bool fallingBlock = e.type == "minecraft:falling_block";
                         if (!e.Has(entity::flag::Stackable) && !fallingBlock && e.type != "minecraft:cushion")
@@ -7437,6 +7449,7 @@ namespace perlin {
                         solid.push_back({x - w * 0.5f, y, z - w * 0.5f, x + w * 0.5f, top, z + w * 0.5f});
                     }
                     SetEntityCollisionBoxes(std::move(solid));
+                    player.SetMobBoxes(std::move(mobs));
                 }
                 player.SetToggleModes(options.sprintMode == "toggle", options.sneakMode == "toggle");
                 hudState.moveStatus.clear();
@@ -8120,10 +8133,41 @@ namespace perlin {
                         if (live)
                             live->SendReleaseItem(eyeF);
                         // riptide is enchantment 30
-                        if (held.name == "minecraft:trident")
+                        if (held.name == "minecraft:trident" && live) {
+                            // rain at the player, Weather 0x145E27B00: overworld, (cur - prev) + prev > 0.2f, the column
+                            // clear from the probe up, biome precipitation and temperature > 0.15f (0x145D3B680).
+                            // the probe is floor(position + box height); the network position is at eye level
+                            const auto rainingOnPlayer = [&] {
+                                if (live->DimensionId() != 0)
+                                    return false;
+                                const float delta = rainLevel - previousRainLevel;
+                                if (!(delta + previousRainLevel > 0.2f))
+                                    return false;
+                                const physics::State& pst = player.State();
+                                const float eyeY = static_cast<float>(pst.y) + static_cast<float>(physics::kStandEye);
+                                const int x = static_cast<int>(std::floor(static_cast<float>(pst.x)));
+                                const int y = static_cast<int>(std::floor(eyeY + pst.collisionHeight));
+                                const int z = static_cast<int>(std::floor(static_cast<float>(pst.z)));
+                                auto& level = live->NetLevel();
+                                for (int top = 319; top >= y; --top) {
+                                    bool loaded = false;
+                                    const uint16_t id = level.GetBlock(x, top, z, loaded);
+                                    if (!loaded || weather.BlocksRain(level, id) || level.GetLiquid(x, top, z) != 0)
+                                        return false;
+                                }
+                                const BiomeTints& tints = levelRenderer->Tints();
+                                float temperature = 0.5f, downfall = 0.5f;
+                                if (!tints.Ready() || !tints.Climate(tints.NameForId(level.GetBiome(x, y, z)), temperature, downfall))
+                                    return false;
+                                // TODO: block precipitation_interactions, biome rain flag and the temperature noise/altitude
+                                // terms (0x145D3B680) are approximated by the renderer's blocker list and climate data
+                                return downfall > 0.0f && temperature > 0.15f;
+                            };
+                            const bool raining = rainingOnPlayer();
                             for (const auto& [id, level] : held.enchants)
                                 if (id == 30)
-                                    player.ReleaseTrident(level);
+                                    player.ReleaseTrident(level, raining);
+                        }
                     }
 
                     if (live && inputManager.Pressed(Action::PickBlock)) {

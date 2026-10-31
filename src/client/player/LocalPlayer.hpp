@@ -47,12 +47,13 @@ namespace perlin {
         }
         void SetRidePosition(bool riding, double x, double y, double z) { rideLock = riding; rideX = x; rideY = y; rideZ = z; }
         void BeginItemUse() { itemUseStart = tickCounter; }
-        // TridentItem::releaseUsing 0x1447283B0: riptide needs at least 10 ticks of use
-        void ReleaseTrident(int riptideLevel) {
-            if (riptideLevel > 0 && tickCounter - itemUseStart >= 10)
+        // TridentItem::releaseUsing 0x1447283B0: 10 ticks of use, in water last tick (0x140BA14A0) or rain, not riding
+        void ReleaseTrident(int riptideLevel, bool raining) {
+            if (riptideLevel > 0 && tickCounter - itemUseStart >= 10 && (state.inWater || raining) && !rideLock)
                 pendingRiptide = riptideLevel;
         }
         bool SpinAttack() const { return state.spinAttack; }
+        void SetMobBoxes(std::vector<physics::Box> boxes) { mobBoxes = std::move(boxes); }
 
         void ModMotion(bool add, double x, double y, double z, bool ax, bool ay, bool az);
         void ModTeleport(double x, double y, double z, bool keepVelocity);
@@ -141,6 +142,7 @@ namespace perlin {
         float eyeDrop = 0.0f, eyeDropPrevious = 0.0f;
         uint64_t itemUseStart = 0;
         int pendingRiptide = 0;
+        std::vector<physics::Box> mobBoxes;
         // ticks left to double-tap jump for flight (VanillaClientGameplayComponent +8)
         int flyTapTicks = 0;
         int fallFlyTicks = 0;

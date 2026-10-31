@@ -120,6 +120,8 @@ namespace perlin::physics {
         bool forceCrouch = false;
         // riptide level of a trident released this tick, 0 when none
         int riptideLevel = 0;
+        // mob boxes a riptide spin can hit; filled only while spinning
+        std::vector<Box> mobBoxes;
         bool overDescendableBlock = false;
         bool inAscendableBlock = false;
         bool canStandOnPowderSnow = false;
@@ -156,6 +158,8 @@ namespace perlin::physics {
         float swimAmount = 0;
         int jumpDelay = 0;
         float stuckX = 0, stuckY = 0, stuckZ = 0;
+        // last move request: horizontal velocity and position before the move (VanillaClientGameplay +28/+36, +40/+48)
+        float requestX = 0, requestZ = 0, requestFromX = 0, requestFromZ = 0;
         float fallDistance = 0;
         bds::MovementEffects movementEffects;
         bds::Rotation previousRotation;

@@ -431,6 +431,15 @@ namespace perlin::physics {
             return bds::DampComponent(static_cast<float>(value), retention);
         }
 
+        // TravelMoveRequestSystem 0x147ccdf90 builds the request from posDelta, before the block slowdown;
+        // 0x14ce2d080 copies it and the pre-move position for the sprint stop test
+        void RecordMoveRequest(State& state) {
+            state.requestX = static_cast<float>(state.vx);
+            state.requestZ = static_cast<float>(state.vz);
+            state.requestFromX = static_cast<float>(state.x);
+            state.requestFromZ = static_cast<float>(state.z);
+        }
+
         Vec3 ApplyStoredBlockSlowdown(State& state, Vec3 requested) {
             bds::Float3 multiplier{state.stuckX, state.stuckY, state.stuckZ};
             bds::Float3 movement{static_cast<float>(requested.x), static_cast<float>(requested.y),
@@ -613,6 +622,7 @@ namespace perlin::physics {
             if (grounded && s.vy == 0)
                 s.vy = std::numeric_limits<float>::denorm_min();
             const float hMod = hover ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
+            RecordMoveRequest(s);
             const Vec3 req = ApplyStoredBlockSlowdown(s, {s.vx, s.vy, s.vz});
             if (in.noClip) {
                 s.hasBox = false;
@@ -777,13 +787,14 @@ namespace perlin::physics {
         if (s.onClimbable && !water && !lava && !glide) {
             if (static_cast<float>(s.vy) < -kClimbSpeed)
                 s.vy = -kClimbSpeed;
-            // sneak holds on blocks with the sneak-stop property (+0x134 bit 2); the climbable list stands in for it
+            // sneak-hold property (+0x134 bit 2) comes with every climbable block, never with powder snow
             if (sneaking && s.vy < 0 && feet.climbable)
                 s.vy = 0;
         }
         if (water && sneaking)
             s.vy = F(static_cast<float>(s.vy) - 0.04f);
 
+        RecordMoveRequest(s);
         Vec3 req = ApplyStoredBlockSlowdown(s, {s.vx, s.vy, s.vz});
         const Box box = BoundingBox(s, crouched);
         bool requestSneakFlag = false;
@@ -933,12 +944,29 @@ namespace perlin::physics {
         s.spinTicks = 0;
     }
 
-    // PostDamageNearbyMobsSystem 0x14B33CC90: a wall ends the spin; otherwise 20 ticks, or landing after 5
-    // TODO: mob hits (velocity * -0.2 per hit, then stop) need the spin attack results, not sensed locally
-    static void EndSpinAttack(State& s) {
+    // PostDamageNearbyMobsSystem 0x14B33CC90: each mob hit scales the velocity by -0.2 and ends the spin, so does a
+    // wall; otherwise 20 ticks, or landing after 5
+    static void EndSpinAttack(State& s, const Input& in) {
         if (!s.spinAttack)
             return;
-        if (s.horizontalCollision) {
+        // SpinAttackFetchNearbyMobsSystem 0x14B316910: mobs touching the box grown by 1 on every side
+        const auto grow = [](double v, float d) { return static_cast<double>(static_cast<float>(v) + d); };
+        const Box body = BoundingBox(s, false);
+        const Box reach{grow(body.x0, -1.0f), grow(body.y0, -1.0f), grow(body.z0, -1.0f),
+                        grow(body.x1, 1.0f), grow(body.y1, 1.0f), grow(body.z1, 1.0f)};
+        int hits = 0;
+        for (const Box& mob : in.mobBoxes)
+            if (reach.Intersects(mob))
+                ++hits;
+        if (hits > 0) {
+            for (int i = 0; i < hits; ++i) {
+                s.vx = static_cast<float>(s.vx) * -0.2f;
+                s.vy = static_cast<float>(s.vy) * -0.2f;
+                s.vz = static_cast<float>(s.vz) * -0.2f;
+            }
+            s.spinAttack = false;
+            s.spinTicks = 0;
+        } else if (s.horizontalCollision) {
             s.spinAttack = false;
             s.spinTicks = 0;
         }
@@ -955,7 +983,7 @@ namespace perlin::physics {
         if (in.riptideLevel > 0)
             StartSpinAttack(s, in, in.headInWater);
         StepMovement(s, in, attr, world);
-        EndSpinAttack(s);
+        EndSpinAttack(s, in);
         const auto climber = bds::SenseScaffolding(CollisionBox(BoundingBox(s, in.sneak)),
             [&](int32_t x, int32_t y, int32_t z) { return world.ClimberCell(x, y, z); }, in.canStandOnPowderSnow);
         if (!climber.overPowderSnow && (climber.inside || climber.over || climber.ascendable || climber.descendable))

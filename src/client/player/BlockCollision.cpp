@@ -413,7 +413,8 @@ namespace perlin {
             s.scaffoldingStability = static_cast<int8_t>(State(id, "stability", 0));
             return info;
         }
-        if (n == "vine" || n == "ladder" || n == "scaffolding_none" || n == "twisting_vines" || n == "weeping_vines" ||
+        // the vanilla registry (0x14ce9ad30) sets the climbable and sneak-hold properties (+0x134 |= 6) on these only
+        if (n == "vine" || n == "ladder" || n == "twisting_vines" || n == "weeping_vines" ||
             n == "cave_vines" || n == "cave_vines_body_with_berries" || n == "cave_vines_head_with_berries") {
             s.climbable = true;
             return info;
