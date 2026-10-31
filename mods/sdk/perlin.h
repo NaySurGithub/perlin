@@ -1,6 +1,23 @@
 #pragma once
 #include <stdint.h>
 
+/* every call and event id, from the shared table (perlin/abi_table.h) */
+#include "perlin/abi_table.h"
+#define PERLIN_C_OP(Name, Id, ...) PERLIN_OP_##Name = Id,
+#define PERLIN_C_EVENT(Name, Id, ...) PERLIN_EVENT_##Name = Id,
+enum PerlinOp { PERLIN_ABI_OPS(PERLIN_C_OP) };
+enum PerlinEvent { PERLIN_ABI_EVENTS(PERLIN_C_EVENT) };
+#undef PERLIN_C_OP
+#undef PERLIN_C_EVENT
+
+/* the one host function every call goes through: >= 0 bytes written to out, < 0 a status
+ * (below -16: out was too small, -(16 + needed)) */
+#if defined(__wasm__)
+__attribute__((import_module("perlin"), import_name("call")))
+#endif
+int32_t
+perlin_call(uint32_t op, const void* in, uint32_t in_len, void* out, uint32_t out_cap);
+
 #define PERLIN_IMPORT(name) __attribute__((import_module("perlin"), import_name(#name)))
 #define PERLIN_EXPORT(name) __attribute__((export_name(#name)))
 
@@ -24,21 +41,33 @@ PERLIN_IMPORT(sneaking) int32_t perlin_sneaking(void);
 
 static inline uint32_t perlin_strlen(const char* s) {
     uint32_t n = 0;
-    while (s[n]) n++;
+    while (s[n])
+        n++;
     return n;
 }
-static inline void perlin_say(const char* s) { perlin_chat(s, perlin_strlen(s)); }
-static inline void perlin_hud(const char* s) { perlin_hud_text(s, perlin_strlen(s)); }
-static inline void perlin_print(const char* s) { perlin_log(s, perlin_strlen(s)); }
+static inline void perlin_say(const char* s) {
+    perlin_chat(s, perlin_strlen(s));
+}
+static inline void perlin_hud(const char* s) {
+    perlin_hud_text(s, perlin_strlen(s));
+}
+static inline void perlin_print(const char* s) {
+    perlin_log(s, perlin_strlen(s));
+}
 
 static inline uint32_t perlin_itoa(char* out, int64_t v) {
     char tmp[24];
     uint32_t n = 0, len = 0;
     int neg = v < 0;
     uint64_t u = neg ? (uint64_t)(-v) : (uint64_t)v;
-    do { tmp[n++] = (char)('0' + u % 10); u /= 10; } while (u);
-    if (neg) out[len++] = '-';
-    while (n) out[len++] = tmp[--n];
+    do {
+        tmp[n++] = (char)('0' + u % 10);
+        u /= 10;
+    } while (u);
+    if (neg)
+        out[len++] = '-';
+    while (n)
+        out[len++] = tmp[--n];
     out[len] = 0;
     return len;
 }

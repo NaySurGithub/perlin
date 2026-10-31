@@ -19,38 +19,82 @@
 #include <vector>
 
 namespace rhi::webgpu {
-    inline WGPUStringView View(const char* s) { return WGPUStringView{s, s ? WGPU_STRLEN : 0}; }
-    inline WGPUStringView View(const std::string& s) { return WGPUStringView{s.data(), s.size()}; }
+    inline WGPUStringView View(const char* s) {
+        return WGPUStringView{s, s ? WGPU_STRLEN : 0};
+    }
+    inline WGPUStringView View(const std::string& s) {
+        return WGPUStringView{s.data(), s.size()};
+    }
     inline std::string Str(WGPUStringView v) {
         if (!v.data)
             return {};
-        return std::string(v.data, v.length == WGPU_STRLEN ? std::char_traits<char>::length(v.data) : v.length);
+        return std::string(v.data,
+                           v.length == WGPU_STRLEN ? std::char_traits<char>::length(v.data) : v.length);
     }
 
-    inline void Release(WGPUBuffer v) { wgpuBufferRelease(v); }
-    inline void Release(WGPUTexture v) { wgpuTextureRelease(v); }
-    inline void Release(WGPUTextureView v) { wgpuTextureViewRelease(v); }
-    inline void Release(WGPUSampler v) { wgpuSamplerRelease(v); }
-    inline void Release(WGPUShaderModule v) { wgpuShaderModuleRelease(v); }
-    inline void Release(WGPUBindGroupLayout v) { wgpuBindGroupLayoutRelease(v); }
-    inline void Release(WGPUBindGroup v) { wgpuBindGroupRelease(v); }
-    inline void Release(WGPUPipelineLayout v) { wgpuPipelineLayoutRelease(v); }
-    inline void Release(WGPURenderPipeline v) { wgpuRenderPipelineRelease(v); }
-    inline void Release(WGPUComputePipeline v) { wgpuComputePipelineRelease(v); }
-    inline void Release(WGPUQuerySet v) { wgpuQuerySetRelease(v); }
-    inline void Release(WGPUCommandEncoder v) { wgpuCommandEncoderRelease(v); }
-    inline void Release(WGPUCommandBuffer v) { wgpuCommandBufferRelease(v); }
-    inline void Release(WGPURenderPassEncoder v) { wgpuRenderPassEncoderRelease(v); }
-    inline void Release(WGPUComputePassEncoder v) { wgpuComputePassEncoderRelease(v); }
-    inline void Release(WGPUQueue v) { wgpuQueueRelease(v); }
-    inline void Release(WGPUDevice v) { wgpuDeviceRelease(v); }
-    inline void Release(WGPUAdapter v) { wgpuAdapterRelease(v); }
-    inline void Release(WGPUInstance v) { wgpuInstanceRelease(v); }
-    inline void Release(WGPUSurface v) { wgpuSurfaceRelease(v); }
+    inline void Release(WGPUBuffer v) {
+        wgpuBufferRelease(v);
+    }
+    inline void Release(WGPUTexture v) {
+        wgpuTextureRelease(v);
+    }
+    inline void Release(WGPUTextureView v) {
+        wgpuTextureViewRelease(v);
+    }
+    inline void Release(WGPUSampler v) {
+        wgpuSamplerRelease(v);
+    }
+    inline void Release(WGPUShaderModule v) {
+        wgpuShaderModuleRelease(v);
+    }
+    inline void Release(WGPUBindGroupLayout v) {
+        wgpuBindGroupLayoutRelease(v);
+    }
+    inline void Release(WGPUBindGroup v) {
+        wgpuBindGroupRelease(v);
+    }
+    inline void Release(WGPUPipelineLayout v) {
+        wgpuPipelineLayoutRelease(v);
+    }
+    inline void Release(WGPURenderPipeline v) {
+        wgpuRenderPipelineRelease(v);
+    }
+    inline void Release(WGPUComputePipeline v) {
+        wgpuComputePipelineRelease(v);
+    }
+    inline void Release(WGPUQuerySet v) {
+        wgpuQuerySetRelease(v);
+    }
+    inline void Release(WGPUCommandEncoder v) {
+        wgpuCommandEncoderRelease(v);
+    }
+    inline void Release(WGPUCommandBuffer v) {
+        wgpuCommandBufferRelease(v);
+    }
+    inline void Release(WGPURenderPassEncoder v) {
+        wgpuRenderPassEncoderRelease(v);
+    }
+    inline void Release(WGPUComputePassEncoder v) {
+        wgpuComputePassEncoderRelease(v);
+    }
+    inline void Release(WGPUQueue v) {
+        wgpuQueueRelease(v);
+    }
+    inline void Release(WGPUDevice v) {
+        wgpuDeviceRelease(v);
+    }
+    inline void Release(WGPUAdapter v) {
+        wgpuAdapterRelease(v);
+    }
+    inline void Release(WGPUInstance v) {
+        wgpuInstanceRelease(v);
+    }
+    inline void Release(WGPUSurface v) {
+        wgpuSurfaceRelease(v);
+    }
 
     // owns one reference to a native object
-    template <class T>
-    class Owned {
+    template <class T> class Owned {
     public:
         Owned() = default;
         explicit Owned(T object) : object(object) {}
@@ -125,7 +169,8 @@ namespace rhi::webgpu {
 
         Texture() = default;
         Texture(Texture&& o) noexcept
-            : texture(std::move(o.texture)), external(o.external), desc(o.desc), name(std::move(o.name)), views(std::move(o.views)) {
+            : texture(std::move(o.texture)), external(o.external), desc(o.desc), name(std::move(o.name)),
+              views(std::move(o.views)) {
             desc.name = nullptr;
         }
         Texture& operator=(Texture&& o) noexcept {
@@ -217,34 +262,43 @@ namespace rhi::webgpu {
         // closes the encoder; null when nothing was recorded
         WGPUCommandBuffer Finish();
 
-        void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) override;
+        void Barrier(std::span<const TextureBarrier> textures,
+                     std::span<const BufferBarrier> buffers) override;
         void UavBarrier(BufferHandle) override;
         void UavBarrier(TextureHandle) override;
-        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) override;
-        void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) override;
-        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) override;
+        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                        uint64_t size) override;
+        void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
+        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
         void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) override;
         void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) override;
         void ResolveTexture(TextureHandle dst, TextureHandle src) override;
         void BeginRendering(const RenderingDesc& desc) override;
         void EndRendering() override;
         void SetPipeline(PipelineHandle pipeline) override;
-        void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) override;
+        void SetBindGroup(uint32_t set, BindGroupHandle group,
+                          std::span<const uint32_t> dynamicOffsets) override;
         void PushConstants(const void* data, uint32_t bytes, uint32_t offset) override;
         void SetViewport(const Viewport& viewport) override;
         void SetScissor(const Rect& rect) override;
         void SetVertexBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset) override;
         void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset) override;
         void SetStencilReference(uint32_t value) override;
-        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) override;
-        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) override;
-        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) override;
-        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset, uint32_t maxDraws,
-                                      uint32_t stride) override;
+        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                  uint32_t firstInstance) override;
+        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                         int32_t vertexOffset, uint32_t firstInstance) override;
+        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                 uint32_t stride) override;
+        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                      uint64_t countOffset, uint32_t maxDraws, uint32_t stride) override;
         void Dispatch(uint32_t x, uint32_t y, uint32_t z) override;
         void DispatchIndirect(BufferHandle args, uint64_t offset) override;
         void WriteTimestamp(QuerySetHandle set, uint32_t index) override;
-        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) override;
+        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                            uint64_t dstOffset) override;
         void BeginDebugLabel(const char* name, uint32_t rgba) override;
         void EndDebugLabel() override;
         void* NativeHandle() override { return encoder.Get(); }
@@ -291,8 +345,8 @@ namespace rhi::webgpu {
 
     class WebGpuDevice final : public Device {
     public:
-        WebGpuDevice(Owned<WGPUInstance> instance, Owned<WGPUAdapter> adapter, Owned<WGPUDevice> device, const DeviceOptions& options,
-                     const AdapterInfo& info, bool mapSync);
+        WebGpuDevice(Owned<WGPUInstance> instance, Owned<WGPUAdapter> adapter, Owned<WGPUDevice> device,
+                     const DeviceOptions& options, const AdapterInfo& info, bool mapSync);
         ~WebGpuDevice() override;
 
         bool Init();
@@ -343,7 +397,9 @@ namespace rhi::webgpu {
         void BeginFrame() override;
         void EndFrame() override;
         uint64_t FrameNumber() const override { return frame; }
-        uint32_t FrameSlot() const override { return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight)); }
+        uint32_t FrameSlot() const override {
+            return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight));
+        }
         void WaitIdle() override;
 
         MemoryBudget QueryMemoryBudget() override;
@@ -361,9 +417,11 @@ namespace rhi::webgpu {
         void ReportError(const std::string& message);
 
         // attachment views must cover every aspect of a depth-stencil format; sampled views pick one
-        WGPUTextureView ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format, bool stencil, bool attachment);
+        WGPUTextureView ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format,
+                               bool stencil, bool attachment);
         WGPUBindGroup NativeGroupFor(BindGroupHandle group, const NativeSet& set);
-        std::shared_ptr<NativeSet> BuildNativeSet(const PipelineLayoutDesc& layout, uint32_t set, std::span<const Shader* const> shaders,
+        std::shared_ptr<NativeSet> BuildNativeSet(const PipelineLayoutDesc& layout, uint32_t set,
+                                                  std::span<const Shader* const> shaders,
                                                   ShaderStage stagesPresent);
         WGPUSampler NearestSampler() const { return nearestSampler.Get(); }
         WGPUBindGroup EmptyGroup() const { return emptyGroup.Get(); }
@@ -385,7 +443,8 @@ namespace rhi::webgpu {
     private:
         friend class WebGpuCommandList;
         void FillCaps();
-        std::shared_ptr<NativeSet> CachedLayout(const std::string& key, const std::function<std::shared_ptr<NativeSet>()>& make);
+        std::shared_ptr<NativeSet> CachedLayout(const std::string& key,
+                                                const std::function<std::shared_ptr<NativeSet>()>& make);
 
         Owned<WGPUInstance> instance;
         Owned<WGPUAdapter> adapter;

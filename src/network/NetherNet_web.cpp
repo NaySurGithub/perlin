@@ -92,14 +92,17 @@ namespace perlin {
         Disconnect();
     }
 
-    bool NetherNet::Probe(const std::string& host, uint16_t port, NetherNetServerInfo& info, std::string& error,
-                          int timeoutSecs) {
-        http::Response r = http::Request(host, port, g_secureSignaling.load(), "GET", "/v1/join", "", "", {}, timeoutSecs);
+    bool NetherNet::Probe(const std::string& host, uint16_t port, NetherNetServerInfo& info,
+                          std::string& error, int timeoutSecs) {
+        http::Response r =
+            http::Request(host, port, g_secureSignaling.load(), "GET", "/v1/join", "", "", {}, timeoutSecs);
         if (r.status == 0) {
-            error = "could not reach the signaling endpoint from the browser (server down, blocked by CORS, "
-                    "or http:// from an https:// page - the server must answer /v1/join with "
-                    "Access-Control-Allow-Origin and be served over https unless it is localhost; a server on this "
-                    "machine or LAN also works when Perlin is served by the bundled serve.py, which relays it)";
+            error =
+                "could not reach the signaling endpoint from the browser (server down, blocked by CORS, "
+                "or http:// from an https:// page - the server must answer /v1/join with "
+                "Access-Control-Allow-Origin and be served over https unless it is localhost; a server on "
+                "this "
+                "machine or LAN also works when Perlin is served by the bundled serve.py, which relays it)";
             return false;
         }
         if (r.status < 200 || r.status >= 300) {
@@ -154,7 +157,8 @@ namespace perlin {
 
         if (!Probe(host, port, serverInfo, lastError))
             return false;
-        Log("nethernet", "probe ok: '{}' protocol {} version {}", serverInfo.name, serverInfo.protocol, serverInfo.version);
+        Log("nethernet", "probe ok: '{}' protocol {} version {}", serverInfo.name, serverInfo.protocol,
+            serverInfo.version);
 
         std::random_device rd;
         std::mt19937_64 rng((static_cast<uint64_t>(rd()) << 32) | rd());
@@ -205,8 +209,8 @@ namespace perlin {
 
         const std::string netIdStr = std::to_string(netId);
         Log("nethernet", "offer ready ({} bytes), POSTing to /v1/join/{}...", offer.size(), netIdStr);
-        http::Response answer = http::Request(host, port, g_secureSignaling.load(), "POST", "/v1/join/" + netIdStr,
-                                              offer, "application/sdp", {}, 15);
+        http::Response answer = http::Request(host, port, g_secureSignaling.load(), "POST",
+                                              "/v1/join/" + netIdStr, offer, "application/sdp", {}, 15);
         Log("nethernet", "POST status {}, answer {} bytes", answer.status, answer.body.size());
         if (answer.status == 0) {
             lastError = "POST offer: request failed (CORS or connection)";

@@ -10,7 +10,9 @@ namespace perlin::render {
             int q = a / b;
             return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q;
         }
-        int Cheb(int ax, int az, int bx, int bz) { return std::max(std::abs(ax - bx), std::abs(az - bz)); }
+        int Cheb(int ax, int az, int bx, int bz) {
+            return std::max(std::abs(ax - bx), std::abs(az - bz));
+        }
     }
 
     int ChunkResidency::LevelForDistance(int d) const {
@@ -57,10 +59,14 @@ namespace perlin::render {
             return it != columns.end() && it->second.present;
         };
         uint8_t m = 0;
-        if (has(c.x - 1, c.z)) m |= 1;
-        if (has(c.x + 1, c.z)) m |= 2;
-        if (has(c.x, c.z - 1)) m |= 4;
-        if (has(c.x, c.z + 1)) m |= 8;
+        if (has(c.x - 1, c.z))
+            m |= 1;
+        if (has(c.x + 1, c.z))
+            m |= 2;
+        if (has(c.x, c.z - 1))
+            m |= 4;
+        if (has(c.x, c.z + 1))
+            m |= 8;
         return m;
     }
 
@@ -78,7 +84,8 @@ namespace perlin::render {
             it->second.version = nextVersion++;
     }
 
-    void ChunkResidency::OnBuilt(const UnitKey& unit, uint64_t version, uint8_t neighbourMask, uint64_t bytes) {
+    void ChunkResidency::OnBuilt(const UnitKey& unit, uint64_t version, uint8_t neighbourMask,
+                                 uint64_t bytes) {
         Unit& u = units[unit];
         u.hasMesh = true;
         u.meshVersion = version;
@@ -175,7 +182,8 @@ namespace perlin::render {
                     for (int dx = 0; dx < width; dx++)
                         holes.insert({key.x + dx, key.z + dz});
             }
-            const bool pendingSame = u.inFlight && u.pendingVersion == w.version && u.pendingMask == u.wantedMask;
+            const bool pendingSame =
+                u.inFlight && u.pendingVersion == w.version && u.pendingMask == u.wantedMask;
             if (pendingSame || now < u.retryAt)
                 continue;
             const int w2 = key.Width();
@@ -197,7 +205,8 @@ namespace perlin::render {
             return a.key.z < b.key.z;
         });
         const uint32_t room = inFlight >= cfg.maxInFlight ? 0 : cfg.maxInFlight - inFlight;
-        const uint32_t take = std::min<uint32_t>({static_cast<uint32_t>(candidates.size()), cfg.maxBuildsPerTick, room});
+        const uint32_t take =
+            std::min<uint32_t>({static_cast<uint32_t>(candidates.size()), cfg.maxBuildsPerTick, room});
         for (uint32_t i = 0; i < take; i++) {
             Unit& u = units[candidates[i].key];
             u.inFlight = true;
@@ -229,7 +238,7 @@ namespace perlin::render {
                 const int width = key.Width();
                 for (int dz = 0; dz < width && !u.covering; dz++)
                     for (int dx = 0; dx < width; dx++)
-                        if (holes.count({key.x + dx, key.z + dz})) {
+                        if (holes.contains({key.x + dx, key.z + dz})) {
                             u.covering = true;
                             break;
                         }
@@ -250,7 +259,8 @@ namespace perlin::render {
                 const float cz = static_cast<float>(key.z) + static_cast<float>(key.Width()) * 0.5f;
                 const float dist = std::max(std::fabs(cx - lookX), std::fabs(cz - lookZ));
                 // older and farther from where the camera is heading goes first
-                const float age = static_cast<float>(now - u.unusedSince) / static_cast<float>(std::max<uint64_t>(1, cfg.retainMs));
+                const float age = static_cast<float>(now - u.unusedSince) /
+                                  static_cast<float>(std::max<uint64_t>(1, cfg.retainMs));
                 retained.push_back({key, dist + age, u.bytes});
                 retainedBytes += u.bytes;
             }

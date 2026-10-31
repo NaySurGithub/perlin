@@ -37,8 +37,10 @@ namespace perlin::server {
                 c.authRootKeys.push_back(k.text);
         c.pluginDir = root["plugin_dir"].String(c.pluginDir);
         c.blockDataDir = root["block_data_dir"].String(c.blockDataDir);
-        c.maxPlayers = static_cast<uint32_t>(std::clamp<int64_t>(root["max_players"].Int(c.maxPlayers), 1, 1000));
-        c.viewDistance = static_cast<uint32_t>(std::clamp<int64_t>(root["view_distance"].Int(c.viewDistance), 2, 64));
+        c.maxPlayers =
+            static_cast<uint32_t>(std::clamp<int64_t>(root["max_players"].Int(c.maxPlayers), 1, 1000));
+        c.viewDistance =
+            static_cast<uint32_t>(std::clamp<int64_t>(root["view_distance"].Int(c.viewDistance), 2, 64));
         c.tickRate = static_cast<uint32_t>(std::clamp<int64_t>(root["tick_rate"].Int(c.tickRate), 1, 200));
         c.gameMode = static_cast<int>(root["gamemode"].Int(c.gameMode));
         if (c.gameMode != 0 && c.gameMode != 1 && c.gameMode != 2 && c.gameMode != 6)
@@ -103,7 +105,8 @@ namespace perlin::server {
             << "  \"block_data_dir\": \"" << json::Escape(blockDataDir) << "\",\n"
             << "  \"flat_layers\": [";
         for (size_t i = 0; i < flatLayers.size(); i++)
-            out << (i ? ", " : "") << "{\"block\": \"" << json::Escape(flatLayers[i].block) << "\", \"count\": " << flatLayers[i].count << "}";
+            out << (i ? ", " : "") << "{\"block\": \"" << json::Escape(flatLayers[i].block)
+                << "\", \"count\": " << flatLayers[i].count << "}";
         out << "]\n}\n";
         return out.good();
     }
@@ -145,7 +148,8 @@ namespace perlin::server {
             size_t start = 0;
             for (;;) {
                 const size_t at = s.find(sep, start);
-                std::string part = str::Trim(s.substr(start, at == std::string::npos ? std::string::npos : at - start));
+                std::string part =
+                    str::Trim(s.substr(start, at == std::string::npos ? std::string::npos : at - start));
                 if (!part.empty())
                     out.push_back(std::move(part));
                 if (at == std::string::npos)
@@ -163,7 +167,8 @@ namespace perlin::server {
                 if (!ParseInt(str::Trim(text), a))
                     return false;
                 b = a;
-            } else if (!ParseInt(str::Trim(text.substr(0, dash)), a) || !ParseInt(str::Trim(text.substr(dash + 1)), b)) {
+            } else if (!ParseInt(str::Trim(text.substr(0, dash)), a) ||
+                       !ParseInt(str::Trim(text.substr(dash + 1)), b)) {
                 return false;
             }
             if (a < 1 || b > 65535 || a > b)
@@ -205,7 +210,8 @@ namespace perlin::server {
             if (!ParsePortRange(parts.back(), localFirst, localLast))
                 return false;
             if (parts.size() == 2) {
-                if (!ParsePortRange(parts[0], pubFirst, pubLast) || pubLast - pubFirst != localLast - localFirst)
+                if (!ParsePortRange(parts[0], pubFirst, pubLast) ||
+                    pubLast - pubFirst != localLast - localFirst)
                     return false;
                 c.udpPublicBegin = pubFirst;
                 c.udpPublicEnd = pubLast;
@@ -221,19 +227,27 @@ namespace perlin::server {
         std::string UdpPortsText(const ServerConfig& c) {
             if (!c.udpPortsSet)
                 return std::to_string(c.port);
-            const auto range = [](uint16_t a, uint16_t b) { return a == b ? std::to_string(a) : std::to_string(a) + "-" + std::to_string(b); };
+            const auto range = [](uint16_t a, uint16_t b) {
+                return a == b ? std::to_string(a) : std::to_string(a) + "-" + std::to_string(b);
+            };
             if (c.udpPortBegin == 0)
                 return "";
             std::string out = range(c.udpPortBegin, c.udpPortEnd);
             if (c.udpPublicBegin != 0)
                 out = range(c.udpPublicBegin, c.udpPublicEnd) + ":" + out;
             if (!c.udpPublicAddress.empty())
-                out = (c.udpPublicAddress.contains(':') ? "[" + c.udpPublicAddress + "]" : c.udpPublicAddress) + ":" + out;
+                out =
+                    (c.udpPublicAddress.contains(':') ? "[" + c.udpPublicAddress + "]" : c.udpPublicAddress) +
+                    ":" + out;
             return out;
         }
 
-        const char* GameModeName(int mode) { return mode == 1 ? "creative" : mode == 2 ? "adventure" : mode == 6 ? "spectator" : "survival"; }
-        const char* DifficultyName(int d) { return d == 0 ? "peaceful" : d == 2 ? "normal" : d == 3 ? "hard" : "easy"; }
+        const char* GameModeName(int mode) {
+            return mode == 1 ? "creative" : mode == 2 ? "adventure" : mode == 6 ? "spectator" : "survival";
+        }
+        const char* DifficultyName(int d) {
+            return d == 0 ? "peaceful" : d == 2 ? "normal" : d == 3 ? "hard" : "easy";
+        }
 
         // the keys of bds's own server.properties, in its order, with its defaults; the ones this server acts on are read from the config when written
         struct BdsKey {
@@ -307,7 +321,9 @@ namespace perlin::server {
             return out;
         }
 
-        const char* Bool(bool b) { return b ? "true" : "false"; }
+        const char* Bool(bool b) {
+            return b ? "true" : "false";
+        }
     }
 
     uint64_t ServerConfig::SeedFromText(const std::string& text) {
@@ -317,14 +333,23 @@ namespace perlin::server {
             return static_cast<uint64_t>(n);
         // java's String.hashCode over utf-16 code units
         int32_t h = 0;
-        const auto feed = [&h](uint32_t unit) { h = static_cast<int32_t>(static_cast<uint32_t>(h) * 31u + unit); };
+        const auto feed = [&h](uint32_t unit) {
+            h = static_cast<int32_t>(static_cast<uint32_t>(h) * 31u + unit);
+        };
         for (size_t i = 0; i < t.size();) {
             const unsigned char c = static_cast<unsigned char>(t[i]);
             uint32_t cp = c;
             size_t len = 1;
-            if (c >= 0xF0 && i + 3 < t.size()) { cp = c & 0x07; len = 4; }
-            else if (c >= 0xE0 && i + 2 < t.size()) { cp = c & 0x0F; len = 3; }
-            else if (c >= 0xC0 && i + 1 < t.size()) { cp = c & 0x1F; len = 2; }
+            if (c >= 0xF0 && i + 3 < t.size()) {
+                cp = c & 0x07;
+                len = 4;
+            } else if (c >= 0xE0 && i + 2 < t.size()) {
+                cp = c & 0x0F;
+                len = 3;
+            } else if (c >= 0xC0 && i + 1 < t.size()) {
+                cp = c & 0x1F;
+                len = 2;
+            }
             for (size_t k = 1; k < len; k++)
                 cp = (cp << 6) | (static_cast<unsigned char>(t[i + k]) & 0x3F);
             i += len;
@@ -339,7 +364,8 @@ namespace perlin::server {
         return static_cast<uint64_t>(static_cast<int64_t>(h));
     }
 
-    bool ServerConfig::SetProperty(const std::string& key, const std::string& rawValue, std::string* warning) {
+    bool ServerConfig::SetProperty(const std::string& key, const std::string& rawValue,
+                                   std::string* warning) {
         const std::string v = str::Trim(rawValue);
         const std::string lower = LowerText(v);
         bool b = false;
@@ -369,28 +395,45 @@ namespace perlin::server {
             return true;
         }
         if (key == "gamemode") {
-            if (lower == "survival" || lower == "0") gameMode = 0;
-            else if (lower == "creative" || lower == "1") gameMode = 1;
-            else if (lower == "adventure" || lower == "2") gameMode = 2;
-            else if (lower == "spectator" || lower == "6") gameMode = 6;
-            else bad("survival, creative, adventure or spectator");
+            if (lower == "survival" || lower == "0")
+                gameMode = 0;
+            else if (lower == "creative" || lower == "1")
+                gameMode = 1;
+            else if (lower == "adventure" || lower == "2")
+                gameMode = 2;
+            else if (lower == "spectator" || lower == "6")
+                gameMode = 6;
+            else
+                bad("survival, creative, adventure or spectator");
             return true;
         }
-        if (key == "force-gamemode") return boolean(forceGamemode);
+        if (key == "force-gamemode")
+            return boolean(forceGamemode);
         if (key == "difficulty") {
-            if (lower == "peaceful" || lower == "0") difficulty = 0;
-            else if (lower == "easy" || lower == "1") difficulty = 1;
-            else if (lower == "normal" || lower == "2") difficulty = 2;
-            else if (lower == "hard" || lower == "3") difficulty = 3;
-            else bad("peaceful, easy, normal or hard");
+            if (lower == "peaceful" || lower == "0")
+                difficulty = 0;
+            else if (lower == "easy" || lower == "1")
+                difficulty = 1;
+            else if (lower == "normal" || lower == "2")
+                difficulty = 2;
+            else if (lower == "hard" || lower == "3")
+                difficulty = 3;
+            else
+                bad("peaceful, easy, normal or hard");
             return true;
         }
-        if (key == "allow-cheats") return boolean(allowCheats);
-        if (key == "max-players") return number(maxPlayers, 1, 1000);
-        if (key == "online-mode") return boolean(xboxAuth);
-        if (key == "allow-list") return boolean(whitelist);
-        if (key == "server-port") return number(port, 1, 65535);
-        if (key == "server-portv6") return number(portV6, 1, 65535);
+        if (key == "allow-cheats")
+            return boolean(allowCheats);
+        if (key == "max-players")
+            return number(maxPlayers, 1, 1000);
+        if (key == "online-mode")
+            return boolean(xboxAuth);
+        if (key == "allow-list")
+            return boolean(whitelist);
+        if (key == "server-port")
+            return number(port, 1, 65535);
+        if (key == "server-portv6")
+            return number(portV6, 1, 65535);
         if (key == "server-ip") {
             bindAddress = v.empty() ? "0.0.0.0" : v;
             return true;
@@ -410,11 +453,16 @@ namespace perlin::server {
                 bad("nethernet or raknet");
             return true;
         }
-        if (key == "enable-lan-visibility") return boolean(lanDiscovery);
-        if (key == "view-distance") return number(viewDistance, 2, 64);
-        if (key == "tick-distance") return number(tickDistance, 4, 12);
-        if (key == "player-idle-timeout") return number(idleTimeoutMinutes, 0, 1000000);
-        if (key == "max-threads") return number(maxThreads, 0, 256);
+        if (key == "enable-lan-visibility")
+            return boolean(lanDiscovery);
+        if (key == "view-distance")
+            return number(viewDistance, 2, 64);
+        if (key == "tick-distance")
+            return number(tickDistance, 4, 12);
+        if (key == "player-idle-timeout")
+            return number(idleTimeoutMinutes, 0, 1000000);
+        if (key == "max-threads")
+            return number(maxThreads, 0, 256);
         if (key == "level-name") {
             levelName = v.empty() ? "Bedrock level" : v;
             return true;
@@ -433,7 +481,8 @@ namespace perlin::server {
                 bad("visitor, member or operator");
             return true;
         }
-        if (key == "compression-threshold") return number(compressionThreshold, 0, 65535);
+        if (key == "compression-threshold")
+            return number(compressionThreshold, 0, 65535);
         if (key == "compression-algorithm") {
             if (lower == "zlib" || lower == "snappy")
                 compressionAlgorithm = lower;
@@ -441,26 +490,56 @@ namespace perlin::server {
                 bad("zlib or snappy");
             return true;
         }
-        if (key == "client-side-chunk-generation-enabled") return boolean(clientSideChunkGeneration);
-        if (key == "block-network-ids-are-hashes") return boolean(blockNetworkIdsAreHashes);
-        if (key == "disable-persona") return boolean(disablePersona);
-        if (key == "disable-custom-skins") return boolean(disableCustomSkins);
-        if (key == "enable-packet-rate-limiter") return boolean(packetRateLimiter);
+        if (key == "client-side-chunk-generation-enabled")
+            return boolean(clientSideChunkGeneration);
+        if (key == "block-network-ids-are-hashes")
+            return boolean(blockNetworkIdsAreHashes);
+        if (key == "disable-persona")
+            return boolean(disablePersona);
+        if (key == "disable-custom-skins")
+            return boolean(disableCustomSkins);
+        if (key == "enable-packet-rate-limiter")
+            return boolean(packetRateLimiter);
         if (key == "chat-restriction") {
-            if (lower == "none") chatRestriction = "None";
-            else if (lower == "dropped") chatRestriction = "Dropped";
-            else if (lower == "disabled") chatRestriction = "Disabled";
-            else bad("None, Dropped or Disabled");
+            if (lower == "none")
+                chatRestriction = "None";
+            else if (lower == "dropped")
+                chatRestriction = "Dropped";
+            else if (lower == "disabled")
+                chatRestriction = "Disabled";
+            else
+                bad("None, Dropped or Disabled");
             return true;
         }
         // this server's own keys
-        if (key == "perlin-generator") { generator = lower; return true; }
-        if (key == "perlin-terrain-backend") { terrainBackend = lower; return true; }
-        if (key == "perlin-plugin-dir") { pluginDir = v; return true; }
-        if (key == "perlin-block-data-dir") { blockDataDir = v; return true; }
-        if (key == "perlin-ice-servers") { iceServers = Split(v, ','); return true; }
-        if (key == "perlin-ice-bind-address") { iceBindAddress = v; return true; }
-        if (key == "perlin-auth-root-keys") { authRootKeys = Split(v, ','); return true; }
+        if (key == "perlin-generator") {
+            generator = lower;
+            return true;
+        }
+        if (key == "perlin-terrain-backend") {
+            terrainBackend = lower;
+            return true;
+        }
+        if (key == "perlin-plugin-dir") {
+            pluginDir = v;
+            return true;
+        }
+        if (key == "perlin-block-data-dir") {
+            blockDataDir = v;
+            return true;
+        }
+        if (key == "perlin-ice-servers") {
+            iceServers = Split(v, ',');
+            return true;
+        }
+        if (key == "perlin-ice-bind-address") {
+            iceBindAddress = v;
+            return true;
+        }
+        if (key == "perlin-auth-root-keys") {
+            authRootKeys = Split(v, ',');
+            return true;
+        }
         if (key == "perlin-flat-layers") {
             std::vector<FlatLayer> parsed;
             for (const std::string& item : Split(v, ',')) {
@@ -539,36 +618,68 @@ namespace perlin::server {
         if (!out)
             return false;
         const auto current = [&](const std::string& key, std::string& value) {
-            if (key == "server-name") value = name;
-            else if (key == "gamemode") value = GameModeName(gameMode);
-            else if (key == "force-gamemode") value = Bool(forceGamemode);
-            else if (key == "difficulty") value = DifficultyName(difficulty);
-            else if (key == "allow-cheats") value = Bool(allowCheats);
-            else if (key == "max-players") value = std::to_string(maxPlayers);
-            else if (key == "online-mode") value = Bool(xboxAuth);
-            else if (key == "allow-list") value = Bool(whitelist);
-            else if (key == "server-port") value = std::to_string(port);
-            else if (key == "server-portv6") value = std::to_string(portV6);
-            else if (key == "server-ip") value = bindAddress == "0.0.0.0" ? "" : bindAddress;
-            else if (key == "server-udp-ports") value = UdpPortsText(*this);
-            else if (key == "transport") value = transport;
-            else if (key == "enable-lan-visibility") value = Bool(lanDiscovery);
-            else if (key == "view-distance") value = std::to_string(viewDistance);
-            else if (key == "tick-distance") value = std::to_string(tickDistance);
-            else if (key == "player-idle-timeout") value = std::to_string(idleTimeoutMinutes);
-            else if (key == "max-threads") value = std::to_string(maxThreads);
-            else if (key == "level-name") value = levelName;
-            else if (key == "level-seed") value = randomSeed ? std::string() : (levelSeedText.empty() ? std::to_string(static_cast<int64_t>(seed)) : levelSeedText);
-            else if (key == "default-player-permission-level") value = defaultPermission;
-            else if (key == "compression-threshold") value = std::to_string(compressionThreshold);
-            else if (key == "compression-algorithm") value = compressionAlgorithm;
-            else if (key == "client-side-chunk-generation-enabled") value = Bool(clientSideChunkGeneration);
-            else if (key == "block-network-ids-are-hashes") value = Bool(blockNetworkIdsAreHashes);
-            else if (key == "disable-persona") value = Bool(disablePersona);
-            else if (key == "disable-custom-skins") value = Bool(disableCustomSkins);
-            else if (key == "enable-packet-rate-limiter") value = Bool(packetRateLimiter);
-            else if (key == "chat-restriction") value = chatRestriction;
-            else return false;
+            if (key == "server-name")
+                value = name;
+            else if (key == "gamemode")
+                value = GameModeName(gameMode);
+            else if (key == "force-gamemode")
+                value = Bool(forceGamemode);
+            else if (key == "difficulty")
+                value = DifficultyName(difficulty);
+            else if (key == "allow-cheats")
+                value = Bool(allowCheats);
+            else if (key == "max-players")
+                value = std::to_string(maxPlayers);
+            else if (key == "online-mode")
+                value = Bool(xboxAuth);
+            else if (key == "allow-list")
+                value = Bool(whitelist);
+            else if (key == "server-port")
+                value = std::to_string(port);
+            else if (key == "server-portv6")
+                value = std::to_string(portV6);
+            else if (key == "server-ip")
+                value = bindAddress == "0.0.0.0" ? "" : bindAddress;
+            else if (key == "server-udp-ports")
+                value = UdpPortsText(*this);
+            else if (key == "transport")
+                value = transport;
+            else if (key == "enable-lan-visibility")
+                value = Bool(lanDiscovery);
+            else if (key == "view-distance")
+                value = std::to_string(viewDistance);
+            else if (key == "tick-distance")
+                value = std::to_string(tickDistance);
+            else if (key == "player-idle-timeout")
+                value = std::to_string(idleTimeoutMinutes);
+            else if (key == "max-threads")
+                value = std::to_string(maxThreads);
+            else if (key == "level-name")
+                value = levelName;
+            else if (key == "level-seed")
+                value = randomSeed ? std::string()
+                                   : (levelSeedText.empty() ? std::to_string(static_cast<int64_t>(seed))
+                                                            : levelSeedText);
+            else if (key == "default-player-permission-level")
+                value = defaultPermission;
+            else if (key == "compression-threshold")
+                value = std::to_string(compressionThreshold);
+            else if (key == "compression-algorithm")
+                value = compressionAlgorithm;
+            else if (key == "client-side-chunk-generation-enabled")
+                value = Bool(clientSideChunkGeneration);
+            else if (key == "block-network-ids-are-hashes")
+                value = Bool(blockNetworkIdsAreHashes);
+            else if (key == "disable-persona")
+                value = Bool(disablePersona);
+            else if (key == "disable-custom-skins")
+                value = Bool(disableCustomSkins);
+            else if (key == "enable-packet-rate-limiter")
+                value = Bool(packetRateLimiter);
+            else if (key == "chat-restriction")
+                value = chatRestriction;
+            else
+                return false;
             return true;
         };
         std::vector<std::string> written;
@@ -582,7 +693,8 @@ namespace perlin::server {
             written.push_back(k.key);
         }
         // keys of ours and anything unknown that was read
-        out << "# perlin additions: the terrain generator (flat or vanilla), gpu or cpu terrain, plugin and block data folders\n";
+        out << "# perlin additions: the terrain generator (flat or vanilla), gpu or cpu terrain, plugin and "
+               "block data folders\n";
         out << "perlin-generator=" << generator << "\n";
         out << "perlin-terrain-backend=" << terrainBackend << "\n";
         out << "perlin-plugin-dir=" << pluginDir << "\n";

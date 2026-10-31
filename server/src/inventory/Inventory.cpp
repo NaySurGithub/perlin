@@ -24,19 +24,56 @@ namespace perlin::server {
             return 1;
         if (!item->block) {
             // tools, weapons, armor and the other items that never stack
-            if (has("_sword") || has("_pickaxe") || has("_axe") || has("_shovel") || has("_hoe") || has("_helmet") || has("_chestplate") || has("_leggings") ||
-                has("_boots") || has("_horse_armor") || has("_boat") || has("_raft") || has("_minecart") || has("_bed") || has("_bundle") || has("_harness") ||
-                has("potion") || has("_pottery_sherd") && false)
+            if (has("_sword") || has("_pickaxe") || has("_axe") || has("_shovel") || has("_hoe") ||
+                has("_helmet") || has("_chestplate") || has("_leggings") || has("_boots") ||
+                has("_horse_armor") || has("_boat") || has("_raft") || has("_minecart") || has("_bed") ||
+                has("_bundle") || has("_harness") || has("potion") || has("_pottery_sherd") && false)
                 return 1;
-            for (const char* single : {"bow", "crossbow", "shield", "trident", "mace", "fishing_rod", "carrot_on_a_stick", "warped_fungus_on_a_stick", "flint_and_steel", "shears",
-                                       "elytra", "saddle", "totem_of_undying", "brush", "spyglass", "compass", "recovery_compass", "clock", "map", "filled_map", "writable_book",
-                                       "written_book", "enchanted_book", "bucket", "water_bucket", "lava_bucket", "milk_bucket", "powder_snow_bucket", "cod_bucket", "salmon_bucket",
-                                       "pufferfish_bucket", "tropical_fish_bucket", "axolotl_bucket", "tadpole_bucket", "armor_stand", "lead", "name_tag", "goat_horn", "music_disc"})
+            for (const char* single : {"bow",
+                                       "crossbow",
+                                       "shield",
+                                       "trident",
+                                       "mace",
+                                       "fishing_rod",
+                                       "carrot_on_a_stick",
+                                       "warped_fungus_on_a_stick",
+                                       "flint_and_steel",
+                                       "shears",
+                                       "elytra",
+                                       "saddle",
+                                       "totem_of_undying",
+                                       "brush",
+                                       "spyglass",
+                                       "compass",
+                                       "recovery_compass",
+                                       "clock",
+                                       "map",
+                                       "filled_map",
+                                       "writable_book",
+                                       "written_book",
+                                       "enchanted_book",
+                                       "bucket",
+                                       "water_bucket",
+                                       "lava_bucket",
+                                       "milk_bucket",
+                                       "powder_snow_bucket",
+                                       "cod_bucket",
+                                       "salmon_bucket",
+                                       "pufferfish_bucket",
+                                       "tropical_fish_bucket",
+                                       "axolotl_bucket",
+                                       "tadpole_bucket",
+                                       "armor_stand",
+                                       "lead",
+                                       "name_tag",
+                                       "goat_horn",
+                                       "music_disc"})
                 if (n == std::string("minecraft:") + single)
                     return 1;
             if (has("music_disc") || ends("_banner_pattern") || ends("_smithing_template"))
                 return 1;
-            if (has("ender_pearl") || has("snowball") || ends("_egg") && !has("spawn") || ends("_sign") || ends("_banner") || n == "minecraft:honey_bottle" || n == "minecraft:bucket")
+            if (has("ender_pearl") || has("snowball") || ends("_egg") && !has("spawn") || ends("_sign") ||
+                ends("_banner") || n == "minecraft:honey_bottle" || n == "minecraft:bucket")
                 return 16;
             return 64;
         }
@@ -53,7 +90,8 @@ namespace perlin::server {
             return slot >= 0 && slot < kHotbar ? &main[static_cast<size_t>(slot)] : nullptr;
         // the inventory container counts from the first slot after the hotbar
         case Container::Inventory:
-            return slot >= 0 && slot < kMainSlots - kHotbar ? &main[static_cast<size_t>(slot + kHotbar)] : nullptr;
+            return slot >= 0 && slot < kMainSlots - kHotbar ? &main[static_cast<size_t>(slot + kHotbar)]
+                                                            : nullptr;
         case Container::Armor:
             return slot >= 0 && slot < 4 ? &armor[static_cast<size_t>(slot)] : nullptr;
         case Container::Offhand:
@@ -126,7 +164,9 @@ namespace perlin::server {
 
     namespace {
         // a client names a stack by the id the server gave it; ids created inside a request are negative and unknown here
-        bool StackIdMatches(const ItemStack& s, int32_t quoted) { return quoted < 0 || s.Empty() || quoted == 0 || quoted == s.stackId; }
+        bool StackIdMatches(const ItemStack& s, int32_t quoted) {
+            return quoted < 0 || s.Empty() || quoted == 0 || quoted == s.stackId;
+        }
 
         bool Move(ItemStack& src, ItemStack& dst, int count) {
             if (count <= 0 || src.Empty() || src.count < count)
@@ -146,7 +186,8 @@ namespace perlin::server {
         }
     }
 
-    RequestResult ApplyStackRequest(PlayerInventory& inv, const proto::ItemStackRequest& request, bool creative) {
+    RequestResult ApplyStackRequest(PlayerInventory& inv, const proto::ItemStackRequest& request,
+                                    bool creative) {
         RequestResult result;
         PlayerInventory work = inv;
         std::vector<std::pair<Container, int>> touched;
@@ -178,9 +219,11 @@ namespace perlin::server {
             case Action::Swap: {
                 ItemStack* src = work.Resolve(a.source.slotType.containerId, a.source.slot);
                 ItemStack* dst = work.Resolve(a.destination.slotType.containerId, a.destination.slot);
-                if (!src || !dst || src == dst || !StackIdMatches(*src, a.source.stackId) || !StackIdMatches(*dst, a.destination.stackId))
+                if (!src || !dst || src == dst || !StackIdMatches(*src, a.source.stackId) ||
+                    !StackIdMatches(*dst, a.destination.stackId))
                     return result;
-                if (a.destination.slotType.containerId == Container::Armor || a.source.slotType.containerId == Container::Armor)
+                if (a.destination.slotType.containerId == Container::Armor ||
+                    a.source.slotType.containerId == Container::Armor)
                     return result;
                 std::swap(*src, *dst);
                 note(a.source);
@@ -190,7 +233,8 @@ namespace perlin::server {
             case Action::Drop:
             case Action::Destroy: {
                 ItemStack* src = work.Resolve(a.source.slotType.containerId, a.source.slot);
-                if (!src || !StackIdMatches(*src, a.source.stackId) || src->Empty() || src->count < a.count || a.count == 0)
+                if (!src || !StackIdMatches(*src, a.source.stackId) || src->Empty() || src->count < a.count ||
+                    a.count == 0)
                     return result;
                 // destroy (the creative trash) deletes; drop throws the stack into the world
                 if (a.typeId == Action::Drop) {
@@ -233,10 +277,12 @@ namespace perlin::server {
         return result;
     }
 
-    proto::ItemStackResponsesEntry MakeResponse(PlayerInventory& inv, int32_t requestId, const RequestResult& result) {
+    proto::ItemStackResponsesEntry MakeResponse(PlayerInventory& inv, int32_t requestId,
+                                                const RequestResult& result) {
         proto::ItemStackResponsesEntry entry;
         entry.requestId = requestId;
-        entry.status = result.ok ? proto::ItemStackResponsesEntryStatus::Ok : proto::ItemStackResponsesEntryStatus::Error;
+        entry.status = result.ok ? proto::ItemStackResponsesEntryStatus::Ok
+                                 : proto::ItemStackResponsesEntryStatus::Error;
         if (!result.ok)
             return entry;
         std::vector<proto::ItemStackResponsesEntryContainersEntry> containers;
@@ -244,7 +290,8 @@ namespace perlin::server {
             const ItemStack* s = inv.Resolve(type, slot);
             if (!s)
                 continue;
-            auto it = std::find_if(containers.begin(), containers.end(), [&](const auto& c) { return c.slotType.containerId == type; });
+            auto it = std::find_if(containers.begin(), containers.end(),
+                                   [&](const auto& c) { return c.slotType.containerId == type; });
             if (it == containers.end()) {
                 proto::ItemStackResponsesEntryContainersEntry c;
                 c.slotType.containerId = type;

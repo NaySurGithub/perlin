@@ -1,5 +1,6 @@
 #include "client/resources/SampleDownload.hpp"
 #include "util/Log.hpp"
+#include "util/Platform.hpp"
 
 #ifndef __EMSCRIPTEN__
 #include <SDL3/SDL_iostream.h>
@@ -47,11 +48,22 @@ namespace {
 
     const std::vector<std::string>& Directories() {
         static const std::vector<std::string> dirs = {
-            "resource_pack/textures", "metadata/vanilladata_modules", "behavior_pack/blocks", "behavior_pack/biomes",
-            "resource_pack/models", "resource_pack/ui", "resource_pack/texts", "resource_pack/font",
-            "resource_pack/attachables", "resource_pack/animations", "resource_pack/animation_controllers",
-            "resource_pack/render_controllers", "resource_pack/entity", "behavior_pack/entities",
-            "resource_pack/sounds", "resource_pack/biomes",
+            "resource_pack/textures",
+            "metadata/vanilladata_modules",
+            "behavior_pack/blocks",
+            "behavior_pack/biomes",
+            "resource_pack/models",
+            "resource_pack/ui",
+            "resource_pack/texts",
+            "resource_pack/font",
+            "resource_pack/attachables",
+            "resource_pack/animations",
+            "resource_pack/animation_controllers",
+            "resource_pack/render_controllers",
+            "resource_pack/entity",
+            "behavior_pack/entities",
+            "resource_pack/sounds",
+            "resource_pack/biomes",
         };
         return dirs;
     }
@@ -60,8 +72,8 @@ namespace {
         static const char* hex = "0123456789ABCDEF";
         std::string out;
         for (unsigned char c : path) {
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' ||
-                c == '~' || c == '/') {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
+                c == '_' || c == '.' || c == '~' || c == '/') {
                 out.push_back(static_cast<char>(c));
             } else {
                 out.push_back('%');
@@ -72,9 +84,10 @@ namespace {
         return out;
     }
 
-    bool ListTree(const std::string& dir, bool recursive, std::vector<std::string>& files, std::vector<std::string>& subdirs, bool& truncated) {
-        const std::string url = std::string("https://api.github.com/repos/") + kRepository + "/git/trees/" + kBranch + ":" + Encode(dir) +
-                                (recursive ? "?recursive=1" : "");
+    bool ListTree(const std::string& dir, bool recursive, std::vector<std::string>& files,
+                  std::vector<std::string>& subdirs, bool& truncated) {
+        const std::string url = std::string("https://api.github.com/repos/") + kRepository + "/git/trees/" +
+                                kBranch + ":" + Encode(dir) + (recursive ? "?recursive=1" : "");
         perlin::http::Response res;
         for (int attempt = 0; attempt < 3; attempt++) {
             res = perlin::http::GetUrl(url, {{"Accept", "application/vnd.github+json"}}, 60);
@@ -129,7 +142,8 @@ namespace {
         return true;
     }
 
-    bool FetchAll(const std::string& prefix, const std::vector<std::string>& files, const fs::path& repo, const char* label) {
+    bool FetchAll(const std::string& prefix, const std::vector<std::string>& files, const fs::path& repo,
+                  const char* label) {
         std::atomic<size_t> next{0}, done{0}, failed{0};
         const size_t total = files.size();
         perlin::assets::Job& job = perlin::assets::Samples();
@@ -179,6 +193,7 @@ namespace {
             }
         };
         std::vector<std::thread> threads;
+        threads.reserve(12);
         for (int i = 0; i < 12; i++)
             threads.emplace_back(worker);
         for (std::thread& t : threads)
@@ -274,12 +289,15 @@ namespace {
     bool DownloadReleaseZip(const std::string& targetDir) {
         perlin::assets::Job& job = perlin::assets::Samples();
         job.stage = perlin::assets::Stage::Checking;
-        const std::string latest = perlin::download::Resolve(std::string("https://github.com/") + kRepository + "/releases/latest");
+        const std::string latest =
+            perlin::download::Resolve(std::string("https://github.com/") + kRepository + "/releases/latest");
         const size_t tagAt = latest.rfind("/tag/");
-        const std::string tag = tagAt != std::string::npos ? latest.substr(tagAt + 5) : std::string("v1.26.30.5");
+        const std::string tag =
+            tagAt != std::string::npos ? latest.substr(tagAt + 5) : std::string("v1.26.30.5");
         if (tagAt == std::string::npos)
             perlin::Log("samples", "could not read the latest release; using {}", tag);
-        const std::string url = std::string("https://github.com/") + kRepository + "/releases/download/" + tag + "/bedrock-samples-" + tag + "-full.zip";
+        const std::string url = std::string("https://github.com/") + kRepository + "/releases/download/" +
+                                tag + "/bedrock-samples-" + tag + "-full.zip";
         const fs::path zipPath = fs::path(targetDir) / ("bedrock-samples-" + tag + ".zip");
         perlin::Log("samples", "downloading {} (one archive, parallel chunks)", tag);
         job.stage = perlin::assets::Stage::Downloading;
@@ -313,7 +331,9 @@ namespace {
             perlin::Log("samples", "assets-manifest.json is malformed");
             return false;
         }
-        const std::string prefix = manifest.baseUrl.empty() ? "/" + manifest.repository + "/" + manifest.ref + "/" : manifest.baseUrl;
+        const std::string prefix = manifest.baseUrl.empty()
+                                       ? "/" + manifest.repository + "/" + manifest.ref + "/"
+                                       : manifest.baseUrl;
         const fs::path repo = fs::path(targetDir) / "repo";
         std::error_code ec;
         fs::create_directories(repo, ec);
@@ -339,9 +359,10 @@ namespace perlin {
             perlin::Log("samples", "fetching {} files missing from the release archive", extra.size());
             perlin::assets::Samples().stage = perlin::assets::Stage::Downloading;
             perlin::assets::Samples().bytes.total = 0;
-            return FetchAll(std::string("/") + kRepository + "/" + kBranch + "/", extra, fs::path(targetDir) / "repo", "extra");
+            return FetchAll(std::string("/") + kRepository + "/" + kBranch + "/", extra,
+                            fs::path(targetDir) / "repo", "extra");
         }
-#ifdef __ANDROID__
+#ifdef PERLIN_MOBILE
         if (DownloadFromManifest(targetDir))
             return true;
 #endif
@@ -357,6 +378,7 @@ namespace perlin {
         if (!ListTree("resource_pack", false, files, subdirs, truncated))
             return false;
         std::vector<std::string> roots;
+        roots.reserve(files.size());
         for (const std::string& f : files)
             roots.push_back(f);
         files = roots;
@@ -370,6 +392,8 @@ namespace perlin {
 }
 #else
 namespace perlin {
-    bool DownloadSamples(const std::string&) { return false; }
+    bool DownloadSamples(const std::string&) {
+        return false;
+    }
 }
 #endif

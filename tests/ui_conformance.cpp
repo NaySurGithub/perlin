@@ -35,7 +35,9 @@ namespace {
     std::vector<std::string> ScreensIn(const std::string& root) {
         std::vector<std::string> out;
         std::error_code ec;
-        for (std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec), end;
+        for (std::filesystem::recursive_directory_iterator
+                 it(root, std::filesystem::directory_options::skip_permission_denied, ec),
+             end;
              !ec && it != end; it.increment(ec)) {
             if (!it->is_regular_file(ec) || it->path().extension() != ".json")
                 continue;
@@ -64,12 +66,15 @@ namespace {
     public:
         bool Global(const std::string&, Json&) const override { return false; }
         int CollectionSize(const std::string&) const override { return 0; }
-        bool CollectionValue(const std::string&, int, const std::string&, Json&) const override { return false; }
+        bool CollectionValue(const std::string&, int, const std::string&, Json&) const override {
+            return false;
+        }
         std::vector<FactoryItem> Factory(const std::string&) const override { return {}; }
     };
 
     struct Stats {
-        int screens = 0, built = 0, failed = 0, missingControls = 0, unresolved = 0, controls = 0, nullText = 0, rawText = 0;
+        int screens = 0, built = 0, failed = 0, missingControls = 0, unresolved = 0, controls = 0,
+            nullText = 0, rawText = 0;
         std::set<std::string> missing;
         std::set<std::string> failedRefs;
     };
@@ -79,8 +84,7 @@ namespace {
             if (n.text == "null")
                 s.nullText++;
             // undecoded text: raw "$var", "#binding" or control reference left in a label
-            if (n.text[0] == '$' || n.text[0] == '#' ||
-                (n.text.find('@') == 0 && n.text.contains('.')))
+            if (n.text[0] == '$' || n.text[0] == '#' || (n.text.starts_with('@') && n.text.contains('.')))
                 s.rawText++;
         }
         for (const auto& k : n.kids)
@@ -103,7 +107,8 @@ int main(int argc, char** argv) {
     }
 
     const char* vanillaEnv = std::getenv("VANILLA_UI");
-    const std::string vanilla = vanillaEnv ? vanillaEnv : paths::DataDir() + "/bedrock-samples/repo/resource_pack/ui";
+    const std::string vanilla =
+        vanillaEnv ? vanillaEnv : paths::DataDir() + "/bedrock-samples/repo/resource_pack/ui";
     const std::string dataUi = paths::DataDir() + "/ui";
     const std::string dataDefaults = paths::DataDir() + "/ui_defaults";
 
@@ -152,10 +157,11 @@ int main(int argc, char** argv) {
             }
             stats.built++;
             CountText(*root2, stats);
-            }
-        std::printf("%-24s screens=%-4d built=%-4d failed=%-3d missing=%-4d unresolved=%-4d nullText=%-3d rawText=%-3d\n",
-                    label.c_str(), stats.screens, stats.built, stats.failed, stats.missingControls, stats.unresolved,
-                    stats.nullText, stats.rawText);
+        }
+        std::printf("%-24s screens=%-4d built=%-4d failed=%-3d missing=%-4d unresolved=%-4d nullText=%-3d "
+                    "rawText=%-3d\n",
+                    label.c_str(), stats.screens, stats.built, stats.failed, stats.missingControls,
+                    stats.unresolved, stats.nullText, stats.rawText);
         for (const std::string& m : stats.missing)
             std::printf("    missing control: %s\n", m.c_str());
         for (const std::string& f : stats.failedRefs)

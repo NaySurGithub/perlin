@@ -22,7 +22,8 @@ namespace perlin::ui {
         void Warm(const std::vector<std::string>& packDirs);
         bool Ready() const { return state.load() == 2; }
         bool WaitReady(int timeoutMs);
-        bool Build(const InventoryView& view, const std::string& screen, int guiW, int guiH, std::string& rml, float (&panel)[4]);
+        bool Build(const InventoryView& view, const std::string& screen, int guiW, int guiH, std::string& rml,
+                   float (&panel)[4]);
         const std::string& Problem() const { return problem; }
 
     private:

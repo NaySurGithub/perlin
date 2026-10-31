@@ -26,7 +26,9 @@ namespace perlin::ui {
         }
 
         std::string Hex(float r, float g, float b, float a) {
-            const auto byte = [](float v) { return std::clamp(static_cast<int>(std::lround(v * 255.0f)), 0, 255); };
+            const auto byte = [](float v) {
+                return std::clamp(static_cast<int>(std::lround(v * 255.0f)), 0, 255);
+            };
             char buffer[16];
             std::snprintf(buffer, sizeof(buffer), "#%02x%02x%02x%02x", byte(r), byte(g), byte(b), byte(a));
             return buffer;
@@ -47,7 +49,9 @@ namespace perlin::ui {
             return codes;
         }
 
-        std::string FormatLine(const std::string& line, const TextStyle& style) { return FormatCodesToRml(line, style.a); }
+        std::string FormatLine(const std::string& line, const TextStyle& style) {
+            return FormatCodesToRml(line, style.a);
+        }
     }
 
     std::string EscapeRml(const std::string& text) {
@@ -55,11 +59,20 @@ namespace perlin::ui {
         out.reserve(text.size());
         for (const char c : text) {
             switch (c) {
-            case '&': out += "&amp;"; break;
-            case '<': out += "&lt;"; break;
-            case '>': out += "&gt;"; break;
-            case '"': out += "&quot;"; break;
-            default: out += c;
+            case '&':
+                out += "&amp;";
+                break;
+            case '<':
+                out += "&lt;";
+                break;
+            case '>':
+                out += "&gt;";
+                break;
+            case '"':
+                out += "&quot;";
+                break;
+            default:
+                out += c;
             }
         }
         return out;
@@ -71,18 +84,21 @@ namespace perlin::ui {
         body += "  <!-- " + text + " -->\n";
     }
 
-    void RmlWriter::Image(float ax, float ay, float w, float h, int z, const std::string& texture, const ImageStyle& st) {
+    void RmlWriter::Image(float ax, float ay, float w, float h, int z, const std::string& texture,
+                          const ImageStyle& st) {
         ax -= ox;
         ay -= oy;
         if (w <= 0 || h <= 0)
             return;
         count++;
-        body += "  <mcimg src=\"" + EscapeRml(texture) + "\" style=\"left:" + std::to_string(Px(ax)) + "px;top:" +
-                std::to_string(Px(ay)) + "px;width:" + Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";\"";
+        body += "  <mcimg src=\"" + EscapeRml(texture) + "\" style=\"left:" + std::to_string(Px(ax)) +
+                "px;top:" + std::to_string(Px(ay)) + "px;width:" + Num(w) + "px;height:" + Num(h) +
+                "px;z-index:" + std::to_string(z) + ";\"";
         if (st.u != 0 || st.v != 0 || st.uw >= 0 || st.vh >= 0)
             body += " uv=\"" + Num(st.u) + " " + Num(st.v) + " " + Num(st.uw) + " " + Num(st.vh) + "\"";
         if (st.hasNine)
-            body += " nine=\"" + Num(st.nine[0]) + " " + Num(st.nine[1]) + " " + Num(st.nine[2]) + " " + Num(st.nine[3]) + "\"";
+            body += " nine=\"" + Num(st.nine[0]) + " " + Num(st.nine[1]) + " " + Num(st.nine[2]) + " " +
+                    Num(st.nine[3]) + "\"";
         if (st.tiled)
             body += " tiled=\"" + std::to_string(st.tiled) + "\"";
         if (st.tileScale != 1.0f)
@@ -100,38 +116,46 @@ namespace perlin::ui {
         body += "/>\n";
     }
 
-    void RmlWriter::Gradient(float ax, float ay, float w, float h, int z, bool vertical, const float c1[4], const float c2[4]) {
+    void RmlWriter::Gradient(float ax, float ay, float w, float h, int z, bool vertical, const float c1[4],
+                             const float c2[4]) {
         ax -= ox;
         ay -= oy;
         if (w <= 0 || h <= 0)
             return;
         const auto hex = [](const float c[4]) {
             char buf[16];
-            const auto q = [](float v) { return static_cast<int>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
+            const auto q = [](float v) {
+                return static_cast<int>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
+            };
             std::snprintf(buf, sizeof(buf), "#%02x%02x%02x%02x", q(c[0]), q(c[1]), q(c[2]), q(c[3]));
             return std::string(buf);
         };
         count++;
-        body += "  <div style=\"position:absolute;display:block;left:" + Num(ax) + "px;top:" + Num(ay) + "px;width:" + Num(w) + "px;height:" +
-                Num(h) + "px;z-index:" + std::to_string(z) + ";decorator:" + (vertical ? "vertical" : "horizontal") + "-gradient(" +
-                hex(c1) + " " + hex(c2) + ");\"></div>\n";
+        body += "  <div style=\"position:absolute;display:block;left:" + Num(ax) + "px;top:" + Num(ay) +
+                "px;width:" + Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) +
+                ";decorator:" + (vertical ? "vertical" : "horizontal") + "-gradient(" + hex(c1) + " " +
+                hex(c2) + ");\"></div>\n";
     }
 
     void RmlWriter::Link(float ax, float ay, float w, float h, int z, const std::string& command) {
         ax -= ox;
         ay -= oy;
         count++;
-        body += "  <div class=\"link\" id=\"link:" + EscapeRml(command) + "\" style=\"left:" + Num(ax) + "px;top:" + Num(ay) + "px;width:" +
-                Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";\"><div class=\"ul\"></div></div>\n";
+        body += "  <div class=\"link\" id=\"link:" + EscapeRml(command) + "\" style=\"left:" + Num(ax) +
+                "px;top:" + Num(ay) + "px;width:" + Num(w) + "px;height:" + Num(h) +
+                "px;z-index:" + std::to_string(z) + ";\"><div class=\"ul\"></div></div>\n";
     }
 
-    void RmlWriter::BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll,
-                            const std::string& extraAttrs) {
+    void RmlWriter::BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls,
+                             const std::string& id, bool clip, float scroll, const std::string& extraAttrs) {
         count++;
-        body += "  <div" + (cls.empty() ? std::string() : " class=\"" + cls + "\"") + (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") + extraAttrs +
+        body += "  <div" + (cls.empty() ? std::string() : " class=\"" + cls + "\"") +
+                (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") + extraAttrs +
                 // hover/default layers get display from the stylesheet: no inline display
-                " style=\"position:absolute;" + (cls == "hv" || cls == "df" ? "" : "display:block;") + "left:" + Num(ax - ox) + "px;top:" + Num(ay - oy) + "px;width:" + Num(w) + "px;height:" + Num(h) +
-                "px;z-index:" + std::to_string(z) + ";" + (clip ? "overflow:hidden;clip:always;" : "") + "\">\n";
+                " style=\"position:absolute;" + (cls == "hv" || cls == "df" ? "" : "display:block;") +
+                "left:" + Num(ax - ox) + "px;top:" + Num(ay - oy) + "px;width:" + Num(w) +
+                "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";" +
+                (clip ? "overflow:hidden;clip:always;" : "") + "\">\n";
         origins.emplace_back(ox, oy);
         ox = ax;
         oy = ay + scroll;
@@ -166,12 +190,14 @@ namespace perlin::ui {
         Image(ax, ay, w, h, z, "mc:white", st);
     }
 
-    void RmlWriter::Item(float ax, float ay, float w, float h, int z, const std::string& itemKey, float alpha, bool glint) {
+    void RmlWriter::Item(float ax, float ay, float w, float h, int z, const std::string& itemKey, float alpha,
+                         bool glint) {
         ax -= ox;
         ay -= oy;
         count++;
-        body += "  <mcitem key=\"" + EscapeRml(itemKey) + "\" style=\"left:" + std::to_string(Px(ax)) + "px;top:" +
-                std::to_string(Px(ay)) + "px;width:" + Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";\"";
+        body += "  <mcitem key=\"" + EscapeRml(itemKey) + "\" style=\"left:" + std::to_string(Px(ax)) +
+                "px;top:" + std::to_string(Px(ay)) + "px;width:" + Num(w) + "px;height:" + Num(h) +
+                "px;z-index:" + std::to_string(z) + ";\"";
         if (alpha != 1.0f)
             body += " alpha=\"" + Num(alpha) + "\"";
         if (glint)
@@ -188,18 +214,25 @@ namespace perlin::ui {
         count++;
         // MinecraftTen: real font, 11 px em vs 8 px bitmap grid, own line height
         const float size = (st.ten ? TenFont::kEm : 8.0f) * st.scale;
-        const float lineHeight = (st.ten ? TenFont::Instance().LineHeight(st.scale) : 9.0f * st.scale) + st.linePadding;
+        const float lineHeight =
+            (st.ten ? TenFont::Instance().LineHeight(st.scale) : 9.0f * st.scale) + st.linePadding;
         std::string cls = st.ten ? "t ten" : "t";
-        if (st.outline) cls += " o";
-        else if (st.shadow) cls += " s";
+        if (st.outline)
+            cls += " o";
+        else if (st.shadow)
+            cls += " s";
         std::string family = st.ten ? "minecraft-ten" : "minecraft";
-        if (st.outline) family += "-outline";
-        else if (st.shadow) family += "-shadow";
+        if (st.outline)
+            family += "-outline";
+        else if (st.shadow)
+            family += "-shadow";
         family += "-size-" + Num(size);
-        body += "  <div class=\"" + cls + "\" style=\"font-family:" + family + ";left:" + std::to_string(Px(ax)) + "px;top:" +
-                std::to_string(Px(ay)) + "px;width:" + Num(std::max(w, 1.0f)) + "px;height:" + Num(h) + "px;z-index:" +
-                std::to_string(z) + ";font-size:" + Num(size) + "px;line-height:" + Num(lineHeight) + "px;text-align:" +
-                st.align + ";color:" + Hex(st.r, st.g, st.b, st.a) + ";\">";
+        body += "  <div class=\"" + cls + "\" style=\"font-family:" + family +
+                ";left:" + std::to_string(Px(ax)) + "px;top:" + std::to_string(Px(ay)) +
+                "px;width:" + Num(std::max(w, 1.0f)) + "px;height:" + Num(h) +
+                "px;z-index:" + std::to_string(z) + ";font-size:" + Num(size) +
+                "px;line-height:" + Num(lineHeight) + "px;text-align:" + st.align +
+                ";color:" + Hex(st.r, st.g, st.b, st.a) + ";\">";
         std::string carry;
         for (size_t i = 0; i < lines.size(); i++) {
             if (i)
@@ -216,9 +249,10 @@ namespace perlin::ui {
             // colours: named ("black", ...) or hex ("#RRGGBB")
             if (v && v->IsString()) {
                 static const std::pair<const char*, uint32_t> kNamed[] = {
-                    {"white", 0xFFFFFF}, {"black", 0x000000}, {"red", 0xFF0000}, {"green", 0x00FF00}, {"blue", 0x0000FF},
-                    {"yellow", 0xFFFF00}, {"cyan", 0x00FFFF}, {"magenta", 0xFF00FF}, {"grey", 0x808080}, {"gray", 0x808080},
-                    {"orange", 0xFFA500}, {"purple", 0x800080}, {"pink", 0xFFC0CB}, {"brown", 0x8B4513}, {"nil", 0xFFFFFF}};
+                    {"white", 0xFFFFFF}, {"black", 0x000000},  {"red", 0xFF0000},    {"green", 0x00FF00},
+                    {"blue", 0x0000FF},  {"yellow", 0xFFFF00}, {"cyan", 0x00FFFF},   {"magenta", 0xFF00FF},
+                    {"grey", 0x808080},  {"gray", 0x808080},   {"orange", 0xFFA500}, {"purple", 0x800080},
+                    {"pink", 0xFFC0CB},  {"brown", 0x8B4513},  {"nil", 0xFFFFFF}};
                 std::string name;
                 for (const char c : v->string)
                     name += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -270,10 +304,12 @@ namespace perlin::ui {
         if (const Json* ns = n.Get("nineslice_size")) {
             if (ns->IsNumber()) {
                 st.hasNine = true;
-                for (float& v : st.nine) v = static_cast<float>(ns->number);
+                for (float& v : st.nine)
+                    v = static_cast<float>(ns->number);
             } else if (ns->IsArray() && ns->array.size() >= 4) {
                 st.hasNine = true;
-                for (int i = 0; i < 4; i++) st.nine[i] = static_cast<float>(ns->array[static_cast<size_t>(i)].NumberOr(0));
+                for (int i = 0; i < 4; i++)
+                    st.nine[i] = static_cast<float>(ns->array[static_cast<size_t>(i)].NumberOr(0));
             } else if (ns->IsArray() && ns->array.size() == 2) {
                 st.hasNine = true;
                 st.nine[0] = st.nine[2] = static_cast<float>(ns->array[0].NumberOr(0));
@@ -281,8 +317,10 @@ namespace perlin::ui {
             }
         }
         if (const Json* t = n.Get("tiled")) {
-            if (t->IsBool() && t->boolean) st.tiled = 1;
-            else if (t->IsString()) st.tiled = t->string == "x" ? 2 : t->string == "y" ? 3 : (t->string == "true" ? 1 : 0);
+            if (t->IsBool() && t->boolean)
+                st.tiled = 1;
+            else if (t->IsString())
+                st.tiled = t->string == "x" ? 2 : t->string == "y" ? 3 : (t->string == "true" ? 1 : 0);
         }
         st.tileScale = static_cast<float>(n.Num("tiled_scale", 1.0));
         st.clipDirection = n.Str("clip_direction", "left");
@@ -306,9 +344,12 @@ namespace perlin::ui {
         TextStyle st;
         float scale = static_cast<float>(n.Num("font_scale_factor", 1.0));
         const std::string size = n.Str("font_size", "normal");
-        if (size == "small") scale *= 0.5f;
-        else if (size == "large") scale *= 2.0f;
-        else if (size == "extra_large") scale *= 4.0f;
+        if (size == "small")
+            scale *= 0.5f;
+        else if (size == "large")
+            scale *= 2.0f;
+        else if (size == "extra_large")
+            scale *= 4.0f;
         st.scale = scale;
         float a = 1.0f;
         ReadColor(n.Get("color"), st.r, st.g, st.b, &a);
@@ -355,13 +396,15 @@ namespace perlin::ui {
                     return "s:" + std::to_string(std::max(0, n.index)) + ":-";
                 if (id == "button.perlin_form_plus")
                     return "s:" + std::to_string(std::max(0, n.index)) + ":+";
-                if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" || id.contains("close"))
+                if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" ||
+                    id.contains("close"))
                     return "close";
             }
             // slot ids for our inventory logic: s<n> player inventory (hotbar first), k<n> open container
             for (const Json& m : maps->array) {
                 const Json* to = m.IsObject() ? m.Find("to_button_id") : nullptr;
-                if (!to || !to->IsString() || to->string != "button.container_take_all_place_all" || n.index < 0)
+                if (!to || !to->IsString() || to->string != "button.container_take_all_place_all" ||
+                    n.index < 0)
                     continue;
                 if (n.collection == "container_items")
                     return "k" + std::to_string(n.index);
@@ -410,13 +453,14 @@ namespace perlin::ui {
 
     void RmlEmitter::VisitButton(const LNode& n, RmlWriter& out) {
         const std::string command = ButtonCommand(n);
-        const std::string defName = n.Str("default_control"), hoverName = n.Str("hover_control"), pressedName = n.Str("pressed_control"),
-                          lockedName = n.Str("locked_control");
+        const std::string defName = n.Str("default_control"), hoverName = n.Str("hover_control"),
+                          pressedName = n.Str("pressed_control"), lockedName = n.Str("locked_control");
         const bool hasHover = FindKid(n, hoverName) != nullptr && (!command.empty() || inSlot);
         std::string soundAttrs;
         if (const Json* sn = n.Get("sound_name"); sn && sn->IsString())
-            soundAttrs = " snd=\"" + EscapeRml(sn->string) + "\" vol=\"" + Num(static_cast<float>(n.Num("sound_volume", 1.0))) +
-                         "\" pit=\"" + Num(static_cast<float>(n.Num("sound_pitch", 1.0))) + "\"";
+            soundAttrs = " snd=\"" + EscapeRml(sn->string) + "\" vol=\"" +
+                         Num(static_cast<float>(n.Num("sound_volume", 1.0))) + "\" pit=\"" +
+                         Num(static_cast<float>(n.Num("sound_pitch", 1.0))) + "\"";
         out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), "bt", command, false, 0.0f, soundAttrs);
         for (const auto& kid : n.kids) {
             if (!kid->visible)
@@ -473,9 +517,10 @@ namespace perlin::ui {
         const std::string rest = n.Str(on ? "checked_control" : "unchecked_control");
         const std::string hover = n.Str(on ? "checked_hover_control" : "unchecked_hover_control");
         std::vector<std::string> states;
-        for (const char* key : {"checked_control", "unchecked_control", "checked_hover_control", "unchecked_hover_control",
-                                "checked_locked_control", "unchecked_locked_control", "checked_locked_hover_control",
-                                "unchecked_locked_hover_control"})
+        for (const char* key :
+             {"checked_control", "unchecked_control", "checked_hover_control", "unchecked_hover_control",
+              "checked_locked_control", "unchecked_locked_control", "checked_locked_hover_control",
+              "unchecked_locked_hover_control"})
             if (std::string name = n.Str(key); !name.empty())
                 states.push_back(std::move(name));
         const std::string command = WidgetCommand(n);
@@ -534,7 +579,8 @@ namespace perlin::ui {
             const LNode* hover = FindKid(*kid, kid->Str("hover_control", "hover"));
             // state boxes take the box's own layer: at 0 they would sit under the bar
             if (rest) {
-                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, kid->layer, hover && !command.empty() ? "df" : "", "", false);
+                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, kid->layer,
+                             hover && !command.empty() ? "df" : "", "", false);
                 Visit(*rest, out);
                 out.EndBox();
             }
@@ -555,10 +601,16 @@ namespace perlin::ui {
         if (editText)
             editText(n, text, placeholder, focused);
         editTextName = n.Str("text_control", "display_text");
-        editShown = focused ? text + "_" : !text.empty() ? text : placeholder.empty() ? std::string() : "\xC2\xA7" "7" + placeholder;
+        editShown = focused               ? text + "_"
+                    : !text.empty()       ? text
+                    : placeholder.empty() ? std::string()
+                                          : "\xC2\xA7"
+                                            "7" +
+                                                placeholder;
         const std::string command = WidgetCommand(n);
         const std::string rest = n.Str("default_control", "default"), hover = n.Str("hover_control", "hover");
-        const std::string pressed = n.Str("pressed_control", "pressed"), locked = n.Str("locked_control", "locked");
+        const std::string pressed = n.Str("pressed_control", "pressed"),
+                          locked = n.Str("locked_control", "locked");
         const bool hasHover = FindKid(n, hover) != nullptr && !command.empty();
         out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), command.empty() ? "" : "bt", command, false);
         for (const auto& kid : n.kids) {
@@ -651,7 +703,8 @@ namespace perlin::ui {
         }
         if (progressWidth >= 0 && (n.id == progressName || n.id == progressHoverName)) {
             // slider progress: only the filled part of the bar
-            out.BeginBox(n.ax, n.ay, std::max(0.0f, progressWidth - (n.ax - progressLeft)), n.h, TopLayer(n), "", "", true);
+            out.BeginBox(n.ax, n.ay, std::max(0.0f, progressWidth - (n.ax - progressLeft)), n.h, TopLayer(n),
+                         "", "", true);
             const float saved = progressWidth;
             progressWidth = -1;
             Visit(n, out);
@@ -661,7 +714,8 @@ namespace perlin::ui {
         }
         // the text label is named "$text_edit_text_control" in the files; the game fills it, and shows the
         // placeholder in its place while the box is empty
-        if (!editTextName.empty() && n.type == "label" && (n.id == editTextName || n.id == "$text_edit_text_control")) {
+        if (!editTextName.empty() && n.type == "label" &&
+            (n.id == editTextName || n.id == "$text_edit_text_control")) {
             if (editShown.empty())
                 return;
             LNode& shown = const_cast<LNode&>(n);
@@ -688,7 +742,8 @@ namespace perlin::ui {
             ReadColor(n.Get("color2"), c2[0], c2[1], c2[2], &c2[3]);
             c1[3] *= n.alpha;
             c2[3] *= n.alpha;
-            out.Gradient(n.ax, n.ay, n.w, n.h, n.layer, n.Str("gradient_direction", "vertical") != "horizontal", c1, c2);
+            out.Gradient(n.ax, n.ay, n.w, n.h, n.layer,
+                         n.Str("gradient_direction", "vertical") != "horizontal", c1, c2);
         } else if (n.type == "custom") {
             const std::string name = n.Str("renderer");
             auto it = renderers.find(name);
@@ -717,7 +772,8 @@ namespace perlin::ui {
         if (open == std::string::npos)
             return map;
         const size_t close = templateText.find("-->", open);
-        const std::string block = templateText.substr(open + 12, close == std::string::npos ? std::string::npos : close - open - 12);
+        const std::string block = templateText.substr(
+            open + 12, close == std::string::npos ? std::string::npos : close - open - 12);
         size_t i = 0;
         while (i < block.size()) {
             while (i < block.size() && std::isspace(static_cast<unsigned char>(block[i])))
@@ -840,7 +896,8 @@ mcimg, mcitem { display: block; position: absolute; }
     namespace {
         void Replace(std::string& text, const std::string& key, const std::string& value) {
             const std::string needle = "{{" + key + "}}";
-            for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + value.size()))
+            for (size_t at = text.find(needle); at != std::string::npos;
+                 at = text.find(needle, at + value.size()))
                 text.replace(at, needle.size(), value);
         }
         std::string Between(const std::string& doc, const std::string& tag) {
@@ -855,7 +912,8 @@ mcimg, mcitem { display: block; position: absolute; }
         }
     }
 
-    std::string RmlEmitter::Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments) {
+    std::string RmlEmitter::Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss,
+                                 bool comments) {
         sliderTracks.clear();
         RmlWriter writer(comments);
         unknown.clear();
@@ -866,11 +924,14 @@ mcimg, mcitem { display: block; position: absolute; }
 
         std::string chatStyle, chatBody;
         const auto& sec = writer.Sections();
-        if (sec.count("chat_lines")) {
+        if (sec.contains("chat_lines")) {
             std::string chat = chatTemplate.empty() ? DefaultChatTemplate() : chatTemplate;
             chatStyle = Between(chat, "style");
             chatBody = Between(chat, "body");
-            const auto get = [&](const char* name) { const auto it = sec.find(name); return it == sec.end() ? std::string() : it->second; };
+            const auto get = [&](const char* name) {
+                const auto it = sec.find(name);
+                return it == sec.end() ? std::string() : it->second;
+            };
             for (std::string* part : {&chatStyle, &chatBody}) {
                 Replace(*part, "w", Num(guiW));
                 Replace(*part, "h", Num(guiH));
@@ -892,14 +953,17 @@ mcimg, mcitem { display: block; position: absolute; }
         Replace(doc, "hud", writer.Body());
         static const char* kEngineCss =
             "\nmcimg, mcitem { display: block; position: absolute; }\n"
-            ".t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: visible; }\n"
+            ".t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: "
+            "visible; }\n"
             ".t.s { font-family: minecraft-shadow; }\n.t.o { font-family: minecraft-outline; }\n"
             ".t.ten { font-family: minecraft-ten; }\n.t.ten.s { font-family: minecraft-ten-shadow; }\n"
             ".t.ten.o { font-family: minecraft-ten-outline; }\n"
             ".link { display: block; position: absolute; }\n"
-            ".link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: 1px; background-color: #ffff55; }\n"
+            ".link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: "
+            "1px; background-color: #ffff55; }\n"
             ".link:hover .ul { display: block; }\n"
-            ".df { display: block; }\n.bt .hv { display: none; }\n.bt:hover .hv { display: block; }\n.bt:hover .df { display: none; }\n"
+            ".df { display: block; }\n.bt .hv { display: none; }\n.bt:hover .hv { display: block; "
+            "}\n.bt:hover .df { display: none; }\n"
             // only interactive controls take the pointer, as in the game: overlays (sheens, borders, hover fills) don't eat clicks
             "body * { pointer-events: none; }\n.bt, .bt *, .link, .link * { pointer-events: auto; }\n";
         if (const size_t at = doc.find("<style>"); at != std::string::npos)

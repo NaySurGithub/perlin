@@ -35,7 +35,8 @@ namespace perlin {
                 const float blockBrightness = Brightness(blockLevel) * params.blockFactor;
                 const float skyBrightness = Brightness(skyLevel) * params.skyFactor;
 
-                glm::vec3 color = glm::max(params.ambientColor, params.nightVisionColor * params.nightVisionFactor);
+                glm::vec3 color =
+                    glm::max(params.ambientColor, params.nightVisionColor * params.nightVisionFactor);
                 color += params.skyLightColor * skyBrightness;
                 const float parabola = (2.0f * blockLevel - 1.0f) * (2.0f * blockLevel - 1.0f);
                 color += glm::mix(params.blockLightTint, glm::vec3(1.0f), 0.9f * parabola) * blockBrightness;

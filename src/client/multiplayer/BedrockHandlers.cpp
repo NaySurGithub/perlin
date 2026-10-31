@@ -43,35 +43,71 @@ namespace perlin {
         }
 
         bool MetaNumber(const MetadataDictionaryEntry& m, double& out) {
-            if (const auto* v = std::get_if<1>(&m.value)) { out = static_cast<double>(*v); return true; }
-            if (const auto* v = std::get_if<2>(&m.value)) { out = static_cast<double>(*v); return true; }
-            if (const auto* v = std::get_if<3>(&m.value)) { out = static_cast<double>(*v); return true; }
+            if (const auto* v = std::get_if<1>(&m.value)) {
+                out = static_cast<double>(*v);
+                return true;
+            }
+            if (const auto* v = std::get_if<2>(&m.value)) {
+                out = static_cast<double>(*v);
+                return true;
+            }
+            if (const auto* v = std::get_if<3>(&m.value)) {
+                out = static_cast<double>(*v);
+                return true;
+            }
             if (const auto* inner = std::get_if<4>(&m.value)) {
-                if (const auto* v = std::get_if<1>(inner)) { out = *v; return true; }
-                if (const auto* v = std::get_if<2>(inner)) { out = *v; return true; }
-                if (const auto* v = std::get_if<3>(inner)) { out = *v; return true; }
-                if (const auto* v = std::get_if<4>(inner)) { out = *v; return true; }
-                if (const auto* v = std::get_if<8>(inner)) { out = static_cast<double>(*v); return true; }
+                if (const auto* v = std::get_if<1>(inner)) {
+                    out = *v;
+                    return true;
+                }
+                if (const auto* v = std::get_if<2>(inner)) {
+                    out = *v;
+                    return true;
+                }
+                if (const auto* v = std::get_if<3>(inner)) {
+                    out = *v;
+                    return true;
+                }
+                if (const auto* v = std::get_if<4>(inner)) {
+                    out = *v;
+                    return true;
+                }
+                if (const auto* v = std::get_if<8>(inner)) {
+                    out = static_cast<double>(*v);
+                    return true;
+                }
             }
             return false;
         }
 
         bool MetaInt(const MetadataDictionaryEntry& m, int64_t& out) {
-            const auto take = [&](const auto& v) { out = static_cast<int64_t>(v); return true; };
-            if (const auto* v = std::get_if<1>(&m.value)) return take(*v);
-            if (const auto* v = std::get_if<2>(&m.value)) return take(*v);
-            if (const auto* v = std::get_if<3>(&m.value)) return take(*v);
+            const auto take = [&](const auto& v) {
+                out = static_cast<int64_t>(v);
+                return true;
+            };
+            if (const auto* v = std::get_if<1>(&m.value))
+                return take(*v);
+            if (const auto* v = std::get_if<2>(&m.value))
+                return take(*v);
+            if (const auto* v = std::get_if<3>(&m.value))
+                return take(*v);
             if (const auto* inner = std::get_if<4>(&m.value)) {
-                if (const auto* v = std::get_if<1>(inner)) return take(*v);
-                if (const auto* v = std::get_if<2>(inner)) return take(*v);
-                if (const auto* v = std::get_if<3>(inner)) return take(*v);
-                if (const auto* v = std::get_if<4>(inner)) return take(*v);
-                if (const auto* v = std::get_if<8>(inner)) return take(*v);
+                if (const auto* v = std::get_if<1>(inner))
+                    return take(*v);
+                if (const auto* v = std::get_if<2>(inner))
+                    return take(*v);
+                if (const auto* v = std::get_if<3>(inner))
+                    return take(*v);
+                if (const auto* v = std::get_if<4>(inner))
+                    return take(*v);
+                if (const auto* v = std::get_if<8>(inner))
+                    return take(*v);
             }
             return false;
         }
 
-        void ApplyMetadata(entity::EntityTracker& tracker, uint64_t rid, const std::vector<MetadataDictionaryEntry>& metadata) {
+        void ApplyMetadata(entity::EntityTracker& tracker, uint64_t rid,
+                           const std::vector<MetadataDictionaryEntry>& metadata) {
             int variant = -1, mark = -1, color = -1;
             float boxWidth = 0.0f, boxHeight = 0.0f;
             static const bool debugTags = std::getenv("PERLIN_DEBUG_NAMETAGS") != nullptr;
@@ -96,22 +132,34 @@ namespace perlin {
                 switch (m.key) {
                 case MetadataDictionaryEntryKey::Flags: {
                     int64_t bits = 0;
-                    tracker.SetFlags(rid, MetaInt(m, bits) ? static_cast<uint64_t>(bits) : static_cast<uint64_t>(static_cast<int64_t>(n)));
+                    tracker.SetFlags(rid, MetaInt(m, bits) ? static_cast<uint64_t>(bits)
+                                                           : static_cast<uint64_t>(static_cast<int64_t>(n)));
                     break;
                 }
                 case MetadataDictionaryEntryKey::FlagsExtended: {
                     int64_t bits = 0;
-                    const uint64_t ext = MetaInt(m, bits) ? static_cast<uint64_t>(bits) : static_cast<uint64_t>(static_cast<int64_t>(n));
+                    const uint64_t ext = MetaInt(m, bits) ? static_cast<uint64_t>(bits)
+                                                          : static_cast<uint64_t>(static_cast<int64_t>(n));
                     tracker.SetFlagsExtended(rid, ext);
                     tracker.SetCrawling(rid, ((ext >> 50) & 1ull) != 0);
                     tracker.SetSleeping(rid, ((ext >> 12) & 1ull) != 0);
                     break;
                 }
-                case MetadataDictionaryEntryKey::PlayerFlags: tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true); break;
-                case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
-                case MetadataDictionaryEntryKey::BoundingboxWidth: boxWidth = static_cast<float>(n); break;
-                case MetadataDictionaryEntryKey::BoundingboxHeight: boxHeight = static_cast<float>(n); break;
-                case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
+                case MetadataDictionaryEntryKey::PlayerFlags:
+                    tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true);
+                    break;
+                case MetadataDictionaryEntryKey::Scale:
+                    tracker.SetScale(rid, static_cast<float>(n));
+                    break;
+                case MetadataDictionaryEntryKey::BoundingboxWidth:
+                    boxWidth = static_cast<float>(n);
+                    break;
+                case MetadataDictionaryEntryKey::BoundingboxHeight:
+                    boxHeight = static_cast<float>(n);
+                    break;
+                case MetadataDictionaryEntryKey::Variant:
+                    variant = static_cast<int>(n);
+                    break;
                 case MetadataDictionaryEntryKey::ExperienceValue: {
                     const int xp = static_cast<int>(n);
                     static constexpr int kSteps[] = {2477, 1237, 617, 307, 149, 73, 37, 17, 7, 3};
@@ -124,15 +172,23 @@ namespace perlin {
                     variant = icon;
                     break;
                 }
-                case MetadataDictionaryEntryKey::MarkVariant: mark = static_cast<int>(n); break;
-                case MetadataDictionaryEntryKey::Color: color = static_cast<int>(n); break;
+                case MetadataDictionaryEntryKey::MarkVariant:
+                    mark = static_cast<int>(n);
+                    break;
+                case MetadataDictionaryEntryKey::Color:
+                    color = static_cast<int>(n);
+                    break;
                 case MetadataDictionaryEntryKey::TargetEid: {
                     int64_t target = 0;
-                    if (MetaInt(m, target)) tracker.SetTarget(rid, target);
+                    if (MetaInt(m, target))
+                        tracker.SetTarget(rid, target);
                     break;
                 }
-                case MetadataDictionaryEntryKey::OwnerEid: tracker.SetOwner(rid, static_cast<int64_t>(n)); break;
-                default: break;
+                case MetadataDictionaryEntryKey::OwnerEid:
+                    tracker.SetOwner(rid, static_cast<int64_t>(n));
+                    break;
+                default:
+                    break;
                 }
             }
             if (variant >= 0 || mark >= 0 || color >= 0)
@@ -158,14 +214,16 @@ namespace perlin {
             out->skinWidth = s.skinData.width;
             out->skinHeight = s.skinData.height;
             out->skinRgba = s.skinData.data;
-            if (static_cast<size_t>(out->skinWidth) * static_cast<size_t>(out->skinHeight) * 4 != out->skinRgba.size()) {
+            if (static_cast<size_t>(out->skinWidth) * static_cast<size_t>(out->skinHeight) * 4 !=
+                out->skinRgba.size()) {
                 out->skinWidth = out->skinHeight = 0;
                 out->skinRgba.clear();
             }
             out->capeWidth = s.capeData.width;
             out->capeHeight = s.capeData.height;
             out->capeRgba = s.capeData.data;
-            if (static_cast<size_t>(out->capeWidth) * static_cast<size_t>(out->capeHeight) * 4 != out->capeRgba.size()) {
+            if (static_cast<size_t>(out->capeWidth) * static_cast<size_t>(out->capeHeight) * 4 !=
+                out->capeRgba.size()) {
                 out->capeWidth = out->capeHeight = 0;
                 out->capeRgba.clear();
             }
@@ -187,9 +245,7 @@ namespace perlin {
         }
 
         template <class P> void Trace(BedrockSession& session) {
-            session.OnPartial<P>([](const P& packet) {
-                Log("trace", "{} {}", P::kName, net::Dump(packet));
-            });
+            session.OnPartial<P>([](const P& packet) { Log("trace", "{} {}", P::kName, net::Dump(packet)); });
         }
 
         bool EqualsIgnoreCase(const std::string& a, std::string_view b) {
@@ -217,7 +273,8 @@ namespace perlin {
             compressThreshold = p.compressionThreshold;
             compressAlgorithm = static_cast<uint16_t>(p.compressionAlgorithm);
             compressEnabled = true;
-            Log("bedrock", "NetworkSettings threshold={} algorithm={}", p.compressionThreshold, compressAlgorithm);
+            Log("bedrock", "NetworkSettings threshold={} algorithm={}", p.compressionThreshold,
+                compressAlgorithm);
             if (!SendLogin()) {
                 lastError = "failed to send Login";
                 state = State::Failed;
@@ -230,9 +287,12 @@ namespace perlin {
             Log("bedrock", "PlayStatus {}", static_cast<int>(p.status));
             // status 1: our client outdated; 2 (FailedSpawn in protocol data, LoginFailedServer in bedrock): server outdated;
             // either can arrive before network settings, not only after Login
-            if ((p.status == PlayStatusPacketStatus::FailedClient || p.status == PlayStatusPacketStatus::FailedSpawn) && state != State::InGame) {
+            if ((p.status == PlayStatusPacketStatus::FailedClient ||
+                 p.status == PlayStatusPacketStatus::FailedSpawn) &&
+                state != State::InGame) {
                 const bool clientOld = p.status == PlayStatusPacketStatus::FailedClient;
-                lastError = clientOld ? "Perlin is outdated for this server" : "the server is outdated for Perlin";
+                lastError =
+                    clientOld ? "Perlin is outdated for this server" : "the server is outdated for Perlin";
                 SetOutdated(clientOld ? 1 : 2);
                 state = State::Failed;
                 return;
@@ -263,24 +323,29 @@ namespace perlin {
             lastError = "server disconnect, reason=" + std::to_string(static_cast<int>(p.reason)) +
                         (p.message.empty() ? "" : " message='" + p.message + "'");
             switch (static_cast<int>(p.reason)) {
-                case 44:
-                    lastError += " (ServerIdConflict: the server still has a session with this name/id from an earlier"
-                                 " run. Wait ~30 s, restart the server, or join with a different --name)";
-                    break;
-                case 35:
-                case 8:
-                    lastError += " (version mismatch with Perlin's 1.26.60)";
-                    break;
-                case 46:
-                    lastError += " (the server wants an Xbox login: use --login)";
-                    break;
-                default: break;
+            case 44:
+                lastError +=
+                    " (ServerIdConflict: the server still has a session with this name/id from an earlier"
+                    " run. Wait ~30 s, restart the server, or join with a different --name)";
+                break;
+            case 35:
+            case 8:
+                lastError += " (version mismatch with Perlin's 1.26.60)";
+                break;
+            case 46:
+                lastError += " (the server wants an Xbox login: use --login)";
+                break;
+            default:
+                break;
             }
             Log("bedrock", "{}", lastError);
             SetDisconnectInfo(static_cast<int>(p.reason), p.message, false);
-            if (p.reason == DisconnectFailReason::OutdatedClient || p.reason == DisconnectFailReason::OutdatedServer ||
+            if (p.reason == DisconnectFailReason::OutdatedClient ||
+                p.reason == DisconnectFailReason::OutdatedServer ||
                 p.reason == DisconnectFailReason::VersionMismatch)
-                SetOutdated(p.reason == DisconnectFailReason::OutdatedClient ? 1 : p.reason == DisconnectFailReason::OutdatedServer ? 2 : 0);
+                SetOutdated(p.reason == DisconnectFailReason::OutdatedClient   ? 1
+                            : p.reason == DisconnectFailReason::OutdatedServer ? 2
+                                                                               : 0);
             state = State::Failed;
         });
 
@@ -328,7 +393,8 @@ namespace perlin {
             const int type = static_cast<int>(t.type);
             if (type == 3 || type == 4 || type == 5)
                 return;
-            const std::string line = ui::FormatTextPacket(type, t.needsTranslation, t.sourceName, t.message, t.parameters);
+            const std::string line =
+                ui::FormatTextPacket(type, t.needsTranslation, t.sourceName, t.message, t.parameters);
             if (line.empty())
                 return;
             Log("chat", "{}", line);
@@ -352,10 +418,11 @@ namespace perlin {
                 state = State::Failed;
             } else if (step.step == PackDownloader::Step::PackDone) {
                 for (const uint32_t index : step.chunks)
-                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = index});
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId,
+                                                               .chunkIndex = index});
                 if (packs.AllReceived()) {
                     packs.MountAll();
-                i18n::Lang::Get().Invalidate();
+                    i18n::Lang::Get().Invalidate();
                     SendResourcePackResponse(PackStatus::HaveAllPacks);
                 }
             } else if (step.step == PackDownloader::Step::Ignore && !step.message.empty()) {
@@ -373,10 +440,11 @@ namespace perlin {
                 state = State::Failed;
             } else if (step.step == PackDownloader::Step::PackDone) {
                 for (const uint32_t index : step.chunks)
-                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = index});
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId,
+                                                               .chunkIndex = index});
                 if (packs.AllReceived()) {
                     packs.MountAll();
-                i18n::Lang::Get().Invalidate();
+                    i18n::Lang::Get().Invalidate();
                     SendResourcePackResponse(PackStatus::HaveAllPacks);
                 }
             }
@@ -416,12 +484,20 @@ namespace perlin {
         On<PacketViolationWarningPacket>([this](const PacketViolationWarningPacket& p) {
             {
                 std::lock_guard<std::mutex> lk(disconnectMutex);
-                lastViolation = std::string("it could not read our ") + PacketName(static_cast<uint32_t>(p.packetId)) + " packet (" + p.reason.substr(0, 120) + ")";
+                lastViolation = std::string("it could not read our ") +
+                                PacketName(static_cast<uint32_t>(p.packetId)) + " packet (" +
+                                p.reason.substr(0, 120) + ")";
             }
             if (static_cast<int>(p.severity) >= 2)
-                SetDisconnectInfo(-1, std::string("The server disconnected you: it rejected a packet from Perlin as invalid.\nPacket: ") +
-                                          PacketName(static_cast<uint32_t>(p.packetId)) + "\n" + p.reason.substr(0, 200), true);
-            Log("bedrock", "VIOLATION type={} severity={} packet={} ({}) reason='{}'", static_cast<int>(p.violationType), static_cast<int>(p.severity), p.packetId, PacketName(static_cast<uint32_t>(p.packetId)), p.reason.substr(0, 200));
+                SetDisconnectInfo(-1,
+                                  std::string("The server disconnected you: it rejected a packet from Perlin "
+                                              "as invalid.\nPacket: ") +
+                                      PacketName(static_cast<uint32_t>(p.packetId)) + "\n" +
+                                      p.reason.substr(0, 200),
+                                  true);
+            Log("bedrock", "VIOLATION type={} severity={} packet={} ({}) reason='{}'",
+                static_cast<int>(p.violationType), static_cast<int>(p.severity), p.packetId,
+                PacketName(static_cast<uint32_t>(p.packetId)), p.reason.substr(0, 200));
         });
 
         OnPartial<StartGamePacket>([this](const StartGamePacket& p) {
@@ -451,7 +527,8 @@ namespace perlin {
                         world.rules[name] = *i;
                 }
             }
-            if (gameType == 1) mayFly = true;
+            if (gameType == 1)
+                mayFly = true;
             if (!pose.known && SaneWorldPos(x, y, z))
                 pose = {x, y, z, p.rotation.z, p.rotation.x, p.rotation.z, false, true};
             if (std::isfinite(x) && std::isfinite(z) && std::fabs(x) <= 100000.0f &&
@@ -465,20 +542,25 @@ namespace perlin {
             // generator 2 is the flat type
             flatWorld = p.generator == 2;
             serverAuthBreaking = p.serverAuthoritativeBlockBreaking;
-            Log("bedrock", "serverAuthoritativeBlockBreaking={}", (p.serverAuthoritativeBlockBreaking ? "true" : "false"));
-            Log("bedrock", "serverAuthoritativeInventory={}", (p.serverAuthoritativeInventory ? "true" : "false"));
+            Log("bedrock", "serverAuthoritativeBlockBreaking={}",
+                (p.serverAuthoritativeBlockBreaking ? "true" : "false"));
+            Log("bedrock", "serverAuthoritativeInventory={}",
+                (p.serverAuthoritativeInventory ? "true" : "false"));
             legacyInventory = !p.serverAuthoritativeInventory;
             BlockPalette::Instance().SetSequential(!p.blockNetworkIdsAreHashes);
             Log("bedrock", "blockNetworkIdsAreHashes={}", (p.blockNetworkIdsAreHashes ? "true" : "false"));
-            Log("bedrock", "StartGame gameVersion={} engine={} paletteChecksum={} blockProperties={}", p.gameVersion, p.engine, p.blockPalletteChecksum, p.blockProperties.size());
-            Log("bedrock", "client_side_generation={} (requested chunk radius {}, max view distance {})", (clientGen ? "true" : "false"), chunkRadius, maxViewDistance);
+            Log("bedrock", "StartGame gameVersion={} engine={} paletteChecksum={} blockProperties={}",
+                p.gameVersion, p.engine, p.blockPalletteChecksum, p.blockProperties.size());
+            Log("bedrock", "client_side_generation={} (requested chunk radius {}, max view distance {})",
+                (clientGen ? "true" : "false"), chunkRadius, maxViewDistance);
             gotSpawn = true;
             serverTick = static_cast<uint64_t>(std::max<int64_t>(p.currentTick, 0));
             authTick = serverTick;
             dimensionId = static_cast<int>(p.dimension);
             rainTarget = p.rainLevel > 0.0f ? 1.0f : 0.0f;
             thunderTarget = p.lightningLevel > 0.0f ? 1.0f : 0.0f;
-            Log("bedrock", "StartGame spawn=({},{},{}) runtime={} gamerules={}", x, y, z, runtimeId, p.gamerules.size());
+            Log("bedrock", "StartGame spawn=({},{},{}) runtime={} gamerules={}", x, y, z, runtimeId,
+                p.gamerules.size());
             for (const GameRuleI32& rule : p.gamerules) {
                 if (!EqualsIgnoreCase(rule.name, "dodaylightcycle"))
                     continue;
@@ -508,7 +590,8 @@ namespace perlin {
             viewRadiusChunks = radius;
             static int logged = 0;
             if (logged++ < 6)
-                Log("chunk", "publisher centre ({},{},{}) radius {} blocks, {} server-built chunks listed", p.coordinates.x, p.coordinates.y, p.coordinates.z, p.radius, p.savedChunks.size());
+                Log("chunk", "publisher centre ({},{},{}) radius {} blocks, {} server-built chunks listed",
+                    p.coordinates.x, p.coordinates.y, p.coordinates.z, p.radius, p.savedChunks.size());
             if (radius > 0)
                 PruneChunks(cx, cz, radius + 2);
         });
@@ -525,7 +608,10 @@ namespace perlin {
             grantedRadius = p.chunkRadius;
             Log("chunk", "server granted chunk radius {} (asked {})", p.chunkRadius, chunkRadius);
             if (p.chunkRadius < chunkRadius)
-                Log("chunk", "the server limits the view distance to {} chunks; LODs can only show terrain the server sends", p.chunkRadius);
+                Log("chunk",
+                    "the server limits the view distance to {} chunks; LODs can only show terrain the server "
+                    "sends",
+                    p.chunkRadius);
         });
 
         On<ItemRegistryPacket>([this](const ItemRegistryPacket& p) {
@@ -550,9 +636,11 @@ namespace perlin {
                         info.name = it->second;
                 };
                 InventoryView& v = inventory;
-                for (std::span<ItemStackInfo> group : {std::span<ItemStackInfo>(v.hotbar), std::span<ItemStackInfo>(v.main), std::span<ItemStackInfo>(v.armor),
-                                    std::span<ItemStackInfo>(v.craft), std::span<ItemStackInfo>(v.work), std::span<ItemStackInfo>(v.horse),
-                                    std::span<ItemStackInfo>(v.chest)})
+                for (std::span<ItemStackInfo> group :
+                     {std::span<ItemStackInfo>(v.hotbar), std::span<ItemStackInfo>(v.main),
+                      std::span<ItemStackInfo>(v.armor), std::span<ItemStackInfo>(v.craft),
+                      std::span<ItemStackInfo>(v.work), std::span<ItemStackInfo>(v.horse),
+                      std::span<ItemStackInfo>(v.chest)})
                     for (ItemStackInfo& info : group)
                         rename(info);
                 rename(v.offhand);
@@ -577,7 +665,8 @@ namespace perlin {
                 for (const WorldClockData& clock : p.clocks)
                     if (clock.id == kOverworldClockId || clock.name == "minecraft:overworld") {
                         overworldClockId = clock.id;
-                        Log("bedrock", "clock init {} time={} paused={}", clock.name, clock.time, clock.paused);
+                        Log("bedrock", "clock init {} time={} paused={}", clock.name, clock.time,
+                            clock.paused);
                         NoteClock(clock.time, clock.paused);
                     }
             } else if (p.payloadType == SyncWorldClocksPacketPayloadType::SyncState) {
@@ -591,12 +680,13 @@ namespace perlin {
 
         On<ChangeDimensionPacket>([this](const ChangeDimensionPacket& p) {
             entities.Clear();
-            Log("bedrock", "ChangeDimension {} -> {} pos=({},{},{})", dimensionId.load(), p.dimension, p.position.x, p.position.y, p.position.z);
+            Log("bedrock", "ChangeDimension {} -> {} pos=({},{},{})", dimensionId.load(), p.dimension,
+                p.position.x, p.position.y, p.position.z);
             dimensionId = p.dimension;
             ResetWorldForDimension();
             if (SaneWorldPos(p.position.x, p.position.y, p.position.z)) {
-                pose = {p.position.x, p.position.y, p.position.z, pose.yaw, pose.pitch,
-                        pose.headYaw, false, true};
+                pose = {p.position.x, p.position.y, p.position.z, pose.yaw,
+                        pose.pitch,   pose.headYaw, false,        true};
                 haveLastAuthPos = false;
                 ServerMotion motion;
                 motion.poseChanged = true;
@@ -661,7 +751,10 @@ namespace perlin {
                         cp.optional = a.optional;
                         const uint16_t flags = static_cast<uint16_t>(a.enumType);
                         const size_t index = static_cast<uint16_t>(a.valueType);
-                        if (flags == static_cast<uint16_t>(AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType::SoftEnum)) {
+                        if (flags ==
+                            static_cast<uint16_t>(
+                                AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType::
+                                    SoftEnum)) {
                             if (index < p.dynamicEnums.size()) {
                                 cp.values = p.dynamicEnums[index].values;
                                 cp.softEnum = p.dynamicEnums[index].name;
@@ -686,21 +779,24 @@ namespace perlin {
         });
 
         On<LevelEventPacket>([this](const LevelEventPacket& p) {
-            if (p.event == LevelEventPacketEvent::BlockStartBreak || p.event == LevelEventPacketEvent::BlockStopBreak ||
+            if (p.event == LevelEventPacketEvent::BlockStartBreak ||
+                p.event == LevelEventPacketEvent::BlockStopBreak ||
                 p.event == LevelEventPacketEvent::BlockBreakSpeed) {
-                const int bx = static_cast<int>(std::floor(p.position.x)), by = static_cast<int>(std::floor(p.position.y)),
+                const int bx = static_cast<int>(std::floor(p.position.x)),
+                          by = static_cast<int>(std::floor(p.position.y)),
                           bz = static_cast<int>(std::floor(p.position.z));
                 std::lock_guard lock(crackMutex);
                 const auto now = std::chrono::steady_clock::now();
-                const auto it = std::find_if(crackStates.begin(), crackStates.end(),
-                                             [&](const CrackState& c) { return c.x == bx && c.y == by && c.z == bz; });
+                const auto it =
+                    std::find_if(crackStates.begin(), crackStates.end(),
+                                 [&](const CrackState& c) { return c.x == bx && c.y == by && c.z == bz; });
                 if (p.event == LevelEventPacketEvent::BlockStopBreak) {
                     if (it != crackStates.end())
                         crackStates.erase(it);
                 } else {
                     if (it == crackStates.end()) {
-                        if (bx == lastClearedCrack[0] && by == lastClearedCrack[1] && bz == lastClearedCrack[2] &&
-                            now - lastClearedAt < std::chrono::milliseconds(750))
+                        if (bx == lastClearedCrack[0] && by == lastClearedCrack[1] &&
+                            bz == lastClearedCrack[2] && now - lastClearedAt < std::chrono::milliseconds(750))
                             return;
                         bool present = false;
                         const uint16_t cur = netLevel.GetBlock(bx, by, bz, present);
@@ -709,9 +805,14 @@ namespace perlin {
                     }
                     CrackState* c = it != crackStates.end() ? &*it : &crackStates.emplace_back();
                     if (it == crackStates.end() || c->since == std::chrono::steady_clock::time_point{}) {
-                        c->x = bx; c->y = by; c->z = bz; c->progress = 0.0;
+                        c->x = bx;
+                        c->y = by;
+                        c->z = bz;
+                        c->progress = 0.0;
                     } else {
-                        c->progress = std::min(1.0, c->progress + c->perSecond * std::chrono::duration<double>(now - c->since).count());
+                        c->progress = std::min(
+                            1.0, c->progress +
+                                     c->perSecond * std::chrono::duration<double>(now - c->since).count());
                     }
                     c->since = now;
                     c->perSecond = static_cast<double>(p.data) / 65535.0 * 20.0;
@@ -741,33 +842,70 @@ namespace perlin {
                 PushSound(std::move(r));
             };
             switch (p.event) {
-            case LevelEventPacketEvent::SoundClick: named("random.click", 1.0f, 1.0f); break;
-            case LevelEventPacketEvent::SoundClickFail: named("random.click", 1.0f, 0.8f); break;
-            case LevelEventPacketEvent::SoundShoot: named("random.bow"); break;
-            case LevelEventPacketEvent::SoundDoor: named("random.door_open"); break;
-            case LevelEventPacketEvent::SoundFizz: named("random.fizz", 0.5f); break;
-            case LevelEventPacketEvent::SoundIgnite: named("fire.ignite"); break;
-            case LevelEventPacketEvent::SoundGhast: named("mob.ghast.moan"); break;
-            case LevelEventPacketEvent::SoundGhastShoot: named("mob.ghast.fireball"); break;
-            case LevelEventPacketEvent::SoundBlazeShoot: named("mob.blaze.shoot"); break;
-            case LevelEventPacketEvent::SoundEndermanTeleport: named("mob.endermen.portal"); break;
-            case LevelEventPacketEvent::SoundAnvilBreak: named("random.anvil_break"); break;
-            case LevelEventPacketEvent::SoundAnvilUse: named("random.anvil_use"); break;
-            case LevelEventPacketEvent::SoundAnvilFall: named("random.anvil_land"); break;
-            case LevelEventPacketEvent::SoundPop: named("random.pop"); break;
-            case LevelEventPacketEvent::SoundPortal: named("portal.portal"); break;
+            case LevelEventPacketEvent::SoundClick:
+                named("random.click", 1.0f, 1.0f);
+                break;
+            case LevelEventPacketEvent::SoundClickFail:
+                named("random.click", 1.0f, 0.8f);
+                break;
+            case LevelEventPacketEvent::SoundShoot:
+                named("random.bow");
+                break;
+            case LevelEventPacketEvent::SoundDoor:
+                named("random.door_open");
+                break;
+            case LevelEventPacketEvent::SoundFizz:
+                named("random.fizz", 0.5f);
+                break;
+            case LevelEventPacketEvent::SoundIgnite:
+                named("fire.ignite");
+                break;
+            case LevelEventPacketEvent::SoundGhast:
+                named("mob.ghast.moan");
+                break;
+            case LevelEventPacketEvent::SoundGhastShoot:
+                named("mob.ghast.fireball");
+                break;
+            case LevelEventPacketEvent::SoundBlazeShoot:
+                named("mob.blaze.shoot");
+                break;
+            case LevelEventPacketEvent::SoundEndermanTeleport:
+                named("mob.endermen.portal");
+                break;
+            case LevelEventPacketEvent::SoundAnvilBreak:
+                named("random.anvil_break");
+                break;
+            case LevelEventPacketEvent::SoundAnvilUse:
+                named("random.anvil_use");
+                break;
+            case LevelEventPacketEvent::SoundAnvilFall:
+                named("random.anvil_land");
+                break;
+            case LevelEventPacketEvent::SoundPop:
+                named("random.pop");
+                break;
+            case LevelEventPacketEvent::SoundPortal:
+                named("portal.portal");
+                break;
             case LevelEventPacketEvent::SoundOrb: {
                 // suppress the server echo of a pickup already predicted locally
-                const auto nowMs = static_cast<uint64_t>(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
-                const float dx = p.position.x - lastOrbX, dy = p.position.y - lastOrbY, dz = p.position.z - lastOrbZ;
+                const auto nowMs =
+                    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                              std::chrono::steady_clock::now().time_since_epoch())
+                                              .count());
+                const float dx = p.position.x - lastOrbX, dy = p.position.y - lastOrbY,
+                            dz = p.position.z - lastOrbZ;
                 if (nowMs - lastLocalOrbMs < 200u && dx * dx + dy * dy + dz * dz < 9.0f)
                     break;
                 named("random.orb");
                 break;
             }
-            case LevelEventPacketEvent::SoundTotem: named("random.totem"); break;
-            case LevelEventPacketEvent::SoundCamera: named("camera.take_picture"); break;
+            case LevelEventPacketEvent::SoundTotem:
+                named("random.totem");
+                break;
+            case LevelEventPacketEvent::SoundCamera:
+                named("camera.take_picture");
+                break;
             case LevelEventPacketEvent::ParticleDestroy: {
                 SoundRequest r;
                 r.kind = SoundRequest::Kind::Level;
@@ -829,7 +967,9 @@ namespace perlin {
         On<SetSpawnPositionPacket>([this](const SetSpawnPositionPacket& p) {
             const BlockCoordinates& world = p.worldPosition;
             const int32_t worldY = static_cast<int32_t>(world.y);
-            Log("bedrock", "SetSpawnPosition type={} pos=({},{},{}) dim={} spawn=({},{},{})", static_cast<int>(p.spawnType), p.playerPosition.x, static_cast<int32_t>(p.playerPosition.y), p.playerPosition.z, p.dimension, world.x, worldY, world.z);
+            Log("bedrock", "SetSpawnPosition type={} pos=({},{},{}) dim={} spawn=({},{},{})",
+                static_cast<int>(p.spawnType), p.playerPosition.x, static_cast<int32_t>(p.playerPosition.y),
+                p.playerPosition.z, p.dimension, world.x, worldY, world.z);
             if (worldY < 1000) {
                 worldSpawn[0] = world.x;
                 worldSpawn[1] = worldY;
@@ -847,19 +987,26 @@ namespace perlin {
             if (blockLogs < 400 || PERLIN_ENV("PERLIN_BLOCK_DEBUG")) {
                 if (blockLogs < 400)
                     ++blockLogs;
-                Log("block", "update_block ({},{},{}) layer {} id {} {} afterAuthTick={}", p.position.x, p.position.y, p.position.z, p.layer, static_cast<int32_t>(p.blockRuntimeId), BlockPalette::Instance().Name(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId))), LastAuthTick());
+                Log("block", "update_block ({},{},{}) layer {} id {} {} afterAuthTick={}", p.position.x,
+                    p.position.y, p.position.z, p.layer, static_cast<int32_t>(p.blockRuntimeId),
+                    BlockPalette::Instance().Name(
+                        BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId))),
+                    LastAuthTick());
             }
             NoteUnknownBlock(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
-                ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z, static_cast<int32_t>(p.blockRuntimeId));
+                ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z,
+                             static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0) {
-                const uint16_t id = BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId));
+                const uint16_t id =
+                    BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId));
                 auto& mm = mods::ModManager::Instance();
                 if (mm.Wants(abi::Event::BlockChanged)) {
                     const uint16_t was = netLevel.GetBlock(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2]);
                     if (was != id) {
                         abi::Writer w;
-                        w.write(abi::EventBlockChanged{lastBlockPos[0], lastBlockPos[1], lastBlockPos[2], BlockPalette::Instance().Name(was),
+                        w.write(abi::EventBlockChanged{lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
+                                                       BlockPalette::Instance().Name(was),
                                                        BlockPalette::Instance().Name(id)});
                         mm.Queue(abi::Event::BlockChanged, std::move(w));
                     }
@@ -880,16 +1027,17 @@ namespace perlin {
                         }
                     return true;
                 });
-            }
-            else if (p.layer == 1)
-                netLevel.SetLiquid(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
-                                   BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)));
+            } else if (p.layer == 1)
+                netLevel.SetLiquid(
+                    lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
+                    BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)));
         });
 
         On<UpdateSubchunkBlocksPacket>([this](const UpdateSubchunkBlocksPacket& p) {
             const auto sane = [&](const BlockUpdate& b) {
                 const int32_t y = static_cast<int32_t>(b.position.y);
-                if (y < -64 || y >= 320 || std::abs(b.position.x) > 30000000 || std::abs(b.position.z) > 30000000)
+                if (y < -64 || y >= 320 || std::abs(b.position.x) > 30000000 ||
+                    std::abs(b.position.z) > 30000000)
                     return false;
                 return netLevel.HasChunk(b.position.x >> 4, b.position.z >> 4);
             };
@@ -898,23 +1046,28 @@ namespace perlin {
                 if (logged < 100)
                     ++logged;
                 int ok = 0;
-                for (const BlockUpdate& b : p.blocks) ok += sane(b) ? 1 : 0;
-                std::cout << "[block] update_subchunk_blocks at (" << p.x << "," << p.y << "," << p.z << ") " << p.blocks.size()
-                          << " blocks (" << ok << " applied), " << p.extra.size() << " extra";
+                for (const BlockUpdate& b : p.blocks)
+                    ok += sane(b) ? 1 : 0;
+                std::cout << "[block] update_subchunk_blocks at (" << p.x << "," << p.y << "," << p.z << ") "
+                          << p.blocks.size() << " blocks (" << ok << " applied), " << p.extra.size()
+                          << " extra";
                 if (!p.blocks.empty())
-                    std::cout << "; first (" << p.blocks[0].position.x << "," << static_cast<int32_t>(p.blocks[0].position.y) << ","
-                              << p.blocks[0].position.z << ") rid " << p.blocks[0].runtimeId;
+                    std::cout << "; first (" << p.blocks[0].position.x << ","
+                              << static_cast<int32_t>(p.blocks[0].position.y) << "," << p.blocks[0].position.z
+                              << ") rid " << p.blocks[0].runtimeId;
                 std::cout << " afterAuthTick=" << LastAuthTick() << std::endl;
             }
             for (const BlockUpdate& b : p.extra)
                 if (sane(b))
-                    netLevel.SetLiquid(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
-                                       BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
+                    netLevel.SetLiquid(
+                        b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
+                        BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
             for (const BlockUpdate& b : p.blocks) {
                 if (!sane(b))
                     continue;
                 NoteUnknownBlock(static_cast<int32_t>(b.runtimeId));
-                ConfirmPlace(b.position.x, static_cast<int32_t>(b.position.y), b.position.z, static_cast<int32_t>(b.runtimeId));
+                ConfirmPlace(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
+                             static_cast<int32_t>(b.runtimeId));
                 netLevel.SetBlock(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
                                   BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
             }
@@ -922,7 +1075,8 @@ namespace perlin {
 
         On<UpdateBlockSyncedPacket>([this](const UpdateBlockSyncedPacket& p) {
             const int x = p.position.x, y = static_cast<int32_t>(p.position.y), z = p.position.z;
-            const uint16_t id = BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId));
+            const uint16_t id =
+                BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 ConfirmPlace(x, y, z, static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
@@ -941,7 +1095,8 @@ namespace perlin {
             pose = {eye.x, eye.y - kPlayerEyeHeight, eye.z, p.yaw, p.pitch, p.headYaw, p.onGround, true};
             haveLastAuthPos = false;
             gotSpawn = true;
-            const bool forced = p.mode == MovePlayerPacketMode::Teleport || p.mode == MovePlayerPacketMode::Reset;
+            const bool forced =
+                p.mode == MovePlayerPacketMode::Teleport || p.mode == MovePlayerPacketMode::Reset;
             if (forced) {
                 pendingTeleportAck = true;
                 ServerMotion motion;
@@ -967,7 +1122,8 @@ namespace perlin {
         });
 
         On<RespawnPacket>([this](const RespawnPacket& p) {
-            Log("bedrock", "Respawn pos=({},{},{}) state={}", p.position.x, p.position.y, p.position.z, static_cast<int>(p.state));
+            Log("bedrock", "Respawn pos=({},{},{}) state={}", p.position.x, p.position.y, p.position.z,
+                static_cast<int>(p.state));
             if (p.state != 1)
                 return;
             {
@@ -999,6 +1155,27 @@ namespace perlin {
         });
 
         On<CorrectPlayerMovePredictionPacket>([this](const CorrectPlayerMovePredictionPacket& p) {
+            if (p.predictionType == CorrectPlayerMovePredictionPacketPredictionType::Vehicle) {
+                if (!SaneWorldPos(p.position.x, p.position.y, p.position.z))
+                    return;
+                VehicleCorrection c;
+                c.tick = p.tick;
+                c.pos[0] = p.position.x;
+                c.pos[1] = p.position.y;
+                c.pos[2] = p.position.z;
+                c.delta[0] = p.delta.x;
+                c.delta[1] = p.delta.y;
+                c.delta[2] = p.delta.z;
+                c.rotation[0] = p.rotation.x;
+                c.rotation[1] = p.rotation.z;
+                c.angularVelocity = p.angularVelocity;
+                c.onGround = p.onGround;
+                std::lock_guard lk(vehicleCorrectionMutex);
+                vehicleCorrections.push_back(c);
+                while (vehicleCorrections.size() > 64)
+                    vehicleCorrections.pop_front();
+                return;
+            }
             if (p.predictionType != CorrectPlayerMovePredictionPacketPredictionType::Player)
                 return;
             if (!SaneWorldPos(p.position.x, p.position.y, p.position.z))
@@ -1010,9 +1187,12 @@ namespace perlin {
             haveLastAuthPos = false;
             ArmPredictionSync();
             if (correctionsReceived++ < 5 || correctionsReceived % 100 == 0)
-                Log("move", "server correction #{} tick={} pos=({},{},{}) delta=({},{},{})", correctionsReceived.load(), p.tick, p.position.x, p.position.y, p.position.z, p.delta.x, p.delta.y, p.delta.z);
+                Log("move", "server correction #{} tick={} pos=({},{},{}) delta=({},{},{})",
+                    correctionsReceived.load(), p.tick, p.position.x, p.position.y, p.position.z, p.delta.x,
+                    p.delta.y, p.delta.z);
             if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
-                Log("move", "correction_received #{} tick={} afterAuthTick={}", correctionsReceived.load(), p.tick, LastAuthTick());
+                Log("move", "correction_received #{} tick={} afterAuthTick={}", correctionsReceived.load(),
+                    p.tick, LastAuthTick());
             ServerMotion motion;
             motion.poseChanged = true;
             motion.correction = true;
@@ -1037,7 +1217,8 @@ namespace perlin {
             motion.velocity[2] = p.velocity.z;
             QueueServerMotion(motion);
             if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
-                Log("move", "motion_received tick={} afterAuthTick={} velocity=({},{},{})", p.tick, LastAuthTick(), p.velocity.x, p.velocity.y, p.velocity.z);
+                Log("move", "motion_received tick={} afterAuthTick={} velocity=({},{},{})", p.tick,
+                    LastAuthTick(), p.velocity.x, p.velocity.y, p.velocity.z);
             NoteKnockback(p.velocity.x, p.velocity.z);
         });
 
@@ -1052,11 +1233,13 @@ namespace perlin {
                         t.perm = static_cast<int>(p.permissionLevel);
             }
             std::string held;
-            if (const auto it = itemNames.find(p.heldItem.networkId); p.heldItem.networkId != 0 && it != itemNames.end())
+            if (const auto it = itemNames.find(p.heldItem.networkId);
+                p.heldItem.networkId != 0 && it != itemNames.end())
                 held = it->second;
             // AddPlayer carries the feet position; move packets carry the eye
             entities.AddPlayer(p.runtimeId, p.uniqueId, UuidKey(p.uuid), p.username,
-                               {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw, MetaFlags(p.metadata), held);
+                               {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw,
+                               MetaFlags(p.metadata), held);
             if (std::getenv("PERLIN_DEBUG_NAMETAGS") != nullptr) {
                 std::string flat = p.username;
                 for (char& c : flat)
@@ -1069,8 +1252,9 @@ namespace perlin {
         });
 
         On<AddPaintingPacket>([this](const AddPaintingPacket& p) {
-            entities.AddEntity(p.runtimeEntityId, p.entityIdSelf, "minecraft:painting", {p.coordinates.x, p.coordinates.y, p.coordinates.z}, 0.0f,
-                               0.0f, 0.0f, 0, 1.0f, 0, 0, 0);
+            entities.AddEntity(p.runtimeEntityId, p.entityIdSelf, "minecraft:painting",
+                               {p.coordinates.x, p.coordinates.y, p.coordinates.z}, 0.0f, 0.0f, 0.0f, 0, 1.0f,
+                               0, 0, 0);
             entities.SetPropertyText(p.runtimeEntityId, "painting_motive", p.title);
             entities.SetProperty(p.runtimeEntityId, "painting_direction", static_cast<float>(p.direction));
         });
@@ -1078,8 +1262,9 @@ namespace perlin {
         On<AddEntityPacket>([this](const AddEntityPacket& p) {
             if (runtimeId != 0 && p.runtimeId == runtimeId)
                 return;
-            entities.AddEntity(p.runtimeId, p.uniqueId, p.entityType, {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw,
-                               p.headYaw, MetaFlags(p.metadata), 1.0f, 0, 0, 0);
+            entities.AddEntity(p.runtimeId, p.uniqueId, p.entityType,
+                               {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw,
+                               MetaFlags(p.metadata), 1.0f, 0, 0, 0);
             ApplyMetadata(entities, p.runtimeId, p.metadata);
             ApplyEntityProperties(p.runtimeId, p.entityType, p.properties);
             for (const EntityAttributesEntry& a : p.attributes) {
@@ -1101,8 +1286,9 @@ namespace perlin {
             if (droppedRaw.size() > 1024)
                 droppedRaw.clear();
             droppedRaw[p.runtimeEntityId] = p.item;
-            entities.AddItem(p.runtimeEntityId, p.entityIdSelf, {p.position.x, p.position.y, p.position.z}, it->second, p.item.count,
-                             static_cast<int>(p.item.metadata), p.item.blockRuntimeId, false);
+            entities.AddItem(p.runtimeEntityId, p.entityIdSelf, {p.position.x, p.position.y, p.position.z},
+                             it->second, p.item.count, static_cast<int>(p.item.metadata),
+                             p.item.blockRuntimeId, false);
             entities.SetMotion(p.runtimeEntityId, {p.velocity.x, p.velocity.y, p.velocity.z});
         });
         On<SetEntityMotionPacket>([this](const SetEntityMotionPacket& p) {
@@ -1113,8 +1299,10 @@ namespace perlin {
             droppedRaw.erase(p.runtimeEntityId);
             entity::Entity taken;
             if (entities.Find(p.runtimeEntityId, taken) && runtimeId != 0 && p.target == runtimeId) {
-                const auto nowMs = static_cast<uint64_t>(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+                const auto nowMs =
+                    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                              std::chrono::steady_clock::now().time_since_epoch())
+                                              .count());
                 if (taken.isItem) {
                     SoundRequest r;
                     r.kind = SoundRequest::Kind::Named;
@@ -1150,31 +1338,45 @@ namespace perlin {
         On<MoveEntityPacket>([this](const MoveEntityPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
                 return;
+            // the client-predicted vehicle is moved by our own simulation
+            if (p.runtimeEntityId == predictedVehicleRuntime.load())
+                return;
             constexpr float kByte = 360.0f / 256.0f;
-            entities.Move(p.runtimeEntityId, {p.position.x, p.position.y, p.position.z}, p.rotation.pitch * kByte,
-                          p.rotation.yaw * kByte, p.rotation.headYaw * kByte, (p.flags & 1) != 0);
+            entities.Move(p.runtimeEntityId, {p.position.x, p.position.y, p.position.z},
+                          p.rotation.pitch * kByte, p.rotation.yaw * kByte, p.rotation.headYaw * kByte,
+                          (p.flags & 1) != 0);
         });
 
         On<MoveEntityDeltaPacket>([this](const MoveEntityDeltaPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
                 return;
+            if (p.runtimeEntityId == predictedVehicleRuntime.load())
+                return;
             constexpr float kByte = 360.0f / 256.0f;
             double x = 0, y = 0, z = 0;
             float pitch = 0, yaw = 0, head = 0;
-            if (p.x) x = *p.x;
-            if (p.y) y = *p.y;
-            if (p.z) z = *p.z;
-            if (p.rotX) pitch = *p.rotX * kByte;
-            if (p.rotY) yaw = *p.rotY * kByte;
-            if (p.rotZ) head = *p.rotZ * kByte;
+            if (p.x)
+                x = *p.x;
+            if (p.y)
+                y = *p.y;
+            if (p.z)
+                z = *p.z;
+            if (p.rotX)
+                pitch = *p.rotX * kByte;
+            if (p.rotY)
+                yaw = *p.rotY * kByte;
+            if (p.rotZ)
+                head = *p.rotZ * kByte;
             entities.MoveDelta(p.runtimeEntityId, p.x ? &x : nullptr, p.y ? &y : nullptr, p.z ? &z : nullptr,
-                               p.rotX ? &pitch : nullptr, p.rotY ? &yaw : nullptr, p.rotZ ? &head : nullptr, p.onGround);
+                               p.rotX ? &pitch : nullptr, p.rotY ? &yaw : nullptr, p.rotZ ? &head : nullptr,
+                               p.onGround);
         });
 
         On<MovePlayerPacket>([this](const MovePlayerPacket& p) {
             if (runtimeId != 0 && p.runtimeId == runtimeId)
                 return;
-            entities.Move(p.runtimeId, {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw, p.onGround);
+            entities.Move(p.runtimeId, {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw,
+                          p.onGround);
         });
 
         On<SetEntityDataPacket>([this](const SetEntityDataPacket& p) {
@@ -1182,7 +1384,8 @@ namespace perlin {
                 std::lock_guard lk(attrMutex);
                 for (const MetadataDictionaryEntry& m : p.metadata) {
                     int64_t integer = 0;
-                    if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
+                    if (m.key == MetadataDictionaryEntryKey::Flags ||
+                        m.key == MetadataDictionaryEntryKey::FlagsExtended) {
                         if (MetaInt(m, integer)) {
                             const size_t word = m.key == MetadataDictionaryEntryKey::Flags ? 0 : 1;
                             ownFlagWords[word] = static_cast<uint64_t>(integer);
@@ -1190,11 +1393,19 @@ namespace perlin {
                         }
                         continue;
                     }
+                    if (m.key == MetadataDictionaryEntryKey::RiderSeatPosition) {
+                        if (const auto* inner = std::get_if<4>(&m.value))
+                            if (const auto* seat = std::get_if<9>(inner))
+                                ownSeatOffset = std::array<float, 3>{seat->x, seat->y, seat->z};
+                        continue;
+                    }
                     double n = 0;
                     if (!MetaNumber(m, n))
                         continue;
                     if (m.key == MetadataDictionaryEntryKey::PlayerFlags)
                         ownPlayerFlags = static_cast<int64_t>(n);
+                    else if (m.key == MetadataDictionaryEntryKey::FreezingEffectStrength)
+                        freezeUpdates.push_back({p.tick, static_cast<float>(n)});
                     else if (m.key == MetadataDictionaryEntryKey::Scale)
                         ownScale = static_cast<float>(n);
                     else if (m.key == MetadataDictionaryEntryKey::BoundingboxWidth)
@@ -1238,7 +1449,8 @@ namespace perlin {
                 } else {
                     entities.RemoveSkin(key);
                     std::lock_guard<std::mutex> lk(tabMutex);
-                    tabPlayers.erase(std::remove_if(tabPlayers.begin(), tabPlayers.end(), [&](const TabPlayer& t) { return t.uuid == key; }),
+                    tabPlayers.erase(std::remove_if(tabPlayers.begin(), tabPlayers.end(),
+                                                    [&](const TabPlayer& t) { return t.uuid == key; }),
                                      tabPlayers.end());
                 }
             }
@@ -1258,7 +1470,8 @@ namespace perlin {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
                 return;
             std::string name;
-            if (const auto it = itemNames.find(p.item.networkId); p.item.networkId != 0 && it != itemNames.end())
+            if (const auto it = itemNames.find(p.item.networkId);
+                p.item.networkId != 0 && it != itemNames.end())
                 name = it->second;
             if (static_cast<int>(p.windowId) == 119)
                 entities.SetOffHand(p.runtimeEntityId, name);
@@ -1270,7 +1483,8 @@ namespace perlin {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
                 return;
             const auto nameOf = [&](const auto& item) -> std::string {
-                if (const auto it = itemNames.find(item.networkId); item.networkId != 0 && it != itemNames.end())
+                if (const auto it = itemNames.find(item.networkId);
+                    item.networkId != 0 && it != itemNames.end())
                     return it->second;
                 return {};
             };
@@ -1281,14 +1495,17 @@ namespace perlin {
         });
 
         On<AnimatePacket>([this](const AnimatePacket& p) {
-            if (p.actionId == AnimatePacketActionId::SwingArm && !(runtimeId != 0 && p.runtimeEntityId == runtimeId))
+            if (p.actionId == AnimatePacketActionId::SwingArm &&
+                !(runtimeId != 0 && p.runtimeEntityId == runtimeId))
                 entities.Swing(p.runtimeEntityId);
         });
 
         On<EntityEventPacket>([this](const EntityEventPacket& p) {
-            if (p.eventId == EntityEventPacketEventId::HurtAnimation && !(runtimeId != 0 && p.runtimeEntityId == runtimeId))
+            if (p.eventId == EntityEventPacketEventId::HurtAnimation &&
+                !(runtimeId != 0 && p.runtimeEntityId == runtimeId))
                 entities.Hurt(p.runtimeEntityId);
-            if (p.eventId == EntityEventPacketEventId::DeathAnimation && !(runtimeId != 0 && p.runtimeEntityId == runtimeId))
+            if (p.eventId == EntityEventPacketEventId::DeathAnimation &&
+                !(runtimeId != 0 && p.runtimeEntityId == runtimeId))
                 entities.Die(p.runtimeEntityId);
         });
 
@@ -1305,12 +1522,16 @@ namespace perlin {
                 std::lock_guard lk(attrMutex);
                 for (const PlayerAttributesEntry& a : p.attributes) {
                     ownAttributes[a.name] = a.current;
-                    if (a.name == "minecraft:movement") movementAttribute = a;
+                    if (a.name == "minecraft:movement") {
+                        movementAttribute = a;
+                        ApplyMovementAttribute(a);
+                    }
                 }
             }
             for (const PlayerAttributesEntry& a : p.attributes) {
                 if (a.name == "minecraft:health") {
-                    const bool recent = std::chrono::steady_clock::now() - lastHurtAt < std::chrono::milliseconds(250);
+                    const bool recent =
+                        std::chrono::steady_clock::now() - lastHurtAt < std::chrono::milliseconds(250);
                     if (lastHealth >= 0.0f && a.current < lastHealth - 0.01f && a.current > 0.0f && !recent)
                         NoteHurt();
                     lastHealth = a.current;
@@ -1326,9 +1547,11 @@ namespace perlin {
         });
 
         On<EntityEventPacket>([this](const EntityEventPacket& p) {
-            if (runtimeId != 0 && p.runtimeEntityId == runtimeId && p.eventId == EntityEventPacketEventId::HurtAnimation)
+            if (runtimeId != 0 && p.runtimeEntityId == runtimeId &&
+                p.eventId == EntityEventPacketEventId::HurtAnimation)
                 NoteHurt();
-            if (runtimeId != 0 && p.runtimeEntityId == runtimeId && p.eventId == EntityEventPacketEventId::DeathAnimation) {
+            if (runtimeId != 0 && p.runtimeEntityId == runtimeId &&
+                p.eventId == EntityEventPacketEventId::DeathAnimation) {
                 Log("bedrock", "own death animation");
                 std::lock_guard<std::mutex> lk(deathMutex);
                 if (lastHealth <= 0.01f)
@@ -1340,15 +1563,32 @@ namespace perlin {
             const char* event = nullptr;
             const char* direct = nullptr;
             switch (p.eventId) {
-            case EntityEventPacketEventId::HurtAnimation: event = "hurt"; break;
-            case EntityEventPacketEventId::DeathAnimation: event = "death"; break;
-            case EntityEventPacketEventId::ElderGuardianCurse: event = "elderguardian.curse"; break;
-            case EntityEventPacketEventId::EatingItem: event = "eat"; break;
-            case EntityEventPacketEventId::WitchDrinkPotion: event = "drink"; break;
-            case EntityEventPacketEventId::PlayerAddXpLevels: direct = "random.levelup"; break;
-            case EntityEventPacketEventId::CreeperPrimeFuse: direct = "random.fuse"; break;
-            case EntityEventPacketEventId::ConsumeTotem: direct = "random.totem"; break;
-            default: break;
+            case EntityEventPacketEventId::HurtAnimation:
+                event = "hurt";
+                break;
+            case EntityEventPacketEventId::DeathAnimation:
+                event = "death";
+                break;
+            case EntityEventPacketEventId::ElderGuardianCurse:
+                event = "elderguardian.curse";
+                break;
+            case EntityEventPacketEventId::EatingItem:
+                event = "eat";
+                break;
+            case EntityEventPacketEventId::WitchDrinkPotion:
+                event = "drink";
+                break;
+            case EntityEventPacketEventId::PlayerAddXpLevels:
+                direct = "random.levelup";
+                break;
+            case EntityEventPacketEventId::CreeperPrimeFuse:
+                direct = "random.fuse";
+                break;
+            case EntityEventPacketEventId::ConsumeTotem:
+                direct = "random.totem";
+                break;
+            default:
+                break;
             }
             if (!event && !direct)
                 return;
@@ -1394,7 +1634,8 @@ namespace perlin {
         });
 
         On<EntityEventPacket>([this](const EntityEventPacket& p) {
-            if (p.eventId != EntityEventPacketEventId::DeathAnimation || (runtimeId != 0 && p.runtimeEntityId == runtimeId))
+            if (p.eventId != EntityEventPacketEventId::DeathAnimation ||
+                (runtimeId != 0 && p.runtimeEntityId == runtimeId))
                 return;
             entity::Entity e;
             if (!entities.Find(p.runtimeEntityId, e) || e.isPlayer)
@@ -1429,11 +1670,15 @@ namespace perlin {
         });
 
         On<SetEntityLinkPacket>([this](const SetEntityLinkPacket& p) {
-            const int64_t rider = p.link.riderEntityId == 0 ? static_cast<int64_t>(uniqueId) : p.link.riderEntityId;
+            const int64_t rider =
+                p.link.riderEntityId == 0 ? static_cast<int64_t>(uniqueId) : p.link.riderEntityId;
             entities.SetVehicle(rider, p.link.type == 0 ? 0 : p.link.riddenEntityId);
-            if (rider == static_cast<int64_t>(uniqueId))
+            if (rider == static_cast<int64_t>(uniqueId)) {
                 ridingUid = p.link.type == 0 ? 0 : p.link.riddenEntityId;
-            Log("bedrock", "link rider={} vehicle={} type={}", rider, p.link.riddenEntityId, int(p.link.type));
+                ridingDriver = p.link.type == 1;
+            }
+            Log("bedrock", "link rider={} vehicle={} type={}", rider, p.link.riddenEntityId,
+                int(p.link.type));
         });
 
         On<UpdateAbilitiesPacket>([this](const UpdateAbilitiesPacket& p) {
@@ -1446,27 +1691,42 @@ namespace perlin {
             }
             if (runtimeId != 0 && p.entityUniqueId != 0 && uniqueId != 0 && p.entityUniqueId != uniqueId)
                 return;
-            bool fly = false, flying = false, clip = false;
+            bool fly = false, flying = false, clip = false, build = false;
             for (const AbilityLayers& layer : p.abilities) {
-                if (layer.allowed & (1u << 10)) fly = (layer.enabled & (1u << 10)) != 0;
-                if (layer.allowed & (1u << 9)) flying = (layer.enabled & (1u << 9)) != 0;
-                if (layer.allowed & (1u << 17)) clip = (layer.enabled & (1u << 17)) != 0;
-                if (layer.allowed & (1u << 13)) flySpeed = layer.flySpeed;
-                if (layer.allowed & (1u << 19)) vFlySpeed = layer.verticalFlySpeed;
-                if (layer.allowed & (1u << 14)) walkSpeed = layer.walkSpeed;
+                if (layer.allowed & (1u << 10))
+                    fly = (layer.enabled & (1u << 10)) != 0;
+                if (layer.allowed & (1u << 11))
+                    build = (layer.enabled & (1u << 11)) != 0;
+                if (layer.allowed & (1u << 9))
+                    flying = (layer.enabled & (1u << 9)) != 0;
+                if (layer.allowed & (1u << 17))
+                    clip = (layer.enabled & (1u << 17)) != 0;
+                if (layer.allowed & (1u << 13))
+                    flySpeed = layer.flySpeed;
+                if (layer.allowed & (1u << 19))
+                    vFlySpeed = layer.verticalFlySpeed;
+                if (layer.allowed & (1u << 14))
+                    walkSpeed = layer.walkSpeed;
             }
             mayFly = fly;
+            instabuild = build;
             isFlying = flying;
+            ++abilitiesSeq;
             noClip = clip;
-            Log("bedrock", "abilities mayFly={} flying={} noclip={} fly={}", mayFly, isFlying, noClip, flySpeed);
+            Log("bedrock", "abilities mayFly={} flying={} noclip={} fly={}", mayFly, isFlying, noClip,
+                flySpeed);
         });
 
         On<UpdatePlayerGameTypePacket>([this](const UpdatePlayerGameTypePacket& p) {
             if (uniqueId != 0 && p.playerUniqueId != uniqueId)
                 return;
             gameType = static_cast<int>(p.gamemode);
-            if (gameType == 1)
-                mayFly = true;
+            int worldGameType;
+            {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                worldGameType = world.worldGameMode;
+            }
+            ApplyGameTypeAbilities(worldGameType);
         });
         On<SetDefaultGameTypePacket>([this](const SetDefaultGameTypePacket& p) {
             std::lock_guard<std::mutex> lk(worldMutex);
@@ -1490,8 +1750,12 @@ namespace perlin {
 
         On<SetPlayerGameTypePacket>([this](const SetPlayerGameTypePacket& p) {
             gameType = static_cast<int>(p.gamemode);
-            if (gameType == 1)
-                mayFly = true;
+            int worldGameType;
+            {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                worldGameType = world.worldGameMode;
+            }
+            ApplyGameTypeAbilities(worldGameType);
         });
 
         On<NetworkStackLatencyPacket>([this](const NetworkStackLatencyPacket& p) {
@@ -1507,7 +1771,8 @@ namespace perlin {
                 commandResult.output.clear();
                 for (const auto& message : p.output) {
                     commandResult.output += message.messageId;
-                    for (const auto& parameter : message.parameters) commandResult.output += " " + parameter;
+                    for (const auto& parameter : message.parameters)
+                        commandResult.output += " " + parameter;
                     commandResult.output += '\n';
                 }
             }

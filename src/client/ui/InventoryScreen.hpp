@@ -38,8 +38,8 @@ namespace perlin::ui {
 
     inline constexpr int kInvPanelW = 176;
     inline constexpr int kInvPanelH = 166;
-    inline constexpr int kInvAddrArmor = 36, kInvAddrOffhand = 40, kInvAddrCraft = 41, kInvAddrOutput = 45, kInvAddrWork = 47, kInvAddrHorse = 56,
-                                kInvAddrChest = 73;
+    inline constexpr int kInvAddrArmor = 36, kInvAddrOffhand = 40, kInvAddrCraft = 41, kInvAddrOutput = 45,
+                         kInvAddrWork = 47, kInvAddrHorse = 56, kInvAddrChest = 73;
     void InventorySlotPos(int addr, int& x, int& y, bool workbench = false, int chestRows = 0);
     int InventoryPanelH(const InventoryView& view);
     std::string BuildEffectsPanel(const std::vector<HudEffect>& effects, int x, int y, int guiW);
@@ -47,7 +47,8 @@ namespace perlin::ui {
     inline constexpr int kBookCols = 5, kBookRows = 4;
 
     std::string DefaultInventoryScreenTemplate();
-    std::string BuildInventoryScreenRml(const std::string& templateText, const InventoryView& view, int guiW, int guiH);
+    std::string BuildInventoryScreenRml(const std::string& templateText, const InventoryView& view, int guiW,
+                                        int guiH);
     std::string InventoryCursorRml(const InventoryView& view);
     std::string InventoryTooltipRml(const InventoryView& view, int guiW, int guiH);
     std::string PrettyItemName(const std::string& id);

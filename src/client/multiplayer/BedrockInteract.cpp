@@ -15,11 +15,15 @@ namespace perlin {
     using namespace proto;
 
     namespace {
-        Vec3F V(const float p[3]) { return {p[0], p[1], p[2]}; }
+        Vec3F V(const float p[3]) {
+            return {p[0], p[1], p[2]};
+        }
     }
 
-    bool BedrockSession::SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]) {
-        if (face < 0 || face > 5) return false;
+    bool BedrockSession::SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3],
+                                            const float eye[3], int use, const int dest[3]) {
+        if (face < 0 || face > 5)
+            return false;
         InventoryTransactionPacket p;
         p.transaction.transactionType = TransactionTransactionType::ItemUse;
         TransactionUseItem u;
@@ -29,16 +33,20 @@ namespace perlin {
             selected = std::clamp(inventory.selected, 0, 8);
             u.heldItem = inventoryRaw[selected];
         }
-        if (use == 2 && (u.heldItem.count == 0 || u.heldItem.blockRuntimeId == 0)) return false;
+        if (use == 2 && (u.heldItem.count == 0 || u.heldItem.blockRuntimeId == 0))
+            return false;
         if (use == 2) {
-            static constexpr int offsets[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+            static constexpr int offsets[6][3] = {{0, -1, 0}, {0, 1, 0},  {0, 0, -1},
+                                                  {0, 0, 1},  {-1, 0, 0}, {1, 0, 0}};
             const bool same = dest[0] == bx && dest[1] == by && dest[2] == bz;
             if (!same && (int64_t(dest[0]) != int64_t(bx) + offsets[face][0] ||
                           int64_t(dest[1]) != int64_t(by) + offsets[face][1] ||
-                          int64_t(dest[2]) != int64_t(bz) + offsets[face][2])) return false;
+                          int64_t(dest[2]) != int64_t(bz) + offsets[face][2]))
+                return false;
             bool loaded = false;
             const auto id = netLevel.GetBlock(dest[0], dest[1], dest[2], loaded);
-            if (!blockuse::IsReplaceableCell(loaded, id, BlockPalette::Instance().Name(id))) return false;
+            if (!blockuse::IsReplaceableCell(loaded, id, BlockPalette::Instance().Name(id)))
+                return false;
         }
         u.actionType = TransactionUseItemActionType::ClickBlock;
         u.triggerType = TransactionUseItemTriggerType::PlayerInput;
@@ -51,11 +59,20 @@ namespace perlin {
         {
             bool loaded = false;
             const uint16_t clicked = netLevel.GetBlock(bx, by, bz, loaded);
-            if (use == 2 && !loaded) return false;
-            u.blockRuntimeId = loaded ? static_cast<uint32_t>(BlockPalette::Instance().RuntimeId(clicked)) : 0;
+            if (use == 2 && !loaded)
+                return false;
+            u.blockRuntimeId =
+                loaded ? static_cast<uint32_t>(BlockPalette::Instance().RuntimeId(clicked)) : 0;
         }
         haveLoggedInteraction = true;
-        Log("place", "use item on ({},{},{}) face {} clicked id {} held {} x{} block {} use {} dest ({},{},{})", bx, by, bz, face, u.blockRuntimeId, u.heldItem.networkId, static_cast<int>(u.heldItem.count), u.heldItem.blockRuntimeId, (use == 2 ? "place" : use == 1 ? "interact" : "nothing"), dest[0], dest[1], dest[2]);
+        Log("place",
+            "use item on ({},{},{}) face {} clicked id {} held {} x{} block {} use {} dest ({},{},{})", bx,
+            by, bz, face, u.blockRuntimeId, u.heldItem.networkId, static_cast<int>(u.heldItem.count),
+            u.heldItem.blockRuntimeId,
+            (use == 2   ? "place"
+             : use == 1 ? "interact"
+                        : "nothing"),
+            dest[0], dest[1], dest[2]);
         if (use != 0 && !itemUseOnActive.exchange(true)) {
             PlayerActionPacket start;
             start.runtimeEntityId = runtimeId;
@@ -69,9 +86,11 @@ namespace perlin {
             }
             std::copy(dest, dest + 3, itemUseDest);
         }
-        u.clientPrediction = use != 0 ? TransactionUseItemClientPrediction::Success : TransactionUseItemClientPrediction::Failure;
+        u.clientPrediction = use != 0 ? TransactionUseItemClientPrediction::Success
+                                      : TransactionUseItemClientPrediction::Failure;
         p.transaction.transactionData = u;
-        if (!Send(p)) return false;
+        if (!Send(p))
+            return false;
         if (use != 0) {
             itemUseDest[0] = dest[0];
             itemUseDest[1] = dest[1];
@@ -94,7 +113,9 @@ namespace perlin {
                 }
             }
             std::lock_guard lock(placeMutex);
-            pendingPlace = {dest[0], dest[1], dest[2], std::chrono::steady_clock::now(), true, static_cast<int32_t>(u.heldItem.blockRuntimeId)};
+            pendingPlace = {dest[0], dest[1],
+                            dest[2], std::chrono::steady_clock::now(),
+                            true,    static_cast<int32_t>(u.heldItem.blockRuntimeId)};
         }
         return true;
     }
@@ -141,7 +162,8 @@ namespace perlin {
         return Send(p);
     }
 
-    bool BedrockSession::SendAttackEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]) {
+    bool BedrockSession::SendAttackEntity(uint64_t targetRuntimeId, const float eye[3],
+                                          const float click[3]) {
         InventoryTransactionPacket p;
         p.transaction.transactionType = TransactionTransactionType::ItemUseOnEntity;
         TransactionTransactionDataCase1 a;
@@ -158,7 +180,8 @@ namespace perlin {
         return Send(p);
     }
 
-    bool BedrockSession::SendInteractEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]) {
+    bool BedrockSession::SendInteractEntity(uint64_t targetRuntimeId, const float eye[3],
+                                            const float click[3]) {
         InventoryTransactionPacket p;
         p.transaction.transactionType = TransactionTransactionType::ItemUseOnEntity;
         TransactionTransactionDataCase1 a;
@@ -234,14 +257,16 @@ namespace perlin {
             if (attempt < 0)
                 attempt = dropForm;
             if (attempt == 1) {
-                a.source.slotType.containerId = slot < 9 ? ContainerSlotType::Hotbar : ContainerSlotType::Inventory;
+                a.source.slotType.containerId =
+                    slot < 9 ? ContainerSlotType::Hotbar : ContainerSlotType::Inventory;
                 a.source.slot = static_cast<uint8_t>(slot < 9 ? slot : slot - 9);
             } else {
                 a.source.slotType.containerId = ContainerSlotType::HotbarAndInventory;
                 a.source.slot = static_cast<uint8_t>(slot);
             }
             a.source.stackId = attempt >= 2 ? 0 : raw.stackId.value_or(0);
-            a.count = static_cast<uint8_t>(count <= 0 ? std::min<int>(raw.count, 255) : std::min<int>(count, raw.count));
+            a.count = static_cast<uint8_t>(count <= 0 ? std::min<int>(raw.count, 255)
+                                                      : std::min<int>(count, raw.count));
             r.requestId = nextStackRequestId;
             nextStackRequestId -= 2;
             {
@@ -273,7 +298,8 @@ namespace perlin {
         a.randomly = false;
         r.actions.push_back(a);
         r.cause = static_cast<ItemStackRequestCause>(-1);
-        Log("inventory", "drop request {} slot {} stack {} count {} form {}", r.requestId, slot, a.source.stackId, static_cast<int>(a.count), attempt);
+        Log("inventory", "drop request {} slot {} stack {} count {} form {}", r.requestId, slot,
+            a.source.stackId, static_cast<int>(a.count), attempt);
         p.requests.push_back(std::move(r));
         return Send(p);
     }
@@ -293,13 +319,15 @@ namespace perlin {
         return PredictPlaceState(x, y, z, heldRuntimeId, false);
     }
 
-    bool BedrockSession::PredictBridgePlace(int x, int y, int z, int32_t heldRuntimeId, int face, const float click[3]) {
+    bool BedrockSession::PredictBridgePlace(int x, int y, int z, int32_t heldRuntimeId, int face,
+                                            const float click[3]) {
         auto& palette = BlockPalette::Instance();
         const uint16_t held = palette.InternRuntime(heldRuntimeId);
         const std::string name = palette.Name(held);
         if (!name.starts_with("minecraft:") || !name.ends_with("_slab") || name.contains("double"))
             return PredictPlace(x, y, z, heldRuntimeId);
-        if (face < 0 || face > 5 || !std::isfinite(click[1])) return false;
+        if (face < 0 || face > 5 || !std::isfinite(click[1]))
+            return false;
         const bool upper = blockuse::IsUpperSlabPlacement(face, click[1]);
         auto states = palette.States(held);
         bool resolved = false;
@@ -313,11 +341,14 @@ namespace perlin {
                 resolved = true;
             }
         }
-        if (!resolved) return false;
-        std::sort(states.begin(), states.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        if (!resolved)
+            return false;
+        std::sort(states.begin(), states.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first; });
         const uint16_t placed = palette.Intern(BlockPalette::HashState(name, states));
         const int32_t runtime = palette.RuntimeId(placed);
-        if (palette.Name(placed) != name || palette.InternRuntime(runtime) != placed) return false;
+        if (palette.Name(placed) != name || palette.InternRuntime(runtime) != placed)
+            return false;
         return PredictPlaceState(x, y, z, runtime, true);
     }
 
@@ -329,23 +360,87 @@ namespace perlin {
         const std::string name = pal.Name(local);
         if (local == 0 || name.empty() || name == "minecraft:air")
             return false;
-        static const char* const kSkipNames[] = {"slab", "door", "bed", "chest", "sign", "banner", "skull", "head", "piston", "observer", "hopper",
-                                                 "dropper", "dispenser", "water", "lava", "fire", "portal", "frame", "lectern", "cauldron",
-                                                 "campfire", "candle", "lantern", "stairs", "trapdoor", "button", "lever", "rail", "torch",
-                                                 "ladder", "vine", "anvil", "grindstone", "barrel", "furnace", "smoker", "blast_furnace",
-                                                 "shulker", "command_block", "structure", "jigsaw", "end_rod", "lightning_rod", "bell",
-                                                 "glazed_terracotta", "log", "wood", "stem", "hyphae", "pillar", "sapling", "flower", "tallgrass",
-                                                 "double_plant", "leaves", "cake", "comparator", "repeater", "tripwire", "pressure_plate", "sea_pickle",
-                                                 "turtle_egg", "snow_layer", "pointed_dripstone", "amethyst_cluster", "bud", "coral", "kelp", "seagrass"};
+        static const char* const kSkipNames[] = {"slab",
+                                                 "door",
+                                                 "bed",
+                                                 "chest",
+                                                 "sign",
+                                                 "banner",
+                                                 "skull",
+                                                 "head",
+                                                 "piston",
+                                                 "observer",
+                                                 "hopper",
+                                                 "dropper",
+                                                 "dispenser",
+                                                 "water",
+                                                 "lava",
+                                                 "fire",
+                                                 "portal",
+                                                 "frame",
+                                                 "lectern",
+                                                 "cauldron",
+                                                 "campfire",
+                                                 "candle",
+                                                 "lantern",
+                                                 "stairs",
+                                                 "trapdoor",
+                                                 "button",
+                                                 "lever",
+                                                 "rail",
+                                                 "torch",
+                                                 "ladder",
+                                                 "vine",
+                                                 "anvil",
+                                                 "grindstone",
+                                                 "barrel",
+                                                 "furnace",
+                                                 "smoker",
+                                                 "blast_furnace",
+                                                 "shulker",
+                                                 "command_block",
+                                                 "structure",
+                                                 "jigsaw",
+                                                 "end_rod",
+                                                 "lightning_rod",
+                                                 "bell",
+                                                 "glazed_terracotta",
+                                                 "log",
+                                                 "wood",
+                                                 "stem",
+                                                 "hyphae",
+                                                 "pillar",
+                                                 "sapling",
+                                                 "flower",
+                                                 "tallgrass",
+                                                 "double_plant",
+                                                 "leaves",
+                                                 "cake",
+                                                 "comparator",
+                                                 "repeater",
+                                                 "tripwire",
+                                                 "pressure_plate",
+                                                 "sea_pickle",
+                                                 "turtle_egg",
+                                                 "snow_layer",
+                                                 "pointed_dripstone",
+                                                 "amethyst_cluster",
+                                                 "bud",
+                                                 "coral",
+                                                 "kelp",
+                                                 "seagrass"};
         if (!resolvedSlab)
             for (const char* skip : kSkipNames)
                 if (name.contains(skip))
                     return false;
-        static const char* const kSkipStates[] = {"facing_direction", "direction", "cardinal_direction", "vertical_half", "upside_down_bit",
-                                                  "top_slot_bit", "pillar_axis", "attached_bit", "hanging", "open_bit", "powered_bit"};
+        static const char* const kSkipStates[] = {"facing_direction", "direction",       "cardinal_direction",
+                                                  "vertical_half",    "upside_down_bit", "top_slot_bit",
+                                                  "pillar_axis",      "attached_bit",    "hanging",
+                                                  "open_bit",         "powered_bit"};
         for (const auto& [key, value] : pal.States(local)) {
             (void)value;
-            if (resolvedSlab && (key.contains("top_slot_bit") || key.contains("vertical_half"))) continue;
+            if (resolvedSlab && (key.contains("top_slot_bit") || key.contains("vertical_half")))
+                continue;
             for (const char* skip : kSkipStates)
                 if (key.contains(skip))
                     return false;
@@ -413,7 +508,9 @@ namespace perlin {
         }
         {
             auto& pal = BlockPalette::Instance();
-            Log("place", "server put block {} ({}) at ({},{},{}), we placed with block id {} ({}){}", runtimeId, pal.Name(pal.InternRuntime(runtimeId)), x, y, z, held, pal.Name(pal.InternRuntime(held)), (runtimeId != held ? "  <-- different" : ""));
+            Log("place", "server put block {} ({}) at ({},{},{}), we placed with block id {} ({}){}",
+                runtimeId, pal.Name(pal.InternRuntime(runtimeId)), x, y, z, held,
+                pal.Name(pal.InternRuntime(held)), (runtimeId != held ? "  <-- different" : ""));
         }
     }
 }
@@ -521,7 +618,9 @@ namespace perlin {
             if (inventoryRaw[a].networkId == 0 && inventoryRaw[b].networkId == 0)
                 return false;
             std::swap(inventoryRaw[a], inventoryRaw[b]);
-            auto at = [&](int i) -> ItemStackInfo& { return i < 9 ? inventory.hotbar[i] : inventory.main[i - 9]; };
+            auto at = [&](int i) -> ItemStackInfo& {
+                return i < 9 ? inventory.hotbar[i] : inventory.main[i - 9];
+            };
             std::swap(at(a), at(b));
         }
         act.typeId = ItemStackRequestActionsEntryTypeId::Swap;

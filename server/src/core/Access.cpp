@@ -8,8 +8,7 @@
 #include <sstream>
 
 namespace perlin::server {
-    namespace {
-    }
+    namespace {}
 
     void AccessList::Load(const std::string& file) {
         path = file;
@@ -50,7 +49,8 @@ namespace perlin::server {
             const AccessEntry& e = entries[i];
             out << (i ? "," : "") << "\n  {";
             if (kind == Kind::Permissions)
-                out << "\"permission\": \"" << json::Escape(e.permission.empty() ? "member" : e.permission) << "\"";
+                out << "\"permission\": \"" << json::Escape(e.permission.empty() ? "member" : e.permission)
+                    << "\"";
             else
                 out << "\"ignoresPlayerLimit\": " << (e.ignoresPlayerLimit ? "true" : "false");
             if (!e.name.empty())
@@ -81,9 +81,12 @@ namespace perlin::server {
         return const_cast<AccessList*>(this)->FindMutable(name, xuid);
     }
 
-    bool AccessList::Contains(const std::string& name, const std::string& xuid) const { return Find(name, xuid) != nullptr; }
+    bool AccessList::Contains(const std::string& name, const std::string& xuid) const {
+        return Find(name, xuid) != nullptr;
+    }
 
-    bool AccessList::SetPermission(const std::string& name, const std::string& xuid, const std::string& permission) {
+    bool AccessList::SetPermission(const std::string& name, const std::string& xuid,
+                                   const std::string& permission) {
         if (AccessEntry* e = FindMutable(name, xuid)) {
             bool changed = e->permission != permission;
             e->permission = permission;
@@ -111,7 +114,8 @@ namespace perlin::server {
     bool AccessList::Add(const std::string& name, const std::string& xuid) {
         const std::string lowered = str::Lower(name);
         for (AccessEntry& e : entries) {
-            const bool same = (!xuid.empty() && e.xuid == xuid) || (!name.empty() && str::Lower(e.name) == lowered);
+            const bool same =
+                (!xuid.empty() && e.xuid == xuid) || (!name.empty() && str::Lower(e.name) == lowered);
             if (!same)
                 continue;
             bool changed = false;
@@ -140,7 +144,11 @@ namespace perlin::server {
     bool AccessList::Remove(const std::string& key) {
         const std::string lowered = str::Lower(key);
         const size_t before = entries.size();
-        entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const AccessEntry& e) { return str::Lower(e.name) == lowered || (!e.xuid.empty() && e.xuid == key); }),
+        entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                     [&](const AccessEntry& e) {
+                                         return str::Lower(e.name) == lowered ||
+                                                (!e.xuid.empty() && e.xuid == key);
+                                     }),
                       entries.end());
         const bool removed = entries.size() != before;
         if (removed)

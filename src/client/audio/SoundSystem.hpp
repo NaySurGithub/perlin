@@ -31,19 +31,27 @@ namespace perlin::audio {
         explicit SoundSystem(AudioEngine& engine) : engine(engine) {}
 
         void Configure(const std::string& root, const std::vector<std::string>& packs = {});
-        void Reload() { const std::string r = root; configured = false; Configure(r, packRoots); }
+        void Reload() {
+            const std::string r = root;
+            configured = false;
+            Configure(r, packRoots);
+        }
         bool HasSounds() const { return !definitions.empty(); }
         size_t DefinitionCount() const { return definitions.size(); }
 
-        using SubtitleHook = std::function<void(const std::string& sound, const glm::dvec3& position, float volume, bool global)>;
+        using SubtitleHook = std::function<void(const std::string& sound, const glm::dvec3& position,
+                                                float volume, bool global)>;
         void SetSubtitleHook(SubtitleHook hook) { subtitles = std::move(hook); }
         void SetBlockNamer(std::function<std::string(int32_t)> namer) { blockNamer = std::move(namer); }
 
-        bool PlayNamed(const std::string& name, const glm::dvec3& position, float volume, float pitch, bool positional = true);
-        bool PlayLevelSound(const std::string& eventId, const glm::dvec3& position, int32_t extra, const std::string& entityType,
-                            bool baby, bool global);
-        bool PlayBlockEvent(const std::string& blockName, const std::string& event, const glm::dvec3& position, float volumeScale = 1.0f);
-        bool PlayEntityEvent(const std::string& entityType, const std::string& event, const glm::dvec3& position, bool baby = false);
+        bool PlayNamed(const std::string& name, const glm::dvec3& position, float volume, float pitch,
+                       bool positional = true);
+        bool PlayLevelSound(const std::string& eventId, const glm::dvec3& position, int32_t extra,
+                            const std::string& entityType, bool baby, bool global);
+        bool PlayBlockEvent(const std::string& blockName, const std::string& event,
+                            const glm::dvec3& position, float volumeScale = 1.0f);
+        bool PlayEntityEvent(const std::string& entityType, const std::string& event,
+                             const glm::dvec3& position, bool baby = false);
         void Stop(const std::string& name) { engine.StopName(name); }
 
         std::string BlockSoundType(const std::string& blockName) const;
@@ -58,8 +66,8 @@ namespace perlin::audio {
             std::string name;
             float volume;
         };
-        bool Play(const std::string& definition, float volume, float pitch, const glm::dvec3& position, bool positional,
-                  const EventSound* event = nullptr);
+        bool Play(const std::string& definition, float volume, float pitch, const glm::dvec3& position,
+                  bool positional, const EventSound* event = nullptr);
         PcmPtr Load(const std::string& file);
         float Roll(float lo, float hi);
 

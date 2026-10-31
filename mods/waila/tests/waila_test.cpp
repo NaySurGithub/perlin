@@ -15,12 +15,12 @@ using namespace perlin;
 
 namespace {
     int failures = 0;
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-            failures++;                                                 \
-        }                                                               \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                                      \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
     std::map<std::string, std::string> overrides;
@@ -41,8 +41,10 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
                 if (id.empty())
                     continue;
                 const json::Value& d = s["default"];
-                std::string v = d.is_bool() ? (d.boolean() ? "true" : "false") : d.is_string() ? std::string(d.string()) : std::format("{}", d.number());
-                if (overrides.count(id))
+                std::string v = d.is_bool()     ? (d.boolean() ? "true" : "false")
+                                : d.is_string() ? std::string(d.string())
+                                                : std::format("{}", d.number());
+                if (overrides.contains(id))
                     v = overrides[id];
                 list.push_back({id, v});
             }
@@ -54,7 +56,8 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
         w.put(static_cast<float>(t.size()) * 6.0f * r.get<float>());
         break;
     }
-    default: return -4;
+    default:
+        return -4;
     }
     if (w.Size() > outCap)
         return -(abi::kNeedMoreBase + static_cast<int32_t>(w.Size()));
@@ -62,10 +65,12 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
     return static_cast<int32_t>(w.Size());
 }
 
-PERLIN_PLUGIN(ctx) { (void)ctx; }
+struct WailaTestPlugin : perlin::Plugin {};
+PERLIN_REGISTER(WailaTestPlugin)
 
 namespace {
-    game::BlockTarget block_target(const std::string& name, std::vector<std::pair<std::string, std::string>> states = {}) {
+    game::BlockTarget block_target(const std::string& name,
+                                   std::vector<std::pair<std::string, std::string>> states = {}) {
         game::BlockTarget t;
         t.pos = {1, 2, 3};
         t.block.loaded = true;
@@ -130,7 +135,9 @@ int main() {
     {
         waila::Registry r;
         std::string order;
-        const auto mark = [&](char c) { return [&order, c](waila::Tooltip&, const waila::BlockContext&) { order += c; }; };
+        const auto mark = [&](char c) {
+            return [&order, c](waila::Tooltip&, const waila::BlockContext&) { order += c; };
+        };
         r.block(waila::Stage::Tail, waila::always, mark('t'));
         r.block(waila::Stage::Body, waila::always, mark('b'), "*", 5);
         r.block(waila::Stage::Body, waila::always, mark('a'), "*", -5);
@@ -165,11 +172,16 @@ int main() {
         tip = run_block(block_target("minecraft:redstone_wire", {{"redstone_signal", "9"}}));
         CHECK(has_line(tip, "Power: "));
     }
-    CHECK(waila::vanilla::note_name(0) == "F#3" && waila::vanilla::note_name(6) == "C4" && waila::vanilla::note_name(24) == "F#5");
-    CHECK(waila::vanilla::mod_title("my_server") == "My Server" && waila::vanilla::mod_title("minecraft") == "Minecraft");
-    CHECK(waila::vanilla::item_for_block("minecraft:lit_furnace") == "minecraft:furnace" && waila::vanilla::item_for_block("minecraft:stone") == "minecraft:stone");
-    CHECK(waila::vanilla::tool_of("minecraft:iron_pickaxe") == Tool::Pickaxe && waila::vanilla::tool_of("minecraft:shears") == Tool::Shears);
-    CHECK(waila::vanilla::tier_of("minecraft:wooden_pickaxe") == 1 && waila::vanilla::tier_of("minecraft:netherite_pickaxe") == 4);
+    CHECK(waila::vanilla::note_name(0) == "F#3" && waila::vanilla::note_name(6) == "C4" &&
+          waila::vanilla::note_name(24) == "F#5");
+    CHECK(waila::vanilla::mod_title("my_server") == "My Server" &&
+          waila::vanilla::mod_title("minecraft") == "Minecraft");
+    CHECK(waila::vanilla::item_for_block("minecraft:lit_furnace") == "minecraft:furnace" &&
+          waila::vanilla::item_for_block("minecraft:stone") == "minecraft:stone");
+    CHECK(waila::vanilla::tool_of("minecraft:iron_pickaxe") == Tool::Pickaxe &&
+          waila::vanilla::tool_of("minecraft:shears") == Tool::Shears);
+    CHECK(waila::vanilla::tier_of("minecraft:wooden_pickaxe") == 1 &&
+          waila::vanilla::tier_of("minecraft:netherite_pickaxe") == 4);
 
     {
         const auto marks = [](const waila::Tooltip& tip) {

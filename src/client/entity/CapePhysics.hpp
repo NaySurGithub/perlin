@@ -103,8 +103,10 @@ namespace perlin {
             for (int pass = 0; pass < 2; pass++) {
                 std::array<float, kSegments> sp = tp, sr = tr;
                 for (int i = 0; i < kSegments; i++) {
-                    const float pl = i > 0 ? sp[i - 1] : 2.0f * sp[0] - sp[1], pr = i + 1 < kSegments ? sp[i + 1] : 2.0f * sp[i] - sp[i - 1];
-                    const float rl = i > 0 ? sr[i - 1] : 2.0f * sr[0] - sr[1], rr = i + 1 < kSegments ? sr[i + 1] : 2.0f * sr[i] - sr[i - 1];
+                    const float pl = i > 0 ? sp[i - 1] : 2.0f * sp[0] - sp[1],
+                                pr = i + 1 < kSegments ? sp[i + 1] : 2.0f * sp[i] - sp[i - 1];
+                    const float rl = i > 0 ? sr[i - 1] : 2.0f * sr[0] - sr[1],
+                                rr = i + 1 < kSegments ? sr[i + 1] : 2.0f * sr[i] - sr[i - 1];
                     tp[i] = 0.25f * pl + 0.5f * sp[i] + 0.25f * pr;
                     tr[i] = 0.25f * rl + 0.5f * sr[i] + 0.25f * rr;
                 }
@@ -233,7 +235,8 @@ namespace perlin {
             const float bx = x_[i - 1] - x_[i + 1], by = y_[i - 1] - y_[i + 1];
             const float dot = ax * bx + ay * by;
             const float cross = ax * by - ay * bx;
-            const double angle = std::atan2(static_cast<double>(cross), static_cast<double>(dot)) * 180.0 / 3.141592653589793;
+            const double angle =
+                std::atan2(static_cast<double>(cross), static_cast<double>(dot)) * 180.0 / 3.141592653589793;
             if (angle < -maxBend)
                 swing(i, -maxBend * 2.0f);
             if (angle > maxBend)

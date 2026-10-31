@@ -57,7 +57,8 @@ namespace perlin {
             std::vector<uint8_t> level(static_cast<size_t>(tile) * tile * 4);
             bool anyClear = false;
             for (int y = 0; y < tile; y++) {
-                std::memcpy(level.data() + static_cast<size_t>(y) * tile * 4, rgba + static_cast<size_t>(y) * stride, static_cast<size_t>(tile) * 4);
+                std::memcpy(level.data() + static_cast<size_t>(y) * tile * 4,
+                            rgba + static_cast<size_t>(y) * stride, static_cast<size_t>(tile) * 4);
                 for (int x = 0; x < tile; x++)
                     anyClear = anyClear || level[(static_cast<size_t>(y) * tile + x) * 4 + 3] == 0;
             }
@@ -106,7 +107,8 @@ namespace perlin {
                             (static_cast<size_t>(y * 2 + 1) * w + x * 2) * 4,
                             (static_cast<size_t>(y * 2 + 1) * w + x * 2 + 1) * 4,
                         };
-                        DownsampleAlphaAware(level.data(), idx, next.data() + (static_cast<size_t>(y) * h + x) * 4);
+                        DownsampleAlphaAware(level.data(), idx,
+                                             next.data() + (static_cast<size_t>(y) * h + x) * 4);
                     }
                 mips.push_back(std::move(level));
                 level = std::move(next);
@@ -120,8 +122,12 @@ namespace perlin {
     // -- textures ---------------------------------------------------------------------------------------------------
 
     int RenderContext_rhi::MaxAtlasLayers(int tilePx) const {
-        const int limit = initialized ? std::max<int>(1, static_cast<int>(const_cast<gpu::Gpu&>(gpu).Caps().limits.maxTextureLayers)) : 2048;
-        const double perLayer = static_cast<double>(std::max(1, tilePx)) * std::max(1, tilePx) * 4.0 * 4.0 / 3.0;
+        const int limit =
+            initialized ? std::max<int>(
+                              1, static_cast<int>(const_cast<gpu::Gpu&>(gpu).Caps().limits.maxTextureLayers))
+                        : 2048;
+        const double perLayer =
+            static_cast<double>(std::max(1, tilePx)) * std::max(1, tilePx) * 4.0 * 4.0 / 3.0;
         const double budget = 1.3e9;
         return std::max(256, std::min(limit, static_cast<int>(budget / perLayer)));
     }
@@ -133,8 +139,9 @@ namespace perlin {
         const int limit = std::max<int>(1, static_cast<int>(gpu.Caps().limits.maxTextureLayers));
         const int layers = std::min(limit, (tiles + 255) / 256 * 256);
         TexRec tex;
-        if (!MakeTexture(tex, static_cast<uint32_t>(tilePx), static_cast<uint32_t>(tilePx), static_cast<uint32_t>(layers),
-                         static_cast<uint32_t>(MipCount(tilePx)), rhi::Format::RGBA8Unorm, gpu::SamplerKind::PointMipClamp, "block atlas")) {
+        if (!MakeTexture(tex, static_cast<uint32_t>(tilePx), static_cast<uint32_t>(tilePx),
+                         static_cast<uint32_t>(layers), static_cast<uint32_t>(MipCount(tilePx)),
+                         rhi::Format::RGBA8Unorm, gpu::SamplerKind::PointMipClamp, "block atlas")) {
             Log("render", "atlas upload failed ({} layers of {}px)", layers, tilePx);
             return;
         }
@@ -145,7 +152,8 @@ namespace perlin {
             const auto mips = BuildTileMips(tilePx, rgba + tileBytes * static_cast<size_t>(tile), stride);
             for (size_t l = 0; l < mips.size(); l++) {
                 const uint32_t w = static_cast<uint32_t>(std::max(1, tilePx >> static_cast<int>(l)));
-                gpu.WriteTexture(tex.handle, static_cast<uint32_t>(tile), 0, 0, w, w, mips[l].data(), 0, static_cast<uint32_t>(l));
+                gpu.WriteTexture(tex.handle, static_cast<uint32_t>(tile), 0, 0, w, w, mips[l].data(), 0,
+                                 static_cast<uint32_t>(l));
             }
         }
         FreeTexture(atlas);
@@ -165,27 +173,33 @@ namespace perlin {
         if (it == animatedTiles.end()) {
             if (animatedTiles.size() > 4096)
                 animatedTiles.clear();
-            it = animatedTiles.emplace(rgba, BuildTileMips(tileSize, rgba, static_cast<size_t>(tileSize) * 4)).first;
+            it = animatedTiles.emplace(rgba, BuildTileMips(tileSize, rgba, static_cast<size_t>(tileSize) * 4))
+                     .first;
         }
         const auto& mips = it->second;
         if (tile < atlasTiles)
-            std::memcpy(atlasSource.data() + static_cast<size_t>(tile) * tileSize * tileSize * 4, mips[0].data(), mips[0].size());
+            std::memcpy(atlasSource.data() + static_cast<size_t>(tile) * tileSize * tileSize * 4,
+                        mips[0].data(), mips[0].size());
         if (jpack)
             jpack->UpdateTile(tile, mips[0].data());
         for (size_t l = 0; l < mips.size(); l++) {
             const uint32_t w = static_cast<uint32_t>(std::max(1, tileSize >> static_cast<int>(l)));
-            gpu.WriteTexture(atlas.handle, static_cast<uint32_t>(tile), 0, 0, w, w, mips[l].data(), 0, static_cast<uint32_t>(l));
+            gpu.WriteTexture(atlas.handle, static_cast<uint32_t>(tile), 0, 0, w, w, mips[l].data(), 0,
+                             static_cast<uint32_t>(l));
         }
     }
 
-    void RenderContext_rhi::UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) {
+    void RenderContext_rhi::UploadSkyTextures(const Texture& sun, const Texture& moon,
+                                              const Texture& clouds) {
         if (!initialized)
             return;
-        const auto create = [&](TexRec& rec, const Texture& texture, gpu::SamplerKind sampler, const char* name) {
+        const auto create = [&](TexRec& rec, const Texture& texture, gpu::SamplerKind sampler,
+                                const char* name) {
             FreeTexture(rec);
             if (texture.width <= 0 || texture.height <= 0)
                 return;
-            if (MakeTexture(rec, static_cast<uint32_t>(texture.width), static_cast<uint32_t>(texture.height), 1, 1, rhi::Format::RGBA8Unorm, sampler, name))
+            if (MakeTexture(rec, static_cast<uint32_t>(texture.width), static_cast<uint32_t>(texture.height),
+                            1, 1, rhi::Format::RGBA8Unorm, sampler, name))
                 gpu.WriteTexture(rec.handle, 0, 0, 0, rec.w, rec.h, texture.pixels.data());
         };
         sunSource = sun;
@@ -196,7 +210,8 @@ namespace perlin {
         create(cloudMapTex, clouds, gpu::SamplerKind::PointRepeat, "cloud map");
         cloudTexture.width = clouds.width;
         cloudTexture.height = clouds.height;
-        cloudTexture.solid.assign(static_cast<size_t>(std::max(0, clouds.width)) * std::max(0, clouds.height), 0);
+        cloudTexture.solid.assign(static_cast<size_t>(std::max(0, clouds.width)) * std::max(0, clouds.height),
+                                  0);
         if (clouds.pixels.size() >= cloudTexture.solid.size() * 4)
             for (size_t i = 0; i < cloudTexture.solid.size(); i++)
                 cloudTexture.solid[i] = clouds.pixels[i * 4 + 3] >= 10 ? 1 : 0;
@@ -212,7 +227,8 @@ namespace perlin {
         for (size_t i = 0; i < flags.size() && i < static_cast<size_t>(kW) * kH; i++)
             rgba[i * 4] = flags[i];
         if (!tileFlagsTex.used)
-            MakeTexture(tileFlagsTex, kW, kH, 1, 1, rhi::Format::RGBA8Unorm, gpu::SamplerKind::PointClamp, "tile flags");
+            MakeTexture(tileFlagsTex, kW, kH, 1, 1, rhi::Format::RGBA8Unorm, gpu::SamplerKind::PointClamp,
+                        "tile flags");
         if (tileFlagsTex.used)
             gpu.WriteTexture(tileFlagsTex.handle, 0, 0, 0, kW, kH, rgba.data());
     }
@@ -224,10 +240,11 @@ namespace perlin {
         const int size = std::max(1, icons.width * 15 / 256);
         std::vector<uint8_t> crop(static_cast<size_t>(size) * size * 4);
         for (int y = 0; y < size; y++)
-            std::memcpy(crop.data() + static_cast<size_t>(y) * size * 4, icons.pixels.data() + static_cast<size_t>(y) * icons.width * 4,
+            std::memcpy(crop.data() + static_cast<size_t>(y) * size * 4,
+                        icons.pixels.data() + static_cast<size_t>(y) * icons.width * 4,
                         static_cast<size_t>(size) * 4);
-        if (MakeTexture(crosshair, static_cast<uint32_t>(size), static_cast<uint32_t>(size), 1, 1, rhi::Format::RGBA8Unorm,
-                        gpu::SamplerKind::PointClamp, "crosshair")) {
+        if (MakeTexture(crosshair, static_cast<uint32_t>(size), static_cast<uint32_t>(size), 1, 1,
+                        rhi::Format::RGBA8Unorm, gpu::SamplerKind::PointClamp, "crosshair")) {
             gpu.WriteTexture(crosshair.handle, 0, 0, 0, crosshair.w, crosshair.h, crop.data());
             crosshairPx = size;
         }
@@ -240,7 +257,8 @@ namespace perlin {
             meshes.Update(false, cx, cz, 16, tess, version);
     }
 
-    void RenderContext_rhi::UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) {
+    void RenderContext_rhi::UpdateLodTile(int tx, int tz, int size, const Tessellator& tess,
+                                          uint64_t version) {
         if (initialized)
             meshes.Update(true, tx, tz, size, tess, version);
     }
@@ -321,7 +339,8 @@ namespace perlin {
         if (javaActive && PERLIN_ENV("PERLIN_JAVA_DBG")) {
             static int m = 0;
             if (m++ < 10)
-                std::fprintf(stderr, "[javadbg] runs layer=%d count=%zu\n", static_cast<int>(layer), runs.size());
+                std::fprintf(stderr, "[javadbg] runs layer=%d count=%zu\n", static_cast<int>(layer),
+                             runs.size());
         }
         if (runs.empty())
             return;
@@ -362,8 +381,9 @@ namespace perlin {
         if (javaActive && PERLIN_ENV("PERLIN_JAVA_DBG")) {
             static int n = 0;
             if (n++ % 300 == 0)
-                std::fprintf(stderr, "[javadbg] draw layer=%d prog=%d runs=%zu pid=%d\n", static_cast<int>(layer),
-                             static_cast<int>(program), runs.size(), ProgramIndex(program));
+                std::fprintf(stderr, "[javadbg] draw layer=%d prog=%d runs=%zu pid=%d\n",
+                             static_cast<int>(layer), static_cast<int>(program), runs.size(),
+                             ProgramIndex(program));
         }
         for (const gpu::ChunkMeshStore::Run& r : runs) {
             const Source vertices{meshes.Vertices(r.page), 0};
@@ -375,8 +395,8 @@ namespace perlin {
             if (q++ < 3) {
                 std::string msg = "[javadbg] solid runs=" + std::to_string(runs.size());
                 for (size_t i = 0; i < runs.size() && i < 6; i++)
-                    msg += " (p" + std::to_string(runs[i].page) + " f" + std::to_string(runs[i].first) + " c" +
-                           std::to_string(runs[i].count) + ")";
+                    msg += " (p" + std::to_string(runs[i].page) + " f" + std::to_string(runs[i].first) +
+                           " c" + std::to_string(runs[i].count) + ")";
                 std::fprintf(stderr, "%s\n", msg.c_str());
             }
         }
@@ -427,7 +447,8 @@ namespace perlin {
                 std::fprintf(stderr, "[javadbg] census chunks=%zu solid=%zu\n", total, solidChunks);
             }
         }
-        meshes.Select(frustum, camX, frame.cameraPosition[1], camZ, chunkCullRadius, caveCulling, frame.timeSeconds);
+        meshes.Select(frustum, camX, frame.cameraPosition[1], camZ, chunkCullRadius, caveCulling,
+                      frame.timeSeconds);
         if (pack) {
             // the pack draws terrain, sky and shadows itself when the frame executes
             jpack->GatherGeometry(camX, camZ);
@@ -483,7 +504,8 @@ namespace perlin {
         }
         {
             const Source indices{fanIdx, 0};
-            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Terrain), {topSky, 0}, &indices, rhi::IndexType::U16, 0, skyFanIndexCount);
+            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Terrain), {topSky, 0}, &indices,
+                   rhi::IndexType::U16, 0, skyFanIndexCount);
         }
 
         // converted pack draws its own horizon glow
@@ -525,11 +547,14 @@ namespace perlin {
             BindTexture("s_sky", moonTex.handle, gpu::SamplerKind::PointClamp);
             DrawState s = drawState(Program::Celestial, gpu::VertexLayout::Texture);
             ApplyMaterial(s, "sun_moon");
-            Submit(View::World, s, {moonVerts, static_cast<uint64_t>(sky.moonPhase) * 4 * sizeof(TextureVertex)}, &quad, rhi::IndexType::U16, 0, 6);
+            Submit(View::World, s,
+                   {moonVerts, static_cast<uint64_t>(sky.moonPhase) * 4 * sizeof(TextureVertex)}, &quad,
+                   rhi::IndexType::U16, 0, 6);
         }
         if (!javaActive && sky.starBrightness > 0.0f) {
             matrix(glm::rotate(celestial, sky.starAngle, glm::vec3(1.0f, 0.0f, 0.0f)));
-            uni.Vec4("u_modulator", sky.starBrightness, sky.starBrightness, sky.starBrightness, sky.starBrightness);
+            uni.Vec4("u_modulator", sky.starBrightness, sky.starBrightness, sky.starBrightness,
+                     sky.starBrightness);
             DrawState s = drawState(Program::Star, gpu::VertexLayout::Position);
             ApplyMaterial(s, "stars");
             const Source indices{starIdx, 0};
@@ -539,7 +564,8 @@ namespace perlin {
             matrix(glm::translate(view, glm::vec3(0.0f, 12.0f, 0.0f)));
             uni.Vec4("u_modulator", 0.0f, 0.0f, 0.0f, 1.0f);
             const Source indices{fanIdx, 0};
-            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Terrain), {bottomSky, 0}, &indices, rhi::IndexType::U16, 0, skyFanIndexCount);
+            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Terrain), {bottomSky, 0}, &indices,
+                   rhi::IndexType::U16, 0, skyFanIndexCount);
         }
         SetMatrix(mvp);
     }
@@ -552,24 +578,29 @@ namespace perlin {
         if (!clouds.enabled || cloudTexture.solid.empty())
             return;
 
-        const CloudFrame now = ComputeCloudFrame(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2], clouds.height,
-                                                 clouds.gameTicks, cloudTexture);
+        const CloudFrame now =
+            ComputeCloudFrame(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2],
+                              clouds.height, clouds.gameTicks, cloudTexture);
         const auto upload = [&](const CloudMesh& mesh, const CloudFrame& builtFor, bool fancy, int range) {
             const uint32_t vertexCount = static_cast<uint32_t>(mesh.vertices.size());
             const uint32_t indexCount = static_cast<uint32_t>(mesh.indices.size());
             if (vertexCount > cloudVertexCapacity) {
                 cloudVb.Destroy(gpu.Dev());
                 cloudVertexCapacity = vertexCount + vertexCount / 4;
-                cloudVb.Create(gpu.Dev(), cloudVertexCapacity, sizeof(TextureVertex), rhi::BufferUsage::Vertex, "cloud vertices");
+                cloudVb.Create(gpu.Dev(), cloudVertexCapacity, sizeof(TextureVertex),
+                               rhi::BufferUsage::Vertex, "cloud vertices");
             }
             if (indexCount > cloudIndexCapacity) {
                 cloudIb.Destroy(gpu.Dev());
                 cloudIndexCapacity = indexCount + indexCount / 4;
-                cloudIb.Create(gpu.Dev(), cloudIndexCapacity, sizeof(uint32_t), rhi::BufferUsage::Index, "cloud indices");
+                cloudIb.Create(gpu.Dev(), cloudIndexCapacity, sizeof(uint32_t), rhi::BufferUsage::Index,
+                               "cloud indices");
             }
             if (vertexCount && indexCount) {
-                gpu.WriteBuffer(cloudVb, 0, mesh.vertices.data(), static_cast<uint64_t>(vertexCount) * sizeof(TextureVertex));
-                gpu.WriteBuffer(cloudIb, 0, mesh.indices.data(), static_cast<uint64_t>(indexCount) * sizeof(uint32_t));
+                gpu.WriteBuffer(cloudVb, 0, mesh.vertices.data(),
+                                static_cast<uint64_t>(vertexCount) * sizeof(TextureVertex));
+                gpu.WriteBuffer(cloudIb, 0, mesh.indices.data(),
+                                static_cast<uint64_t>(indexCount) * sizeof(uint32_t));
             }
             cloudIndexCount = vertexCount && indexCount ? indexCount : 0;
             cloudBuiltFrame = builtFor;
@@ -582,18 +613,20 @@ namespace perlin {
             cloudJobRunning = false;
             upload(mesh, cloudJobFrame, clouds.fancy, clouds.rangeChunks);
         }
-        const bool stale = !cloudBuilt || now.position != cloudBuiltFrame.position || clouds.fancy != cloudBuiltFancy ||
-                           clouds.rangeChunks != cloudBuiltRange;
+        const bool stale = !cloudBuilt || now.position != cloudBuiltFrame.position ||
+                           clouds.fancy != cloudBuiltFancy || clouds.rangeChunks != cloudBuiltRange;
         const bool moved = now.cellX != cloudBuiltFrame.cellX || now.cellZ != cloudBuiltFrame.cellZ;
         if (stale) {
             if (cloudJobRunning) {
                 cloudJob.wait();
                 cloudJobRunning = false;
             }
-            upload(BuildCloudMesh(cloudTexture, now, clouds.fancy, clouds.rangeChunks), now, clouds.fancy, clouds.rangeChunks);
+            upload(BuildCloudMesh(cloudTexture, now, clouds.fancy, clouds.rangeChunks), now, clouds.fancy,
+                   clouds.rangeChunks);
         } else if (moved && !cloudJobRunning) {
             cloudJobFrame = now;
-            cloudJob = std::async(std::launch::async, [tex = cloudTexture, now, fancy = clouds.fancy, range = clouds.rangeChunks] {
+            cloudJob = std::async(std::launch::async, [tex = cloudTexture, now, fancy = clouds.fancy,
+                                                       range = clouds.rangeChunks] {
                 return BuildCloudMesh(tex, now, fancy, range);
             });
             cloudJobRunning = true;
@@ -611,9 +644,14 @@ namespace perlin {
                 d += w;
             return d;
         };
-        const float cellDx = static_cast<float>(wrapDelta(now.cellX - cloudBuiltFrame.cellX, cloudTexture.width)) * kCloudCellSize;
-        const float cellDz = static_cast<float>(wrapDelta(now.cellZ - cloudBuiltFrame.cellZ, cloudTexture.height)) * kCloudCellSize;
-        uni.Vec4("u_cloudOffset", -(now.xInCell + cellDx), now.relativeBottomY, -(now.zInCell + cellDz), 0.0f);
+        const float cellDx =
+            static_cast<float>(wrapDelta(now.cellX - cloudBuiltFrame.cellX, cloudTexture.width)) *
+            kCloudCellSize;
+        const float cellDz =
+            static_cast<float>(wrapDelta(now.cellZ - cloudBuiltFrame.cellZ, cloudTexture.height)) *
+            kCloudCellSize;
+        uni.Vec4("u_cloudOffset", -(now.xInCell + cellDx), now.relativeBottomY, -(now.zInCell + cellDz),
+                 0.0f);
         uni.Set("u_cloudColor", clouds.color, 4);
         SetMatrix(skyMvp);
         DrawState s = Base(Program::Cloud, true, true, rhi::CompareOp::LessEqual);
@@ -621,7 +659,9 @@ namespace perlin {
         s.mask = rhi::ColorMask::RGB;
         ApplyMaterial(s, "clouds");
         if (clouds.fancy)
-            s.cull = cullMode == rhi::CullMode::Back ? rhi::CullMode::Front : cullMode == rhi::CullMode::Front ? rhi::CullMode::Back : rhi::CullMode::None;
+            s.cull = cullMode == rhi::CullMode::Back    ? rhi::CullMode::Front
+                     : cullMode == rhi::CullMode::Front ? rhi::CullMode::Back
+                                                        : rhi::CullMode::None;
         const Source indices{cloudIb.Buffer(), 0};
         Submit(View::Late, s, {cloudVb.Buffer(), 0}, &indices, rhi::IndexType::U32, 0, cloudIndexCount);
         SetMatrix(mvp);

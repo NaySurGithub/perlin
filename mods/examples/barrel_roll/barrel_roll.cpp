@@ -14,27 +14,30 @@ namespace {
     }
 }
 
-PERLIN_PLUGIN(ctx) {
-    ctx.bind<"roll">("Barrel roll", Key::R, [] {
-        auto p = game::player();
-        if (p && p->gliding && !rolling) {
-            rolling = true;
-            elapsed = 0.0f;
-        }
-    });
+struct BarrelRoll : perlin::Plugin {
+    void onEnable(perlin::Context& ctx) override {
+        ctx.bind<"roll">("Barrel roll", Key::R, [] {
+            auto p = game::player();
+            if (p && p->gliding && !rolling) {
+                rolling = true;
+                elapsed = 0.0f;
+            }
+        });
 
-    ctx.on_frame([](const abi::EventFrame& f) {
-        if (!rolling)
-            return;
-        elapsed += f.dt;
-        const float p = elapsed / kDuration;
-        if (p >= 1.0f) {
-            rolling = false;
-            return;
-        }
-        const float angle = 360.0f * ease(p);
-        const float kick = 10.0f * std::sin(p * 3.14159265f);
-        (void)game::camera({.roll = angle, .fovAdd = kick, .ticks = 2});
-        (void)game::model_pose({.yaw = -angle, .ticks = 2});
-    });
-}
+        ctx.on_frame([](const abi::EventFrame& f) {
+            if (!rolling)
+                return;
+            elapsed += f.dt;
+            const float p = elapsed / kDuration;
+            if (p >= 1.0f) {
+                rolling = false;
+                return;
+            }
+            const float angle = 360.0f * ease(p);
+            const float kick = 10.0f * std::sin(p * 3.14159265f);
+            (void)game::camera({.roll = angle, .fovAdd = kick, .ticks = 2});
+            (void)game::model_pose({.yaw = -angle, .ticks = 2});
+        });
+    }
+};
+PERLIN_REGISTER(BarrelRoll)

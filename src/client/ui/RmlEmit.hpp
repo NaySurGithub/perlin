@@ -18,7 +18,7 @@ namespace perlin::ui {
         float clipRatio = 1.0f;
         float r = 1, g = 1, b = 1, alpha = 1;
         bool keepRatio = false;
-        std::string id;  // lets the game update the image without re-emitting
+        std::string id; // lets the game update the image without re-emitting
     };
 
     struct TextStyle {
@@ -26,7 +26,7 @@ namespace perlin::ui {
         float r = 1, g = 1, b = 1, a = 1;
         bool shadow = false;
         bool outline = false;
-        bool ten = false;  // font_type: MinecraftTen
+        bool ten = false; // font_type: MinecraftTen
         std::string align = "left";
         float linePadding = 0;
     };
@@ -35,16 +35,20 @@ namespace perlin::ui {
     public:
         explicit RmlWriter(bool comments) : comments(comments) {}
 
-        void Image(float ax, float ay, float w, float h, int z, const std::string& texture, const ImageStyle& style);
+        void Image(float ax, float ay, float w, float h, int z, const std::string& texture,
+                   const ImageStyle& style);
         void Item(float ax, float ay, float w, float h, int z, const std::string& itemKey, float alpha = 1.0f,
                   bool glint = false);
         void Rect(float ax, float ay, float w, float h, int z, float r, float g, float b, float a);
-        void Text(float ax, float ay, float w, float h, int z, const std::vector<std::string>& lines, const TextStyle& style);
+        void Text(float ax, float ay, float w, float h, int z, const std::vector<std::string>& lines,
+                  const TextStyle& style);
         void Comment(const std::string& text);
-        void Gradient(float ax, float ay, float w, float h, int z, bool vertical, const float c1[4], const float c2[4]);
+        void Gradient(float ax, float ay, float w, float h, int z, bool vertical, const float c1[4],
+                      const float c2[4]);
         void Link(float ax, float ay, float w, float h, int z, const std::string& command);
 
-        void BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll = 0.0f,
+        void BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls,
+                      const std::string& id, bool clip, float scroll = 0.0f,
                       const std::string& extraAttrs = {});
         void EndBox();
 
@@ -68,9 +72,15 @@ namespace perlin::ui {
 
     class RmlEmitter {
     public:
-        void Register(const std::string& name, CustomRenderer renderer) { renderers[name] = std::move(renderer); }
-        std::string Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments);
-        void SetTemplates(std::string hud, std::string chat) { hudTemplate = std::move(hud); chatTemplate = std::move(chat); }
+        void Register(const std::string& name, CustomRenderer renderer) {
+            renderers[name] = std::move(renderer);
+        }
+        std::string Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss,
+                         bool comments);
+        void SetTemplates(std::string hud, std::string chat) {
+            hudTemplate = std::move(hud);
+            chatTemplate = std::move(chat);
+        }
         const std::vector<std::string>& UnknownRenderers() const { return unknown; }
         void SetSlotNamer(std::function<std::string(const LNode&)> namer) { slotNamer = std::move(namer); }
         void SetElements(std::unordered_map<std::string, std::string> map) { elements = std::move(map); }
@@ -78,11 +88,15 @@ namespace perlin::ui {
         float ContentHeight() const { return contentHeight; }
         float ViewportHeight() const { return viewportHeight; }
         // edit_box content for a collection row: typed text, placeholder, and whether the box has focus
-        void SetEditText(std::function<bool(const LNode&, std::string& text, std::string& placeholder, bool& focused)> fn) {
+        void SetEditText(
+            std::function<bool(const LNode&, std::string& text, std::string& placeholder, bool& focused)>
+                fn) {
             editText = std::move(fn);
         }
         // slider tracks of the last emit by command ("k:3"): left edge and usable width, gui pixels
-        const std::unordered_map<std::string, std::pair<float, float>>& SliderTracks() const { return sliderTracks; }
+        const std::unordered_map<std::string, std::pair<float, float>>& SliderTracks() const {
+            return sliderTracks;
+        }
 
     private:
         void Visit(const LNode& n, RmlWriter& out);

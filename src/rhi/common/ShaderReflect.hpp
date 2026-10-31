@@ -6,7 +6,14 @@
 #include <vector>
 
 namespace rhi {
-    enum class ResourceKind : uint8_t { UniformBuffer, StorageBuffer, StorageBufferRW, SampledTexture, StorageTexture, Sampler };
+    enum class ResourceKind : uint8_t {
+        UniformBuffer,
+        StorageBuffer,
+        StorageBufferRW,
+        SampledTexture,
+        StorageTexture,
+        Sampler
+    };
 
     // one resource a source-form shader (wgsl, hlsl, msl) declares, with where its binding number sits in the text so a
     // backend can rewrite it

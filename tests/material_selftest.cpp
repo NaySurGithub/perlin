@@ -61,19 +61,24 @@ int main() {
                base->depthFunc == DepthFunc::Always && base->samplers.size() == 1,
            "base");
     const material::Def* child = db.Find("child");
-    Expect(child && !child->Define("A") && child->Define("B") && child->DepthWrite() && child->blendDst == BlendFactor::One &&
-               child->blendSrc == BlendFactor::SrcAlpha && child->stencil.enabled && child->stencil.ref == 2 &&
+    Expect(child && !child->Define("A") && child->Define("B") && child->DepthWrite() &&
+               child->blendDst == BlendFactor::One && child->blendSrc == BlendFactor::SrcAlpha &&
+               child->stencil.enabled && child->stencil.ref == 2 &&
                child->stencil.func == StencilFunc::Equal && child->stencil.passOp == StencilOp::Replace,
            "child overrides");
     const material::Def* grand = db.Find("grand");
-    Expect(grand && grand->Define("C") && grand->Define("B") && grand->primitive == "Line" && grand->vertexShader == "shaders/x.vertex",
+    Expect(grand && grand->Define("C") && grand->Define("B") && grand->primitive == "Line" &&
+               grand->vertexShader == "shaders/x.vertex",
            "grandchild");
     const material::Def* skinned = db.Variant("child", "skinning");
-    Expect(skinned && skinned->Define("USE_SKINNING") && skinned->NoCull() && skinned->vertexFields.size() == 3, "variant");
+    Expect(skinned && skinned->Define("USE_SKINNING") && skinned->NoCull() &&
+               skinned->vertexFields.size() == 3,
+           "variant");
     const material::Def* baseVariant = db.Variant("base", "skinning");
     Expect(baseVariant && baseVariant->Define("USE_SKINNING") && baseVariant->NoCull(), "base variant");
     const material::Def* unwrapped = db.Find("sun_like");
-    Expect(unwrapped && unwrapped->Define("FANCY") && unwrapped->blendDst == BlendFactor::One, "unwrapped file and list defines");
+    Expect(unwrapped && unwrapped->Define("FANCY") && unwrapped->blendDst == BlendFactor::One,
+           "unwrapped file and list defines");
     Expect(db.Find("late") && db.Find("late")->Define("Z"), "unknown parent tolerated");
 
     material::Db empty;
@@ -88,7 +93,8 @@ int main() {
     sad.InstallBuiltins();
     Expect(sad.Find("clouds") && !sad.Find("clouds")->Blending(), "builtin fast clouds");
     const material::Def* crack = empty.Find("cracks_overlay");
-    Expect(crack && crack->blendSrc == BlendFactor::DstColor && crack->blendDst == BlendFactor::Zero, "builtin cracks");
+    Expect(crack && crack->blendSrc == BlendFactor::DstColor && crack->blendDst == BlendFactor::Zero,
+           "builtin cracks");
     const material::Def* stars = empty.Find("stars");
     Expect(stars && stars->blendSrc == BlendFactor::InvDstColor, "builtin stars");
     const material::Def* add = empty.Find("particles_add");
@@ -107,10 +113,13 @@ int main() {
     Expect(sheep && sheep->sourceFamily == "Entity" && entity::InfoFromDef(*sheep).colorMask,
            "upstream color mask pass");
     Expect(entity::MaterialLibrary::Builtin("entity_glint").glint, "fallback uses source glint pass");
-    Expect(entity::MaterialLibrary::Builtin("creeper").resolved, "legacy entity alias resolves through upstream");
-    Expect(entity::MaterialLibrary::Builtin("unknown_pack_material").blend == entity::MaterialInfo::Blend::AlphaTest,
+    Expect(entity::MaterialLibrary::Builtin("creeper").resolved,
+           "legacy entity alias resolves through upstream");
+    Expect(entity::MaterialLibrary::Builtin("unknown_pack_material").blend ==
+               entity::MaterialInfo::Blend::AlphaTest,
            "unknown entities have a source-backed cutout fallback");
-    empty.AddText(R"MAT({"materials":{"pack_terrain:RenderChunk.Opaque":{"+states":["DisableCulling"]}}})MAT", {});
+    empty.AddText(R"MAT({"materials":{"pack_terrain:RenderChunk.Opaque":{"+states":["DisableCulling"]}}})MAT",
+                  {});
     empty.Resolve();
     empty.InstallBuiltins();
     const material::Def* packTerrain = empty.Find("pack_terrain");
@@ -136,13 +145,15 @@ int main() {
     fromDisk.Resolve();
     fromDisk.InstallBuiltins();
     const material::Def* entity = fromDisk.Find("entity");
-    Expect(entity && entity->Define("X") && entity->Define("USE_OVERLAY") && entity->Define("FANCY"), "directory load with fancy define");
+    Expect(entity && entity->Define("X") && entity->Define("USE_OVERLAY") && entity->Define("FANCY"),
+           "directory load with fancy define");
     Expect(!fromDisk.Find("ST_Standard"), "gameface skipped");
     Expect(fromDisk.Find("clouds") != nullptr, "builtins fill gaps");
     fs::remove_all(dir);
 
     const entity::MaterialInfo info = entity::InfoFromDef(*add);
-    Expect(info.blend == entity::MaterialInfo::Blend::Additive && info.emissive == 2 && !info.depthWrite, "info from def");
+    Expect(info.blend == entity::MaterialInfo::Blend::Additive && info.emissive == 2 && !info.depthWrite,
+           "info from def");
 
     if (failures == 0)
         std::printf("material_selftest OK\n");

@@ -55,19 +55,24 @@ namespace perlin::jshader {
         std::string joined;
         auto commit = [&](std::string entry) {
             size_t a = 0;
-            while (a < entry.size() && std::isspace(static_cast<unsigned char>(entry[a]))) a++;
+            while (a < entry.size() && std::isspace(static_cast<unsigned char>(entry[a])))
+                a++;
             if (a >= entry.size() || entry[a] == '#' || entry[a] == '!')
                 return;
             size_t eq = entry.find_first_of("=:", a);
             size_t sp = entry.find_first_of(" \t", a);
-            size_t sep = std::min(eq == std::string::npos ? entry.size() : eq, sp == std::string::npos ? entry.size() : sp);
+            size_t sep = std::min(eq == std::string::npos ? entry.size() : eq,
+                                  sp == std::string::npos ? entry.size() : sp);
             std::string key = entry.substr(a, sep - a);
             std::string value;
             if (sep < entry.size()) {
                 size_t v = sep;
-                while (v < entry.size() && std::isspace(static_cast<unsigned char>(entry[v]))) v++;
-                if (v < entry.size() && (entry[v] == '=' || entry[v] == ':')) v++;
-                while (v < entry.size() && std::isspace(static_cast<unsigned char>(entry[v]))) v++;
+                while (v < entry.size() && std::isspace(static_cast<unsigned char>(entry[v])))
+                    v++;
+                if (v < entry.size() && (entry[v] == '=' || entry[v] == ':'))
+                    v++;
+                while (v < entry.size() && std::isspace(static_cast<unsigned char>(entry[v])))
+                    v++;
                 value = entry.substr(v);
             }
             while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())))

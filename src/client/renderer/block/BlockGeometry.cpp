@@ -23,8 +23,9 @@ namespace perlin {
     namespace {
         using Mat3 = std::array<std::array<float, 3>, 3>;
 
-
-        Mat3 Identity() { return {{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}}; }
+        Mat3 Identity() {
+            return {{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
+        }
         Mat3 Mul(const Mat3& a, const Mat3& b) {
             Mat3 r{};
             for (int i = 0; i < 3; i++)
@@ -134,7 +135,8 @@ namespace perlin {
             int cmp;
             if (!rhs.empty() && (rhs[0] == '\'' || rhs[0] == '"')) {
                 rhs = rhs.substr(1, rhs.size() >= 2 ? rhs.size() - 2 : 0);
-                const std::string have = sv->kind == BlockPalette::StateValue::String ? sv->s : std::to_string(sv->i);
+                const std::string have =
+                    sv->kind == BlockPalette::StateValue::String ? sv->s : std::to_string(sv->i);
                 cmp = have.compare(rhs);
             } else {
                 double want = rhs == "true" ? 1 : (rhs == "false" ? 0 : std::atof(rhs.c_str()));
@@ -159,12 +161,14 @@ namespace perlin {
             size_t pos = 0;
             while (pos <= cond.size()) {
                 size_t or_ = cond.find("||", pos);
-                const std::string term = cond.substr(pos, or_ == std::string::npos ? std::string::npos : or_ - pos);
+                const std::string term =
+                    cond.substr(pos, or_ == std::string::npos ? std::string::npos : or_ - pos);
                 bool all = true;
                 size_t p = 0;
                 while (p <= term.size()) {
                     size_t and_ = term.find("&&", p);
-                    const std::string atom = term.substr(p, and_ == std::string::npos ? std::string::npos : and_ - p);
+                    const std::string atom =
+                        term.substr(p, and_ == std::string::npos ? std::string::npos : and_ - p);
                     if (!EvalAtom(atom, states)) {
                         all = false;
                         break;
@@ -211,7 +215,8 @@ namespace perlin {
                 for (const json::View c : p.items()) {
                     if (count == 4 || !c.isArray() || c.size() < 3)
                         break;
-                    corner(poly, count++, static_cast<size_t>(c[0].integer(-1)), static_cast<size_t>(c[2].integer(-1)));
+                    corner(poly, count++, static_cast<size_t>(c[0].integer(-1)),
+                           static_cast<size_t>(c[2].integer(-1)));
                 }
                 finish(poly, count);
             }
@@ -235,7 +240,8 @@ namespace perlin {
                 continue;
             const std::string name = entry.path().filename().string();
             const bool isGeo = name.size() >= 9 && name.compare(name.size() - 9, 9, ".geo.json") == 0;
-            const bool isGeometry = name.size() >= 14 && name.compare(name.size() - 14, 14, ".geometry.json") == 0;
+            const bool isGeometry =
+                name.size() >= 14 && name.compare(name.size() - 14, 14, ".geometry.json") == 0;
             if (!isGeo && !isGeometry)
                 continue;
             const auto doc = json::Document::Parse(file::Read(entry.path()), true);
@@ -278,7 +284,10 @@ namespace perlin {
                                 cube.faces[f].has = true;
                                 ReadVec(fv["uv"], cube.faces[f].uv, 2);
                                 ReadVec(fv["uv_size"], cube.faces[f].size, 2);
-                                cube.faces[f].rotation = ((static_cast<int>(std::lround(fv["uv_rotation"].real(0) / 90.0f)) % 4) + 4) % 4;
+                                cube.faces[f].rotation =
+                                    ((static_cast<int>(std::lround(fv["uv_rotation"].real(0) / 90.0f)) % 4) +
+                                     4) %
+                                    4;
                                 cube.faces[f].mat = fv["material_instance"].str();
                             }
                         }
@@ -302,42 +311,43 @@ namespace perlin {
                         addGeometry(m.key, m.value, true);
             }
         }
-    // Blocks that reference the builtin full cube (e.g. pillars with per-face materials) have no
-    // geometry file anywhere; synthesize a unit cube whose faces use the standard material names
-    // so per-face tiles (or the "*" fallback in Bake) resolve.
-    {
-        Geometry full;
-        full.tw = 16;
-        full.th = 16;
-        Bone bone;
-        bone.name = "body";
-        Cube cube;
-        cube.origin[0] = -8;
-        cube.origin[1] = 0;
-        cube.origin[2] = -8;
-        cube.size[0] = 16;
-        cube.size[1] = 16;
-        cube.size[2] = 16;
-        for (int f = 0; f < 6; f++) {
-            cube.faces[f].has = true;
-            cube.faces[f].uv[0] = 0;
-            cube.faces[f].uv[1] = 0;
-            cube.faces[f].size[0] = 16;
-            cube.faces[f].size[1] = 16;
-            cube.faces[f].mat = kFaceNames[f];
+        // Blocks that reference the builtin full cube (e.g. pillars with per-face materials) have no
+        // geometry file anywhere; synthesize a unit cube whose faces use the standard material names
+        // so per-face tiles (or the "*" fallback in Bake) resolve.
+        {
+            Geometry full;
+            full.tw = 16;
+            full.th = 16;
+            Bone bone;
+            bone.name = "body";
+            Cube cube;
+            cube.origin[0] = -8;
+            cube.origin[1] = 0;
+            cube.origin[2] = -8;
+            cube.size[0] = 16;
+            cube.size[1] = 16;
+            cube.size[2] = 16;
+            for (int f = 0; f < 6; f++) {
+                cube.faces[f].has = true;
+                cube.faces[f].uv[0] = 0;
+                cube.faces[f].uv[1] = 0;
+                cube.faces[f].size[0] = 16;
+                cube.faces[f].size[1] = 16;
+                cube.faces[f].mat = kFaceNames[f];
+            }
+            bone.cubes.push_back(std::move(cube));
+            full.bones.push_back(std::move(bone));
+            geometries["minecraft:geometry.full_block"] = std::move(full);
         }
-        bone.cubes.push_back(std::move(cube));
-        full.bones.push_back(std::move(bone));
-        geometries["minecraft:geometry.full_block"] = std::move(full);
-    }
     }
 
-    static bool ParseComponentSet(const json::View comps, const std::unordered_map<std::string, std::string>& terrain,
+    static bool ParseComponentSet(const json::View comps,
+                                  const std::unordered_map<std::string, std::string>& terrain,
                                   const std::string& packRoot, const BlockGeometry::FetchFn& fetch,
                                   std::string& geometryOut, bool& hasGeometry, bool& hasMaterials,
                                   std::unordered_map<std::string, int>& tiles,
-                                  std::unordered_map<std::string, bool>& dimming, bool& hasTransform, float* rot,
-                                  float* trans, float* scale) {
+                                  std::unordered_map<std::string, bool>& dimming, bool& hasTransform,
+                                  float* rot, float* trans, float* scale) {
         const json::View g = comps["minecraft:geometry"];
         if (g.isString()) {
             geometryOut = g.str();
@@ -378,7 +388,7 @@ namespace perlin {
                     if (!m.value.isString())
                         continue;
                     const auto target = tiles.find(m.value.str());
-                    if (target != tiles.end() && !tiles.count(m.key)) {
+                    if (target != tiles.end() && !tiles.contains(m.key)) {
                         tiles[m.key] = target->second;
                         dimming[m.key] = dimming[m.value.str()];
                     }
@@ -423,13 +433,15 @@ namespace perlin {
         return hasGeometry || hasMaterials || hasTransform;
     }
 
-    void BlockGeometry::ScanPack(const std::string& packRoot, const std::string& blocksDir, const FetchFn& fetch) {
+    void BlockGeometry::ScanPack(const std::string& packRoot, const std::string& blocksDir,
+                                 const FetchFn& fetch) {
         LoadGeometries(packRoot + "/models");
         if (geometries.empty())
             return;
 
         std::unordered_map<std::string, std::string> terrain;
-        if (const auto doc = json::Document::Parse(file::Read(packRoot + "/textures/terrain_texture.json"), true)) {
+        if (const auto doc =
+                json::Document::Parse(file::Read(packRoot + "/textures/terrain_texture.json"), true)) {
             const json::View root = doc->root();
             const json::View data = root.contains("texture_data") ? root["texture_data"] : root;
             for (const auto m : data.members()) {
@@ -460,13 +472,15 @@ namespace perlin {
                 continue;
             Block block;
             ParseComponentSet(def["components"], terrain, packRoot, fetch, block.base.geometry,
-                              block.base.hasGeometry, block.base.hasMaterials, block.base.tiles, block.base.dimming,
-                              block.base.hasTransform, block.base.rot, block.base.trans, block.base.scale);
+                              block.base.hasGeometry, block.base.hasMaterials, block.base.tiles,
+                              block.base.dimming, block.base.hasTransform, block.base.rot, block.base.trans,
+                              block.base.scale);
             bool any = block.base.hasGeometry;
             for (const json::View p : def["permutations"].items()) {
                 Components c;
                 if (ParseComponentSet(p["components"], terrain, packRoot, fetch, c.geometry, c.hasGeometry,
-                                      c.hasMaterials, c.tiles, c.dimming, c.hasTransform, c.rot, c.trans, c.scale)) {
+                                      c.hasMaterials, c.tiles, c.dimming, c.hasTransform, c.rot, c.trans,
+                                      c.scale)) {
                     any = any || c.hasGeometry;
                     block.perms.emplace_back(p["condition"].str(), std::move(c));
                 }
@@ -476,8 +490,8 @@ namespace perlin {
             blocks[id] = std::move(block);
             found++;
         }
-        std::printf("[geometry] %s: %zu geometries, %d geometry blocks\n", packRoot.c_str(), geometries.size(),
-                    found);
+        std::printf("[geometry] %s: %zu geometries, %d geometry blocks\n", packRoot.c_str(),
+                    geometries.size(), found);
     }
 
     std::vector<ModelQuad> BlockGeometry::Bake(const Geometry& g, const Components& c) const {
@@ -516,7 +530,8 @@ namespace perlin {
                 const bool rotated = cube.rot[0] != 0 || cube.rot[1] != 0 || cube.rot[2] != 0;
                 const Mat3 cubeRot = rotated ? BedrockRotation(cube.rot) : Identity();
                 // Box UV lays the faces out with whole-pixel sizes.
-                const float w = std::floor(cube.size[0]), h = std::floor(cube.size[1]), d = std::floor(cube.size[2]);
+                const float w = std::floor(cube.size[0]), h = std::floor(cube.size[1]),
+                            d = std::floor(cube.size[2]);
                 for (int f = 0; f < 6; f++) {
                     float u0, v0, u1, v1;
                     std::string mat;
@@ -524,21 +539,56 @@ namespace perlin {
                         const float u = cube.uvBox[0], v = cube.uvBox[1];
                         float fu, fv, fw, fh;
                         switch (f) {
-                        case 1: fu = u + d; fv = v; fw = w; fh = d; break;
-                        case 0: fu = u + d + w; fv = v; fw = w; fh = d; break;
-                        case 2: fu = u + d; fv = v + d; fw = w; fh = h; break;
-                        case 5: fu = u; fv = v + d; fw = d; fh = h; break;
-                        case 3: fu = u + d + w + d; fv = v + d; fw = w; fh = h; break;
-                        default: fu = u + d + w; fv = v + d; fw = d; fh = h; break;
+                        case 1:
+                            fu = u + d;
+                            fv = v;
+                            fw = w;
+                            fh = d;
+                            break;
+                        case 0:
+                            fu = u + d + w;
+                            fv = v;
+                            fw = w;
+                            fh = d;
+                            break;
+                        case 2:
+                            fu = u + d;
+                            fv = v + d;
+                            fw = w;
+                            fh = h;
+                            break;
+                        case 5:
+                            fu = u;
+                            fv = v + d;
+                            fw = d;
+                            fh = h;
+                            break;
+                        case 3:
+                            fu = u + d + w + d;
+                            fv = v + d;
+                            fw = w;
+                            fh = h;
+                            break;
+                        default:
+                            fu = u + d + w;
+                            fv = v + d;
+                            fw = d;
+                            fh = h;
+                            break;
                         }
-                        u0 = fu; v0 = fv; u1 = fu + fw; v1 = fv + fh;
+                        u0 = fu;
+                        v0 = fv;
+                        u1 = fu + fw;
+                        v1 = fv + fh;
                         mat = "*";
                     } else {
                         if (!cube.faces[f].has)
                             continue;
                         const auto& fc = cube.faces[f];
-                        u0 = fc.uv[0]; v0 = fc.uv[1];
-                        u1 = fc.uv[0] + fc.size[0]; v1 = fc.uv[1] + fc.size[1];
+                        u0 = fc.uv[0];
+                        v0 = fc.uv[1];
+                        u1 = fc.uv[0] + fc.size[0];
+                        v1 = fc.uv[1] + fc.size[1];
                         mat = fc.mat.empty() ? "*" : fc.mat;
                     }
                     auto tit = c.tiles.find(mat);
@@ -589,8 +639,10 @@ namespace perlin {
                         q.uv[i][0] = cu[i] * 16.0f / g.tw;
                         q.uv[i][1] = cv[i] * 16.0f / g.th;
                     }
-                    const float e1[3] = {q.pos[1][0] - q.pos[0][0], q.pos[1][1] - q.pos[0][1], q.pos[1][2] - q.pos[0][2]};
-                    const float e2[3] = {q.pos[2][0] - q.pos[0][0], q.pos[2][1] - q.pos[0][1], q.pos[2][2] - q.pos[0][2]};
+                    const float e1[3] = {q.pos[1][0] - q.pos[0][0], q.pos[1][1] - q.pos[0][1],
+                                         q.pos[1][2] - q.pos[0][2]};
+                    const float e2[3] = {q.pos[2][0] - q.pos[0][0], q.pos[2][1] - q.pos[0][1],
+                                         q.pos[2][2] - q.pos[0][2]};
                     const float n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2],
                                         e1[0] * e2[1] - e1[1] * e2[0]};
                     if (std::fabs(n[0]) + std::fabs(n[1]) + std::fabs(n[2]) < 1e-9f)
@@ -599,8 +651,8 @@ namespace perlin {
                     q.shadeDir = q.dir;
                     const int axis = q.dir < 2 ? 1 : (q.dir < 4 ? 2 : 0);
                     const float plane = (q.dir & 1) ? 1.0f : 0.0f;
-                    for (int i = 0; i < 4; i++)
-                        if (std::fabs(q.pos[i][axis] - plane) > 1e-4f)
+                    for (auto& po : q.pos)
+                        if (std::fabs(po[axis] - plane) > 1e-4f)
                             flush = false;
                     if (flush)
                         q.cull = static_cast<int8_t>(q.dir);
@@ -634,9 +686,12 @@ namespace perlin {
                     q.uv[i][0] = u * 16.0f;
                     q.uv[i][1] = (1.0f - v) * 16.0f;
                 }
-                const float e1[3] = {q.pos[1][0] - q.pos[0][0], q.pos[1][1] - q.pos[0][1], q.pos[1][2] - q.pos[0][2]};
-                const float e2[3] = {q.pos[2][0] - q.pos[0][0], q.pos[2][1] - q.pos[0][1], q.pos[2][2] - q.pos[0][2]};
-                const float n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+                const float e1[3] = {q.pos[1][0] - q.pos[0][0], q.pos[1][1] - q.pos[0][1],
+                                     q.pos[1][2] - q.pos[0][2]};
+                const float e2[3] = {q.pos[2][0] - q.pos[0][0], q.pos[2][1] - q.pos[0][1],
+                                     q.pos[2][2] - q.pos[0][2]};
+                const float n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2],
+                                    e1[0] * e2[1] - e1[1] * e2[0]};
                 if (std::fabs(n[0]) + std::fabs(n[1]) + std::fabs(n[2]) < 1e-9f)
                     continue;
                 q.dir = static_cast<uint8_t>(NearestDir(n));
@@ -661,8 +716,9 @@ namespace perlin {
         return EvalCondition(condition, BlockPalette::Instance().States(localId));
     }
 
-    void BlockGeometry::AddCustom(const std::string& name, const std::string& definitionJson, const std::vector<std::string>& packRoots,
-                                  const std::string& textureRoot, const FetchFn& fetch) {
+    void BlockGeometry::AddCustom(const std::string& name, const std::string& definitionJson,
+                                  const std::vector<std::string>& packRoots, const std::string& textureRoot,
+                                  const FetchFn& fetch) {
         const auto doc = json::Document::Parse(definitionJson, true);
         if (!doc)
             return;
@@ -680,7 +736,8 @@ namespace perlin {
             terrainKey = key;
             customTerrain.clear();
             for (const std::string& root : packRoots) {
-                const auto terrainDoc = json::Document::Parse(file::Read(root + "/textures/terrain_texture.json"), true);
+                const auto terrainDoc =
+                    json::Document::Parse(file::Read(root + "/textures/terrain_texture.json"), true);
                 if (!terrainDoc)
                     continue;
                 const json::View troot = terrainDoc->root();
@@ -699,14 +756,16 @@ namespace perlin {
         }
         const json::View root = doc->root();
         Block block;
-        ParseComponentSet(root["components"], customTerrain, textureRoot, fetch, block.base.geometry, block.base.hasGeometry,
-                          block.base.hasMaterials, block.base.tiles, block.base.dimming, block.base.hasTransform, block.base.rot,
-                          block.base.trans, block.base.scale);
+        ParseComponentSet(root["components"], customTerrain, textureRoot, fetch, block.base.geometry,
+                          block.base.hasGeometry, block.base.hasMaterials, block.base.tiles,
+                          block.base.dimming, block.base.hasTransform, block.base.rot, block.base.trans,
+                          block.base.scale);
         bool any = block.base.hasGeometry;
         for (const json::View p : root["permutations"].items()) {
             Components c;
-            if (ParseComponentSet(p["components"], customTerrain, textureRoot, fetch, c.geometry, c.hasGeometry, c.hasMaterials, c.tiles,
-                                  c.dimming, c.hasTransform, c.rot, c.trans, c.scale)) {
+            if (ParseComponentSet(p["components"], customTerrain, textureRoot, fetch, c.geometry,
+                                  c.hasGeometry, c.hasMaterials, c.tiles, c.dimming, c.hasTransform, c.rot,
+                                  c.trans, c.scale)) {
                 any = any || c.hasGeometry;
                 block.perms.emplace_back(p["condition"].str(), std::move(c));
             }
@@ -776,19 +835,25 @@ namespace perlin {
                         {
                             std::lock_guard<std::mutex> reportLock(reportMutex);
                             if (reported.insert(name).second)
-                                Log("perf", "block {} has {} quads; keeping the {} largest", name, entry.quads.size(), kMaxQuadsPerBlock);
+                                Log("perf", "block {} has {} quads; keeping the {} largest", name,
+                                    entry.quads.size(), kMaxQuadsPerBlock);
                         }
                         const auto area = [](const ModelQuad& q) {
-                            const float ax = q.pos[1][0] - q.pos[0][0], ay = q.pos[1][1] - q.pos[0][1], az = q.pos[1][2] - q.pos[0][2];
-                            const float bx = q.pos[3][0] - q.pos[0][0], by = q.pos[3][1] - q.pos[0][1], bz = q.pos[3][2] - q.pos[0][2];
-                            const float cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
+                            const float ax = q.pos[1][0] - q.pos[0][0], ay = q.pos[1][1] - q.pos[0][1],
+                                        az = q.pos[1][2] - q.pos[0][2];
+                            const float bx = q.pos[3][0] - q.pos[0][0], by = q.pos[3][1] - q.pos[0][1],
+                                        bz = q.pos[3][2] - q.pos[0][2];
+                            const float cx = ay * bz - az * by, cy = az * bx - ax * bz,
+                                        cz = ax * by - ay * bx;
                             return cx * cx + cy * cy + cz * cz;
                         };
                         std::vector<size_t> order(entry.quads.size());
                         for (size_t i = 0; i < order.size(); i++)
                             order[i] = i;
-                        std::nth_element(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(kMaxQuadsPerBlock), order.end(),
-                                         [&](size_t l, size_t r) { return area(entry.quads[l]) > area(entry.quads[r]); });
+                        std::nth_element(
+                            order.begin(), order.begin() + static_cast<std::ptrdiff_t>(kMaxQuadsPerBlock),
+                            order.end(),
+                            [&](size_t l, size_t r) { return area(entry.quads[l]) > area(entry.quads[r]); });
                         order.resize(kMaxQuadsPerBlock);
                         std::sort(order.begin(), order.end());
                         std::vector<ModelQuad> kept;

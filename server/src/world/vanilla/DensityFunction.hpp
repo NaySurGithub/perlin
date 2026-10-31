@@ -35,8 +35,34 @@ namespace perlin::server::vanilla {
 
     struct DfNode {
         enum class Op : uint8_t {
-            Constant, Add, Sub, Mul, Div, Min, Max, Abs, Square, Cube, HalfNegative, QuarterNegative, Squeeze, Negate, Clamp, Noise, ShiftA, ShiftB, Shift,
-            Gradient, Lerp, RangeChoice, IntervalSelect, Spline, Pass, Interpolated, OldBlendedNoise, Unsupported
+            Constant,
+            Add,
+            Sub,
+            Mul,
+            Div,
+            Min,
+            Max,
+            Abs,
+            Square,
+            Cube,
+            HalfNegative,
+            QuarterNegative,
+            Squeeze,
+            Negate,
+            Clamp,
+            Noise,
+            ShiftA,
+            ShiftB,
+            Shift,
+            Gradient,
+            Lerp,
+            RangeChoice,
+            IntervalSelect,
+            Spline,
+            Pass,
+            Interpolated,
+            OldBlendedNoise,
+            Unsupported
         };
         Op op = Op::Constant;
         float value = 0;

@@ -12,8 +12,7 @@ namespace rhi {
             size_t at = 0;
             bool ok = true;
 
-            template <class T>
-            T Read() {
+            template <class T> T Read() {
                 T value{};
                 if (at + sizeof(T) > bytes.size()) {
                     ok = false;
@@ -38,9 +37,12 @@ namespace rhi {
 
         uint8_t StageId(ShaderStage stage) {
             switch (stage) {
-            case ShaderStage::Vertex: return 0;
-            case ShaderStage::Fragment: return 1;
-            default: return 2;
+            case ShaderStage::Vertex:
+                return 0;
+            case ShaderStage::Fragment:
+                return 1;
+            default:
+                return 2;
             }
         }
     }
@@ -133,7 +135,8 @@ namespace rhi {
         return nullptr;
     }
 
-    std::span<const uint8_t> ShaderLibrary::Code(const ProgramInfo& program, ShaderStage stage, ShaderTarget target) const {
+    std::span<const uint8_t> ShaderLibrary::Code(const ProgramInfo& program, ShaderStage stage,
+                                                 ShaderTarget target) const {
         const size_t index = static_cast<size_t>(&program - programs.data());
         if (index >= programs.size())
             return {};
@@ -145,22 +148,33 @@ namespace rhi {
 
     ShaderTarget ShaderLibrary::TargetFor(Api api) {
         switch (api) {
-        case Api::Vulkan: return ShaderTarget::SpirV;
-        case Api::D3D12: return ShaderTarget::Dxil;
-        case Api::D3D11: return ShaderTarget::Hlsl;
-        case Api::Metal: return ShaderTarget::Msl;
-        case Api::WebGPU: return ShaderTarget::Wgsl;
-        default: return ShaderTarget::SpirV;
+        case Api::Vulkan:
+            return ShaderTarget::SpirV;
+        case Api::D3D12:
+            return ShaderTarget::Dxil;
+        case Api::D3D11:
+            return ShaderTarget::Hlsl;
+        case Api::Metal:
+            return ShaderTarget::Msl;
+        case Api::WebGPU:
+            return ShaderTarget::Wgsl;
+        default:
+            return ShaderTarget::SpirV;
         }
     }
 
     ShaderFormat ShaderLibrary::FormatFor(ShaderTarget target) {
         switch (target) {
-        case ShaderTarget::Dxil: return ShaderFormat::Dxil;
-        case ShaderTarget::Hlsl: return ShaderFormat::Hlsl;
-        case ShaderTarget::Msl: return ShaderFormat::Msl;
-        case ShaderTarget::Wgsl: return ShaderFormat::Wgsl;
-        default: return ShaderFormat::SpirV;
+        case ShaderTarget::Dxil:
+            return ShaderFormat::Dxil;
+        case ShaderTarget::Hlsl:
+            return ShaderFormat::Hlsl;
+        case ShaderTarget::Msl:
+            return ShaderFormat::Msl;
+        case ShaderTarget::Wgsl:
+            return ShaderFormat::Wgsl;
+        default:
+            return ShaderFormat::SpirV;
         }
     }
 
@@ -169,9 +183,12 @@ namespace rhi {
         if (target == ShaderTarget::SpirV || target == ShaderTarget::Dxil)
             return "main";
         switch (stage) {
-        case ShaderStage::Vertex: return "vsMain";
-        case ShaderStage::Fragment: return "fsMain";
-        default: return "csMain";
+        case ShaderStage::Vertex:
+            return "vsMain";
+        case ShaderStage::Fragment:
+            return "fsMain";
+        default:
+            return "csMain";
         }
     }
 }

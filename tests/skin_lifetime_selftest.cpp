@@ -4,7 +4,10 @@
 
 using namespace perlin::entity;
 static void Check(bool ok, const char* why) {
-    if (!ok) { std::cerr << why << '\n'; std::exit(1); }
+    if (!ok) {
+        std::cerr << why << '\n';
+        std::exit(1);
+    }
 }
 int main() {
     EntityTracker tracker;

@@ -91,8 +91,8 @@ namespace rhi {
     };
 
     // pure policy: deterministic for a given probe, so it is tested without a gpu
-    RenderProfile ChooseProfile(const Probe& probe, const UserChoice& user, const std::vector<KnownFailure>& failures, bool windows,
-                                bool apple);
+    RenderProfile ChooseProfile(const Probe& probe, const UserChoice& user,
+                                const std::vector<KnownFailure>& failures, bool windows, bool apple);
 
     Tier TierFor(const Candidate& c);
     double ScoreCandidate(const Candidate& c, bool windows, bool apple);

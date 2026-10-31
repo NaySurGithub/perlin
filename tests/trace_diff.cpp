@@ -16,90 +16,91 @@ using namespace perlin::physics;
 
 namespace {
 
-struct Facts {
-    double friction = 0.6, hs = 1, vs = 1, fluidH = 0;
-    int flags = 0, surface = 0;
-};
-struct Region {
-    int mn[3], mx[3];
-    Facts facts;
-};
+    struct Facts {
+        double friction = 0.6, hs = 1, vs = 1, fluidH = 0;
+        int flags = 0, surface = 0;
+    };
+    struct Region {
+        int mn[3], mx[3];
+        Facts facts;
+    };
 
-struct TraceWorld : World {
-    Facts base;
-    std::vector<Box> boxes;
-    std::vector<Region> regions;
+    struct TraceWorld : World {
+        Facts base;
+        std::vector<Box> boxes;
+        std::vector<Region> regions;
 
-    BlockShape Query(int x, int y, int z) const override {
-        Facts f = base;
-        for (const Region& r : regions)
-            if (x >= r.mn[0] && x < r.mx[0] && y >= r.mn[1] && y < r.mx[1] && z >= r.mn[2] && z < r.mx[2])
-                f = r.facts;
-        BlockShape s;
-        s.friction = static_cast<float>(f.friction);
-        s.surface = static_cast<uint8_t>(f.surface);
-        if (f.flags & 2) {
-            s.fluid = 1;
-            s.fluidLevel = static_cast<float>(f.fluidH);
-        } else if (f.flags & 4) {
-            s.fluid = 2;
-            s.fluidLevel = static_cast<float>(f.fluidH);
+        BlockShape Query(int x, int y, int z) const override {
+            Facts f = base;
+            for (const Region& r : regions)
+                if (x >= r.mn[0] && x < r.mx[0] && y >= r.mn[1] && y < r.mx[1] && z >= r.mn[2] && z < r.mx[2])
+                    f = r.facts;
+            BlockShape s;
+            s.friction = static_cast<float>(f.friction);
+            s.surface = static_cast<uint8_t>(f.surface);
+            if (f.flags & 2) {
+                s.fluid = 1;
+                s.fluidLevel = static_cast<float>(f.fluidH);
+            } else if (f.flags & 4) {
+                s.fluid = 2;
+                s.fluidLevel = static_cast<float>(f.fluidH);
+            }
+            s.climbable = (f.flags & 1) != 0;
+            s.web = (f.flags & 8) != 0;
+            s.speedFactor = static_cast<float>(f.hs);
+            const Box cell{double(x), double(y), double(z), x + 1.0, y + 1.0, z + 1.0};
+            for (const Box& b : boxes)
+                if (b.Intersects(cell))
+                    s.boxes.push_back(b.Offset(-x, -y, -z));
+            return s;
         }
-        s.climbable = (f.flags & 1) != 0;
-        s.web = (f.flags & 8) != 0;
-        s.speedFactor = static_cast<float>(f.hs);
-        const Box cell{double(x), double(y), double(z), x + 1.0, y + 1.0, z + 1.0};
-        for (const Box& b : boxes)
-            if (b.Intersects(cell))
-                s.boxes.push_back(b.Offset(-x, -y, -z));
-        return s;
+    };
+
+    Facts ReadFacts(std::istringstream& in) {
+        Facts f;
+        in >> f.friction >> f.hs >> f.vs >> f.fluidH >> f.flags >> f.surface;
+        return f;
     }
-};
 
-Facts ReadFacts(std::istringstream& in) {
-    Facts f;
-    in >> f.friction >> f.hs >> f.vs >> f.fluidH >> f.flags >> f.surface;
-    return f;
-}
+    struct Expect {
+        double x, y, z, vx, vy, vz;
+        int og, ch, cv;
+        bool hasBox = false;
+        Box box;
+    };
 
-struct Expect {
-    double x, y, z, vx, vy, vz;
-    int og, ch, cv;
-    bool hasBox = false;
-    Box box;
-};
+    struct FieldStat {
+        double maxErr = 0;
+        int maxTick = -1;
+        int fails = 0;
+    };
 
-struct FieldStat {
-    double maxErr = 0;
-    int maxTick = -1;
-    int fails = 0;
-};
+    constexpr const char* kFields[] = {"x", "y", "z", "vx", "vy", "vz", "onGround", "collideH", "collideV"};
+    constexpr int kNumFields = 9;
 
-constexpr const char* kFields[] = {"x", "y", "z", "vx", "vy", "vz", "onGround", "collideH", "collideV"};
-constexpr int kNumFields = 9;
+    struct ScenarioReport {
+        std::string name;
+        int ticks = 0, failedTicks = 0;
+        int firstFailTick = -1;
+        std::string firstFail;
+        FieldStat field[kNumFields];
+    };
 
-struct ScenarioReport {
-    std::string name;
-    int ticks = 0, failedTicks = 0;
-    int firstFailTick = -1;
-    std::string firstFail;
-    FieldStat field[kNumFields];
-};
+    struct Options {
+        std::string path;
+        bool resync = false, sprintFromActor = true, sneakFromActor = true, exact = false, useSpeed = false,
+             verbose = false;
+        double eps = 1e-5;
+        std::string only, csv;
+    };
 
-struct Options {
-    std::string path;
-    bool resync = false, sprintFromActor = true, sneakFromActor = true, exact = false, useSpeed = false, verbose = false;
-    double eps = 1e-5;
-    std::string only, csv;
-};
-
-int Usage() {
-    std::fprintf(stderr,
-                 "usage: trace_diff <trace.txt> [--resync] [--sprint-from actor|input] [--sneak-from actor|input]\n"
-                 "                  [--use-speed] [--exact]\n"
-                 "                  [--eps E] [--only SUBSTR] [--csv FILE] [--verbose]\n");
-    return 2;
-}
+    int Usage() {
+        std::fprintf(stderr, "usage: trace_diff <trace.txt> [--resync] [--sprint-from actor|input] "
+                             "[--sneak-from actor|input]\n"
+                             "                  [--use-speed] [--exact]\n"
+                             "                  [--eps E] [--only SUBSTR] [--csv FILE] [--verbose]\n");
+        return 2;
+    }
 
 }
 
@@ -108,34 +109,46 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
-        if (a == "--resync") opt.resync = true;
-        else if (a == "--exact") opt.exact = true;
-        else if (a == "--use-speed") opt.useSpeed = true;
-        else if (a == "--verbose") opt.verbose = true;
+        if (a == "--resync")
+            opt.resync = true;
+        else if (a == "--exact")
+            opt.exact = true;
+        else if (a == "--use-speed")
+            opt.useSpeed = true;
+        else if (a == "--verbose")
+            opt.verbose = true;
         else if (a == "--sprint-from") {
             const char* v = next();
-            if (!v) return Usage();
+            if (!v)
+                return Usage();
             opt.sprintFromActor = std::strcmp(v, "input") != 0;
         } else if (a == "--sneak-from") {
             const char* v = next();
-            if (!v) return Usage();
+            if (!v)
+                return Usage();
             opt.sneakFromActor = std::strcmp(v, "input") != 0;
         } else if (a == "--eps") {
             const char* v = next();
-            if (!v) return Usage();
+            if (!v)
+                return Usage();
             opt.eps = std::atof(v);
         } else if (a == "--only") {
             const char* v = next();
-            if (!v) return Usage();
+            if (!v)
+                return Usage();
             opt.only = v;
         } else if (a == "--csv") {
             const char* v = next();
-            if (!v) return Usage();
+            if (!v)
+                return Usage();
             opt.csv = v;
-        } else if (!a.empty() && a[0] == '-') return Usage();
-        else opt.path = a;
+        } else if (!a.empty() && a[0] == '-')
+            return Usage();
+        else
+            opt.path = a;
     }
-    if (opt.path.empty()) return Usage();
+    if (opt.path.empty())
+        return Usage();
 
     std::ifstream file(opt.path);
     if (!file) {
@@ -179,8 +192,8 @@ int main(int argc, char** argv) {
             std::string name;
             int og = 0, steps = 0, cx = 0, cy = 0, cz = 0;
             state = State{};
-            in >> name >> state.x >> state.y >> state.z >> state.vx >> state.vy >> state.vz >> og >> state.jumpDelay >>
-                steps >> cx >> cy >> cz;
+            in >> name >> state.x >> state.y >> state.z >> state.vx >> state.vy >> state.vz >> og >>
+                state.jumpDelay >> steps >> cx >> cy >> cz;
             float yaw = 0, pitch = 0;
             Box bb;
             if (in >> yaw) {
@@ -207,7 +220,8 @@ int main(int argc, char** argv) {
             int nb = 0, nr = 0, unloaded = 0;
             in >> nb >> nr >> unloaded;
             if (unloaded && rep)
-                std::fprintf(stderr, "warning: %s has unloaded chunks in its world window\n", rep->name.c_str());
+                std::fprintf(stderr, "warning: %s has unloaded chunks in its world window\n",
+                             rep->name.c_str());
         } else if (tag == "B") {
             Box b;
             in >> b.x0 >> b.y0 >> b.z0 >> b.x1 >> b.y1 >> b.z1;
@@ -233,7 +247,8 @@ int main(int argc, char** argv) {
             if (skipping)
                 continue;
             double fwd = 0, strafe = 0, yaw = 0, pitch = 0;
-            int jump = 0, jumpPressed = 0, sprint = 0, sneak = 0, actorSprint = -1, actorSneak = -1, forced = 0;
+            int jump = 0, jumpPressed = 0, sprint = 0, sneak = 0, actorSprint = -1, actorSneak = -1,
+                forced = 0;
             int flying = 0, gliding = 0, swimming = 0, headInWater = 0, creative = 0;
             in >> fwd >> strafe >> yaw >> jump >> jumpPressed >> sprint >> sneak;
             if (in >> pitch >> actorSprint >> actorSneak)
@@ -248,8 +263,8 @@ int main(int argc, char** argv) {
                 input.forward = static_cast<float>(fwd);
                 input.strafe = static_cast<float>(-strafe);
             } else {
-                const MoveVector mv =
-                    ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe), sneak != 0, state.inWater);
+                const MoveVector mv = ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe),
+                                                       sneak != 0, state.inWater);
                 input.forward = mv.forward;
                 input.strafe = mv.strafe;
             }
@@ -293,11 +308,17 @@ int main(int argc, char** argv) {
             int inWater = 0;
             if (in >> inWater >> e.box.x0 >> e.box.y0 >> e.box.z0 >> e.box.x1 >> e.box.y1 >> e.box.z1)
                 e.hasBox = true;
-            const double got[kNumFields] = {state.x,  state.y,  state.z,
-                                            state.vx, state.vy, state.vz,
-                                            double(state.onGround), double(state.horizontalCollision),
+            const double got[kNumFields] = {state.x,
+                                            state.y,
+                                            state.z,
+                                            state.vx,
+                                            state.vy,
+                                            state.vz,
+                                            double(state.onGround),
+                                            double(state.horizontalCollision),
                                             double(state.verticalCollision)};
-            const double want[kNumFields] = {e.x, e.y, e.z, e.vx, e.vy, e.vz, double(e.og), double(e.ch), double(e.cv)};
+            const double want[kNumFields] = {e.x,  e.y,          e.z,          e.vx,        e.vy,
+                                             e.vz, double(e.og), double(e.ch), double(e.cv)};
             const int tick = rep->ticks++;
             bool tickBad = false;
             for (int f = 0; f < kNumFields; f++) {
@@ -317,27 +338,27 @@ int main(int argc, char** argv) {
                     st.fails++;
                     if (!tickBad && rep->firstFailTick < 0) {
                         char buf[512];
-                        std::snprintf(buf, sizeof(buf), "%s perlin %.9f vanilla %.9f (d %+.3e) | input: %s", kFields[f],
-                                      got[f], want[f], got[f] - want[f], lastInput.c_str());
+                        std::snprintf(buf, sizeof(buf), "%s perlin %.9f vanilla %.9f (d %+.3e) | input: %s",
+                                      kFields[f], got[f], want[f], got[f] - want[f], lastInput.c_str());
                         rep->firstFailTick = tick;
                         rep->firstFail = buf;
                     }
                     if (opt.verbose)
-                        std::printf("  %s t%-4d %-8s perlin %.9f vanilla %.9f (d %+.3e)\n", rep->name.c_str(), tick,
-                                    kFields[f], got[f], want[f], got[f] - want[f]);
+                        std::printf("  %s t%-4d %-8s perlin %.9f vanilla %.9f (d %+.3e)\n", rep->name.c_str(),
+                                    tick, kFields[f], got[f], want[f], got[f] - want[f]);
                     tickBad = true;
                 }
             }
             if (tickBad)
                 rep->failedTicks++;
             if (csv) {
-                std::fprintf(csv, "%s,%d,%g,%g,%g,%d,%d,%d,", rep->name.c_str(), tick, input.forward, -input.strafe,
-                             state.yaw, input.jump, input.sprint, input.sneak);
+                std::fprintf(csv, "%s,%d,%g,%g,%g,%d,%d,%d,", rep->name.c_str(), tick, input.forward,
+                             -input.strafe, state.yaw, input.jump, input.sprint, input.sneak);
                 std::fprintf(csv, "%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%d,", e.x, e.y, e.z, e.vx, e.vy, e.vz, e.og);
-                std::fprintf(csv, "%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%d,", state.x, state.y, state.z, state.vx, state.vy,
-                             state.vz, int(state.onGround));
-                std::fprintf(csv, "%.3e,%.3e,%.3e,%.3e,%.3e,%.3e\n", state.x - e.x, state.y - e.y, state.z - e.z,
-                             state.vx - e.vx, state.vy - e.vy, state.vz - e.vz);
+                std::fprintf(csv, "%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%d,", state.x, state.y, state.z, state.vx,
+                             state.vy, state.vz, int(state.onGround));
+                std::fprintf(csv, "%.3e,%.3e,%.3e,%.3e,%.3e,%.3e\n", state.x - e.x, state.y - e.y,
+                             state.z - e.z, state.vx - e.vx, state.vy - e.vy, state.vz - e.vz);
             }
             prev = e;
             havePrev = true;
@@ -357,16 +378,16 @@ int main(int argc, char** argv) {
             continue;
         badScenarios++;
         firstFieldCount[r.firstFail.substr(0, r.firstFail.find(' '))]++;
-        std::printf("FAIL %-28s %4d/%-4d ticks bad, first at t%d: %s\n", r.name.c_str(), r.failedTicks, r.ticks,
-                    r.firstFailTick, r.firstFail.c_str());
+        std::printf("FAIL %-28s %4d/%-4d ticks bad, first at t%d: %s\n", r.name.c_str(), r.failedTicks,
+                    r.ticks, r.firstFailTick, r.firstFail.c_str());
         std::printf("     max err:");
         for (int f = 0; f < kNumFields; f++)
             if (r.field[f].fails)
                 std::printf(" %s=%.2e@t%d", kFields[f], r.field[f].maxErr, r.field[f].maxTick);
         std::printf("\n");
     }
-    std::printf("\n%zu scenarios, %d ticks checked%s: %d ticks diverged in %d scenarios\n", reports.size(), totalTicks,
-                opt.resync ? " (resync)" : "", totalFailed, badScenarios);
+    std::printf("\n%zu scenarios, %d ticks checked%s: %d ticks diverged in %d scenarios\n", reports.size(),
+                totalTicks, opt.resync ? " (resync)" : "", totalFailed, badScenarios);
     if (!firstFieldCount.empty()) {
         std::printf("first diverging field:");
         for (const auto& [f, n] : firstFieldCount)

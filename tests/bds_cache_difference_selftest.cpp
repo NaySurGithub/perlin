@@ -47,11 +47,12 @@ int main(int argc, char** argv) {
         bool equal = actual.size() == expected.size();
         for (size_t i = 0; i < actual.size() && i < expected.size(); ++i)
             for (int axis = 0; axis < 6; ++axis)
-                equal &= std::bit_cast<uint32_t>(actual[i][axis]) == std::bit_cast<uint32_t>(expected[i][axis]);
+                equal &=
+                    std::bit_cast<uint32_t>(actual[i][axis]) == std::bit_cast<uint32_t>(expected[i][axis]);
         if (!equal) {
             if (failures < 20)
-                std::fprintf(stderr, "Cache difference case %d differs from BDS (%zu/%zu boxes)\n",
-                             cases, actual.size(), expected.size());
+                std::fprintf(stderr, "Cache difference case %d differs from BDS (%zu/%zu boxes)\n", cases,
+                             actual.size(), expected.size());
             ++failures;
         }
         ++cases;

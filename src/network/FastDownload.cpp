@@ -164,7 +164,8 @@ namespace perlin::download {
         const uint64_t chunks = (total + chunk - 1) / chunk;
         std::atomic<uint64_t> next{0};
         std::atomic<bool> failed{false};
-        const int workers = static_cast<int>(std::clamp<uint64_t>(chunks, 1, static_cast<uint64_t>(std::max(1, options.connections))));
+        const int workers = static_cast<int>(
+            std::clamp<uint64_t>(chunks, 1, static_cast<uint64_t>(std::max(1, options.connections))));
         auto work = [&] {
             auto cli = MakeClient(dest.origin, options.timeoutSecs);
             std::fstream file(part, std::ios::binary | std::ios::in | std::ios::out);
@@ -187,7 +188,9 @@ namespace perlin::download {
                     file.clear();
                     file.seekp(static_cast<std::streamoff>(begin));
                     httplib::Result res = cli->Get(
-                        dest.path, httplib::Headers{{"Range", "bytes=" + std::to_string(begin) + "-" + std::to_string(end)}},
+                        dest.path,
+                        httplib::Headers{
+                            {"Range", "bytes=" + std::to_string(begin) + "-" + std::to_string(end)}},
                         [&](const httplib::Response& r) {
                             status = r.status;
                             return r.status == 206;
@@ -215,6 +218,7 @@ namespace perlin::download {
             }
         };
         std::vector<std::thread> threads;
+        threads.reserve(workers);
         for (int i = 0; i < workers; i++)
             threads.emplace_back(work);
         for (std::thread& t : threads)
@@ -229,7 +233,11 @@ namespace perlin::download {
 }
 #else
 namespace perlin::download {
-    bool Fetch(const std::string&, const std::filesystem::path&, Progress*, const Options&) { return false; }
-    std::string Resolve(const std::string&, int) { return {}; }
+    bool Fetch(const std::string&, const std::filesystem::path&, Progress*, const Options&) {
+        return false;
+    }
+    std::string Resolve(const std::string&, int) {
+        return {};
+    }
 }
 #endif

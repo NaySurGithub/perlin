@@ -62,7 +62,8 @@ namespace perlin::xbox {
         } g_testEndpoint;
 
         int64_t NowSec() {
-            return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+            return std::chrono::duration_cast<std::chrono::seconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
                 .count();
         }
 
@@ -71,11 +72,21 @@ namespace perlin::xbox {
             out.reserve(s.size() + 2);
             for (char c : s) {
                 switch (c) {
-                case '"': out += "\\\""; break;
-                case '\\': out += "\\\\"; break;
-                case '\n': out += "\\n"; break;
-                case '\r': out += "\\r"; break;
-                case '\t': out += "\\t"; break;
+                case '"':
+                    out += "\\\"";
+                    break;
+                case '\\':
+                    out += "\\\\";
+                    break;
+                case '\n':
+                    out += "\\n";
+                    break;
+                case '\r':
+                    out += "\\r";
+                    break;
+                case '\t':
+                    out += "\\t";
+                    break;
                 default:
                     if (static_cast<unsigned char>(c) < 0x20) {
                         char buf[8];
@@ -88,7 +99,9 @@ namespace perlin::xbox {
             }
             return out;
         }
-        std::string Q(const std::string& s) { return "\"" + Esc(s) + "\""; }
+        std::string Q(const std::string& s) {
+            return "\"" + Esc(s) + "\"";
+        }
 
         std::string UrlEnc(const std::string& s) {
             static const char* hex = "0123456789ABCDEF";
@@ -105,7 +118,9 @@ namespace perlin::xbox {
             return out;
         }
 
-        std::string B64Decode(const std::string& s) { return B64UrlDecode(s); }
+        std::string B64Decode(const std::string& s) {
+            return B64UrlDecode(s);
+        }
 
         struct Url {
             std::string host;
@@ -159,7 +174,6 @@ namespace perlin::xbox {
             return p == pattern.size();
         }
 
-
         void PutBe32(std::string& out, uint32_t v) {
             for (int i = 3; i >= 0; i--)
                 out += static_cast<char>((v >> (i * 8)) & 0xFF);
@@ -180,7 +194,8 @@ namespace perlin::xbox {
         };
 
         std::string Digest(const Policy& policy, const std::string& method, const std::string& path,
-                           const std::vector<std::string>& headerValues, const std::string& body, int64_t unixNanos) {
+                           const std::vector<std::string>& headerValues, const std::string& body,
+                           int64_t unixNanos) {
             std::string data;
             PutBe32(data, policy.version);
             data += '\0';
@@ -202,8 +217,9 @@ namespace perlin::xbox {
             return std::string(reinterpret_cast<char*>(digest), 32);
         }
 
-        std::string SignWith(EC_KEY* key, const Policy& policy, const std::string& method, const std::string& path,
-                             const std::vector<std::string>& headerValues, const std::string& body, int64_t unixNanos) {
+        std::string SignWith(EC_KEY* key, const Policy& policy, const std::string& method,
+                             const std::string& path, const std::vector<std::string>& headerValues,
+                             const std::string& body, int64_t unixNanos) {
             const std::string digest = Digest(policy, method, path, headerValues, body, unixNanos);
             ECDSA_SIG* sig = ECDSA_do_sign(reinterpret_cast<const unsigned char*>(digest.data()), 32, key);
             if (!sig)
@@ -257,14 +273,15 @@ namespace perlin::xbox {
         std::string JwkJson(EC_KEY* key) {
             BIGNUM* x = BN_new();
             BIGNUM* y = BN_new();
-            EC_POINT_get_affine_coordinates(EC_KEY_get0_group(key), EC_KEY_get0_public_key(key), x, y, nullptr);
+            EC_POINT_get_affine_coordinates(EC_KEY_get0_group(key), EC_KEY_get0_public_key(key), x, y,
+                                            nullptr);
             unsigned char xb[32], yb[32];
             BN_bn2binpad(x, xb, 32);
             BN_bn2binpad(y, yb, 32);
             BN_free(x);
             BN_free(y);
-            return "{\"use\":\"sig\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"x\":\"" + B64Url(xb, 32) +
-                   "\",\"y\":\"" + B64Url(yb, 32) + "\"}";
+            return "{\"use\":\"sig\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"x\":\"" +
+                   B64Url(xb, 32) + "\",\"y\":\"" + B64Url(yb, 32) + "\"}";
         }
 
         struct Tok {
@@ -293,17 +310,25 @@ namespace perlin::xbox {
 
         std::string XboxErrorText(uint64_t code) {
             switch (code) {
-            case 2148916227: return "this Xbox account has been banned";
-            case 2148916229: return "an adult must approve this account's online play (Microsoft family settings)";
+            case 2148916227:
+                return "this Xbox account has been banned";
+            case 2148916229:
+                return "an adult must approve this account's online play (Microsoft family settings)";
             case 2148916233:
-                return "this Microsoft account has no Xbox profile yet; sign in once at https://www.xbox.com or in "
+                return "this Microsoft account has no Xbox profile yet; sign in once at https://www.xbox.com "
+                       "or in "
                        "the Minecraft launcher to create one";
-            case 2148916235: return "Xbox Live is not available in your country";
+            case 2148916235:
+                return "Xbox Live is not available in your country";
             case 2148916236:
-            case 2148916237: return "this account needs adult verification before it can use Xbox Live";
-            case 2148916238: return "this account belongs to a child and must be added to a Microsoft family group";
-            case 2148916258: return "this account's Xbox profile needs attention (visit https://account.xbox.com)";
-            default: return "Xbox error " + std::to_string(code);
+            case 2148916237:
+                return "this account needs adult verification before it can use Xbox Live";
+            case 2148916238:
+                return "this account belongs to a child and must be added to a Microsoft family group";
+            case 2148916258:
+                return "this account's Xbox profile needs attention (visit https://account.xbox.com)";
+            default:
+                return "Xbox error " + std::to_string(code);
             }
         }
     }
@@ -314,19 +339,21 @@ namespace perlin::xbox {
                                 size_t maxBodyBytes) {
             Policy policy;
             policy.maxBody = maxBodyBytes;
-            return SignWith(static_cast<EC_KEY*>(ecKeyP256), policy, method, pathAndQuery, {authorization}, body,
-                            unixNanos);
+            return SignWith(static_cast<EC_KEY*>(ecKeyP256), policy, method, pathAndQuery, {authorization},
+                            body, unixNanos);
         }
 
         std::string RequestDigest(const std::string& method, const std::string& pathAndQuery,
-                                  const std::string& authorization, const std::string& body, int64_t unixNanos,
-                                  size_t maxBodyBytes) {
+                                  const std::string& authorization, const std::string& body,
+                                  int64_t unixNanos, size_t maxBodyBytes) {
             Policy policy;
             policy.maxBody = maxBodyBytes;
             return Digest(policy, method, pathAndQuery, {authorization}, body, unixNanos);
         }
 
-        void SetTestEndpoint(const std::string& host, uint16_t port) { g_testEndpoint = {host, port}; }
+        void SetTestEndpoint(const std::string& host, uint16_t port) {
+            g_testEndpoint = {host, port};
+        }
 
         int64_t ParseIsoTime(const std::string& iso) {
             int y, mo, d, h, mi, s;
@@ -417,7 +444,8 @@ namespace perlin::xbox {
 
         int64_t ServerNow() const { return NowSec() + skewSeconds; }
         int64_t ServerNanos() const {
-            return (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
+            return (std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
                         .count()) +
                    skewSeconds * 1000000000LL;
         }
@@ -430,10 +458,11 @@ namespace perlin::xbox {
         }
 
         static http::Response Send(const char* method, const Url& u, const std::string& body,
-                                   const std::string& contentType, const std::map<std::string, std::string>& headers) {
+                                   const std::string& contentType,
+                                   const std::map<std::string, std::string>& headers) {
             if (!g_testEndpoint.host.empty())
-                return http::Request(g_testEndpoint.host, g_testEndpoint.port, false, method, "/" + u.host + u.path, body,
-                                     contentType, headers, 20);
+                return http::Request(g_testEndpoint.host, g_testEndpoint.port, false, method,
+                                     "/" + u.host + u.path, body, contentType, headers, 20);
             return http::Request(u.host, u.port, u.tls, method, u.path, body, contentType, headers, 20);
         }
 
@@ -527,8 +556,8 @@ namespace perlin::xbox {
             return {};
         }
 
-        http::Response PostSigned(const Url& u, const std::string& body, std::map<std::string, std::string> headers,
-                                  const Policy& policy) {
+        http::Response PostSigned(const Url& u, const std::string& body,
+                                  std::map<std::string, std::string> headers, const Policy& policy) {
             headers["User-Agent"] = kUserAgent;
             auto find = [&](const std::string& name) -> std::string {
                 for (auto& [k, v] : headers)
@@ -549,7 +578,8 @@ namespace perlin::xbox {
             int64_t expiresIn = 0;
         };
 
-        bool ReadMsa(const http::Response& r, MsaTokens& out, std::string& errorCode, std::string& errorText) {
+        bool ReadMsa(const http::Response& r, MsaTokens& out, std::string& errorCode,
+                     std::string& errorText) {
             auto doc = json::Document::Parse(r.body);
             if (!doc) {
                 errorText = NetworkError(r, "login.live.com");
@@ -563,7 +593,8 @@ namespace perlin::xbox {
                 return true;
             }
             errorCode = root["error"].str();
-            errorText = root["error_description"].str(errorCode.empty() ? NetworkError(r, "login.live.com") : errorCode);
+            errorText = root["error_description"].str(errorCode.empty() ? NetworkError(r, "login.live.com")
+                                                                        : errorCode);
             return false;
         }
 
@@ -572,10 +603,11 @@ namespace perlin::xbox {
                 return false;
             Url u;
             ParseUrl("https://login.live.com/oauth20_token.srf", u);
-            const http::Response r = Post(u,
-                                          "grant_type=refresh_token&refresh_token=" + UrlEnc(cache.refreshToken) +
-                                              "&scope=" + UrlEnc(kMsaScope) + "&client_id=" + kMsaClientId,
-                                          "application/x-www-form-urlencoded", {{"User-Agent", kUserAgent}});
+            const http::Response r =
+                Post(u,
+                     "grant_type=refresh_token&refresh_token=" + UrlEnc(cache.refreshToken) +
+                         "&scope=" + UrlEnc(kMsaScope) + "&client_id=" + kMsaClientId,
+                     "application/x-www-form-urlencoded", {{"User-Agent", kUserAgent}});
             MsaTokens t;
             std::string code;
             if (!ReadMsa(r, t, code, error)) {
@@ -621,8 +653,8 @@ namespace perlin::xbox {
                     return false;
                 }
                 r = Post(u,
-                         "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=" + UrlEnc(deviceCode) +
-                             "&client_id=" + kMsaClientId,
+                         "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=" +
+                             UrlEnc(deviceCode) + "&client_id=" + kMsaClientId,
                          "application/x-www-form-urlencoded", {{"User-Agent", kUserAgent}});
                 MsaTokens t;
                 std::string code, text;
@@ -683,9 +715,13 @@ namespace perlin::xbox {
             if (cache.deviceId.empty())
                 cache.deviceId = "{" + RandomUuid() + "}";
             const std::string body =
-                "{\"RelyingParty\":\"http://auth.xboxlive.com\",\"TokenType\":\"JWT\",\"Properties\":{\"AuthMethod\":"
-                "\"ProofOfPossession\",\"Id\":" + Q(cache.deviceId) + ",\"DeviceType\":\"Android\",\"Version\":\"13\","
-                "\"ProofKey\":" + JwkJson(proofKey) + "}}";
+                "{\"RelyingParty\":\"http://"
+                "auth.xboxlive.com\",\"TokenType\":\"JWT\",\"Properties\":{\"AuthMethod\":"
+                "\"ProofOfPossession\",\"Id\":" +
+                Q(cache.deviceId) +
+                ",\"DeviceType\":\"Android\",\"Version\":\"13\","
+                "\"ProofKey\":" +
+                JwkJson(proofKey) + "}}";
             Url u;
             ParseUrl("https://device.auth.xboxlive.com/device/authenticate", u);
             const http::Response r = PostSigned(u, body, {{"x-xbl-contract-version", "1"}}, Policy{});
@@ -713,11 +749,12 @@ namespace perlin::xbox {
             }
             Url u;
             ParseUrl("https://sisu.xboxlive.com/authorize", u);
-            const std::string body =
-                "{\"AccessToken\":" + Q("t=" + msaAccess) + ",\"AppId\":" + Q(kMsaClientId) +
-                ",\"DeviceToken\":" + Q(device.token) + ",\"Sandbox\":\"RETAIL\",\"UseModernGamertag\":true,"
-                "\"SiteName\":\"user.auth.xboxlive.com\",\"RelyingParty\":\"http://xboxlive.com\",\"ProofKey\":" +
-                JwkJson(proofKey) + "}";
+            const std::string body = "{\"AccessToken\":" + Q("t=" + msaAccess) +
+                                     ",\"AppId\":" + Q(kMsaClientId) + ",\"DeviceToken\":" + Q(device.token) +
+                                     ",\"Sandbox\":\"RETAIL\",\"UseModernGamertag\":true,"
+                                     "\"SiteName\":\"user.auth.xboxlive.com\",\"RelyingParty\":\"http://"
+                                     "xboxlive.com\",\"ProofKey\":" +
+                                     JwkJson(proofKey) + "}";
             const http::Response r = PostSigned(u, body, {}, PolicyFor(u));
             if (r.status != 200) {
                 const auto xerr = r.headers.find("x-err");
@@ -728,7 +765,8 @@ namespace perlin::xbox {
                 return false;
             }
             auto doc = json::Document::Parse(r.body);
-            if (!doc || !ReadTok(doc->root()["TitleToken"], title) || !ReadTok(doc->root()["UserToken"], user)) {
+            if (!doc || !ReadTok(doc->root()["TitleToken"], title) ||
+                !ReadTok(doc->root()["UserToken"], user)) {
                 error = "the Xbox sign-in service returned an unexpected answer";
                 return false;
             }
@@ -739,10 +777,11 @@ namespace perlin::xbox {
         bool Xsts(const std::string& relyingParty, Tok& out, std::string& error) {
             if (!EnsureUserAndTitle(error))
                 return false;
-            const std::string body =
-                "{\"RelyingParty\":" + Q(relyingParty) + ",\"TokenType\":\"JWT\",\"Properties\":{\"SandboxId\":\"RETAIL\","
-                "\"DeviceToken\":" + Q(device.token) + ",\"TitleToken\":" + Q(title.token) + ",\"UserTokens\":[" +
-                Q(user.token) + "]}}";
+            const std::string body = "{\"RelyingParty\":" + Q(relyingParty) +
+                                     ",\"TokenType\":\"JWT\",\"Properties\":{\"SandboxId\":\"RETAIL\","
+                                     "\"DeviceToken\":" +
+                                     Q(device.token) + ",\"TitleToken\":" + Q(title.token) +
+                                     ",\"UserTokens\":[" + Q(user.token) + "]}}";
             Url u;
             ParseUrl("https://xsts.auth.xboxlive.com/xsts/authorize", u);
             const http::Response r = PostSigned(u, body, {{"x-xbl-contract-version", "1"}}, Policy{});
@@ -772,10 +811,12 @@ namespace perlin::xbox {
         ServiceEnv Discover(const std::string& gameVersion) {
             ServiceEnv env;
             Url u;
-            ParseUrl("https://client.discovery.minecraft-services.net/api/v1.0/discovery/MinecraftPE/builds/" +
-                         gameVersion,
-                     u);
-            const http::Response r = Get(u, {{"Content-Type", "application/json"}, {"User-Agent", "libhttpclient/1.0.0.0"}});
+            ParseUrl(
+                "https://client.discovery.minecraft-services.net/api/v1.0/discovery/MinecraftPE/builds/" +
+                    gameVersion,
+                u);
+            const http::Response r =
+                Get(u, {{"Content-Type", "application/json"}, {"User-Agent", "libhttpclient/1.0.0.0"}});
             if (auto doc = r.status == 200 ? json::Document::Parse(r.body) : std::nullopt) {
                 const json::View prod = doc->root()["result"]["serviceEnvironments"]["auth"]["prod"];
                 if (prod["serviceUri"].isString())
@@ -797,7 +838,8 @@ namespace perlin::xbox {
             return env;
         }
 
-        bool PlayFabTicket(const ServiceEnv& env, std::string& ticket, std::string& playFabId, std::string& error) {
+        bool PlayFabTicket(const ServiceEnv& env, std::string& ticket, std::string& playFabId,
+                           std::string& error) {
             Url u;
             ParseUrl("https://" + str::Lower(env.playFabTitle) + ".playfabapi.com/Client/LoginWithXbox", u);
             std::string rp = kPlayFabRelyingParty;
@@ -831,18 +873,22 @@ namespace perlin::xbox {
             Url u;
             ParseUrl(env.serviceUri + "/api/v1.0/session/start", u);
             const std::string sessionBody =
-                "{\"device\":{\"applicationType\":\"MinecraftPE\",\"capabilities\":[],\"gameVersion\":" + Q(gameVersion) +
-                ",\"id\":" + Q(cache.minecraftDeviceId) + ",\"memory\":\"17179869184\",\"platform\":\"Windows10\","
-                "\"playFabTitleId\":" + Q(env.playFabTitle) + ",\"storePlatform\":\"uwp.store\",\"type\":\"Windows10\"},"
-                "\"user\":{\"language\":\"en\",\"languageCode\":\"en-US\",\"regionCode\":\"US\",\"token\":" + Q(ticket) +
-                ",\"tokenType\":\"PlayFab\"}}";
+                "{\"device\":{\"applicationType\":\"MinecraftPE\",\"capabilities\":[],\"gameVersion\":" +
+                Q(gameVersion) + ",\"id\":" + Q(cache.minecraftDeviceId) +
+                ",\"memory\":\"17179869184\",\"platform\":\"Windows10\","
+                "\"playFabTitleId\":" +
+                Q(env.playFabTitle) +
+                ",\"storePlatform\":\"uwp.store\",\"type\":\"Windows10\"},"
+                "\"user\":{\"language\":\"en\",\"languageCode\":\"en-US\",\"regionCode\":\"US\",\"token\":" +
+                Q(ticket) + ",\"tokenType\":\"PlayFab\"}}";
             const std::map<std::string, std::string> common{{"Accept", "application/json"},
-                                                           {"User-Agent", "libhttpclient/1.0.0.0"}};
+                                                            {"User-Agent", "libhttpclient/1.0.0.0"}};
             http::Response r = Post(u, sessionBody, "application/json", common);
             auto doc = json::Document::Parse(r.body);
             if (r.status != 200 || !doc || !doc->root()["result"]["authorizationHeader"].isString()) {
-                error = doc && doc->root()["message"].isString() ? "Minecraft services: " + doc->root()["message"].str()
-                                                                 : NetworkError(r, "the Minecraft authorization service");
+                error = doc && doc->root()["message"].isString()
+                            ? "Minecraft services: " + doc->root()["message"].str()
+                            : NetworkError(r, "the Minecraft authorization service");
                 return false;
             }
             const std::string authorization = doc->root()["result"]["authorizationHeader"].str();
@@ -853,16 +899,18 @@ namespace perlin::xbox {
             r = Post(u, "{\"publicKey\":" + Q(publicKeyB64) + "}", "application/json", headers);
             doc = json::Document::Parse(r.body);
             if (r.status != 200 || !doc || !doc->root()["result"]["signedToken"].isString()) {
-                error = doc && doc->root()["message"].isString() ? "Minecraft services: " + doc->root()["message"].str()
-                                                                 : NetworkError(r, "the Minecraft multiplayer service");
+                error = doc && doc->root()["message"].isString()
+                            ? "Minecraft services: " + doc->root()["message"].str()
+                            : NetworkError(r, "the Minecraft multiplayer service");
                 return false;
             }
             token = doc->root()["result"]["signedToken"].str();
             return true;
         }
 
-        bool ServiceAuthorization(const ServiceEnv& env, const std::string& ticket, const std::string& gameVersion,
-                                  std::string& authorization, std::string& error) {
+        bool ServiceAuthorization(const ServiceEnv& env, const std::string& ticket,
+                                  const std::string& gameVersion, std::string& authorization,
+                                  std::string& error) {
             if (cache.minecraftDeviceId.empty()) {
                 cache.minecraftDeviceId = RandomUuid();
                 SaveCache();
@@ -870,25 +918,31 @@ namespace perlin::xbox {
             Url u;
             ParseUrl(env.serviceUri + "/api/v1.0/session/start", u);
             const std::string sessionBody =
-                "{\"device\":{\"applicationType\":\"MinecraftPE\",\"capabilities\":[],\"gameVersion\":" + Q(gameVersion) +
-                ",\"id\":" + Q(cache.minecraftDeviceId) + ",\"memory\":\"17179869184\",\"platform\":\"Windows10\","
-                "\"playFabTitleId\":" + Q(env.playFabTitle) + ",\"storePlatform\":\"uwp.store\",\"type\":\"Windows10\"},"
-                "\"user\":{\"language\":\"en\",\"languageCode\":\"en-US\",\"regionCode\":\"US\",\"token\":" + Q(ticket) +
-                ",\"tokenType\":\"PlayFab\"}}";
-            const http::Response r = Post(u, sessionBody, "application/json",
-                                          {{"Accept", "application/json"}, {"User-Agent", "libhttpclient/1.0.0.0"}});
+                "{\"device\":{\"applicationType\":\"MinecraftPE\",\"capabilities\":[],\"gameVersion\":" +
+                Q(gameVersion) + ",\"id\":" + Q(cache.minecraftDeviceId) +
+                ",\"memory\":\"17179869184\",\"platform\":\"Windows10\","
+                "\"playFabTitleId\":" +
+                Q(env.playFabTitle) +
+                ",\"storePlatform\":\"uwp.store\",\"type\":\"Windows10\"},"
+                "\"user\":{\"language\":\"en\",\"languageCode\":\"en-US\",\"regionCode\":\"US\",\"token\":" +
+                Q(ticket) + ",\"tokenType\":\"PlayFab\"}}";
+            const http::Response r =
+                Post(u, sessionBody, "application/json",
+                     {{"Accept", "application/json"}, {"User-Agent", "libhttpclient/1.0.0.0"}});
             auto doc = json::Document::Parse(r.body);
             if (r.status != 200 || !doc || !doc->root()["result"]["authorizationHeader"].isString()) {
-                error = doc && doc->root()["message"].isString() ? "Minecraft services: " + doc->root()["message"].str()
-                                                                 : NetworkError(r, "the Minecraft authorization service");
+                error = doc && doc->root()["message"].isString()
+                            ? "Minecraft services: " + doc->root()["message"].str()
+                            : NetworkError(r, "the Minecraft authorization service");
                 return false;
             }
             authorization = doc->root()["result"]["authorizationHeader"].str();
             return true;
         }
 
-        bool LegacyChain(const std::string& publicKeyB64, const std::string& gameVersion, std::string& chainJson,
-                         std::string& gamertag, std::string& xuid, std::string& error) {
+        bool LegacyChain(const std::string& publicKeyB64, const std::string& gameVersion,
+                         std::string& chainJson, std::string& gamertag, std::string& xuid,
+                         std::string& error) {
             Tok xsts;
             if (!Xsts(kMultiplayerRelyingParty, xsts, error))
                 return false;
@@ -905,10 +959,11 @@ namespace perlin::xbox {
             }
             Url u;
             ParseUrl("https://multiplayer.minecraft.net/authentication", u);
-            const http::Response r = Post(u, "{\"identityPublicKey\":" + Q(publicKeyB64) + "}", "application/json",
-                                          {{"User-Agent", "MCPE/Android"},
-                                           {"Client-Version", gameVersion},
-                                           {"Authorization", XblHeader(xsts)}});
+            const http::Response r =
+                Post(u, "{\"identityPublicKey\":" + Q(publicKeyB64) + "}", "application/json",
+                     {{"User-Agent", "MCPE/Android"},
+                      {"Client-Version", gameVersion},
+                      {"Authorization", XblHeader(xsts)}});
             auto doc = r.status == 200 ? json::Document::Parse(r.body) : std::nullopt;
             if (!doc || !doc->root()["chain"].isArray()) {
                 error = NetworkError(r, "multiplayer.minecraft.net");
@@ -941,9 +996,13 @@ namespace perlin::xbox {
     }
     Account::~Account() = default;
 
-    bool Account::HasSavedLogin() const { return !impl->cache.refreshToken.empty(); }
+    bool Account::HasSavedLogin() const {
+        return !impl->cache.refreshToken.empty();
+    }
 
-    void Account::Cancel() { impl->cancelled = true; }
+    void Account::Cancel() {
+        impl->cancelled = true;
+    }
 
     void Account::SignOut(const std::string& cachePath) {
         std::remove(cachePath.c_str());
@@ -1004,7 +1063,8 @@ namespace perlin::xbox {
             return false;
         if (!s.ServiceAuthorization(env, ticket, gameVersion, out.authorization, error))
             return false;
-        const std::string jwt = out.authorization.starts_with("MCToken ") ? out.authorization.substr(8) : out.authorization;
+        const std::string jwt =
+            out.authorization.starts_with("MCToken ") ? out.authorization.substr(8) : out.authorization;
         const size_t a = jwt.find('.');
         const size_t b = a == std::string::npos ? a : jwt.find('.', a + 1);
         if (b != std::string::npos)
@@ -1021,12 +1081,13 @@ namespace perlin::xbox {
         return true;
     }
 
-    bool Account::LoginMinecraft(const std::string& publicKeyB64, const std::string& gameVersion, Credentials& out,
-                                 std::string& error) {
+    bool Account::LoginMinecraft(const std::string& publicKeyB64, const std::string& gameVersion,
+                                 Credentials& out, std::string& error) {
         out = {};
         Impl& s = *impl;
         Log("auth", "contacting Xbox Live...");
-        auto discovery = std::async(std::launch::async, [&s, &gameVersion] { return s.Discover(gameVersion); });
+        auto discovery =
+            std::async(std::launch::async, [&s, &gameVersion] { return s.Discover(gameVersion); });
         std::string ensureError;
         const bool tokensReady = s.EnsureUserAndTitle(ensureError);
         struct Chain {
@@ -1045,7 +1106,8 @@ namespace perlin::xbox {
         const bool playFabOk = s.PlayFabTicket(env, ticket, out.playFabId, error);
         if (playFabOk)
             Log("auth", "PlayFab login ok");
-        const bool tokenOk = playFabOk && s.MinecraftToken(env, ticket, gameVersion, publicKeyB64, out.multiplayerToken, error);
+        const bool tokenOk = playFabOk && s.MinecraftToken(env, ticket, gameVersion, publicKeyB64,
+                                                           out.multiplayerToken, error);
         Chain chain;
         if (chainTask.valid())
             chain = chainTask.get();
@@ -1060,7 +1122,8 @@ namespace perlin::xbox {
         if (chain.ok) {
             out.chainJson = chain.json;
         } else {
-            Log("auth", "legacy certificate chain unavailable: {}", (tokensReady ? chain.error : ensureError));
+            Log("auth", "legacy certificate chain unavailable: {}",
+                (tokensReady ? chain.error : ensureError));
             out.chainJson = "{\"chain\":[]}";
         }
         Log("auth", "signed in as {}", out.gamertag);

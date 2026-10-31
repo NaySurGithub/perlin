@@ -7,7 +7,10 @@
 
 using namespace perlin;
 static void Check(bool ok, const char* why) {
-    if (!ok) { std::cerr << why << '\n'; std::exit(1); }
+    if (!ok) {
+        std::cerr << why << '\n';
+        std::exit(1);
+    }
 }
 int main(int argc, char** argv) {
     Check(argc == 2, "expected palette file");
@@ -27,8 +30,9 @@ int main(int argc, char** argv) {
         for (const auto [key, value] : record[size_t{2}].members()) {
             BlockPalette::StateValue state;
             const auto kind = value[size_t{0}].str();
-            state.kind = kind == "b" ? BlockPalette::StateValue::Bool
-                       : kind == "i" ? BlockPalette::StateValue::Int : BlockPalette::StateValue::String;
+            state.kind = kind == "b"   ? BlockPalette::StateValue::Bool
+                         : kind == "i" ? BlockPalette::StateValue::Int
+                                       : BlockPalette::StateValue::String;
             if (state.kind == BlockPalette::StateValue::String)
                 state.s = value[size_t{1}].str();
             else
@@ -46,7 +50,9 @@ int main(int argc, char** argv) {
     }
     Check(declared.size() == 98, "unexpected 1.26.60 data-driven definitions");
     std::vector<BlockPalette::CustomRun> runs;
-    for (auto& [name, run] : declared) runs.push_back(std::move(run));
+    runs.reserve(declared.size());
+    for (auto& [name, run] : declared)
+        runs.push_back(std::move(run));
     palette.InsertCustomRuns(std::move(runs));
     Check(palette.SequentialAir() == 18894, "declared vanilla definitions did not restore native IDs");
     Check(palette.InternRuntime(18894) == 0, "native air did not resolve");

@@ -56,7 +56,9 @@ namespace perlin {
     };
 
     TexturePack::TexturePack() : impl(std::make_unique<Impl>()) {}
-    TexturePack::~TexturePack() { impl->Reset(); }
+    TexturePack::~TexturePack() {
+        impl->Reset();
+    }
 
     TexturePack& TexturePack::Instance() {
         static TexturePack pack;
@@ -105,7 +107,8 @@ namespace perlin {
     }
 
     namespace {
-        bool OpenLayer(TexturePack::Impl::Layer& layer, const fs::path& source, const std::string& name, std::string& error) {
+        bool OpenLayer(TexturePack::Impl::Layer& layer, const fs::path& source, const std::string& name,
+                       std::string& error) {
             std::error_code ec;
             if (!fs::exists(source, ec)) {
                 error = "no such texture pack: " + source.generic_string();
@@ -137,7 +140,8 @@ namespace perlin {
             entries.reserve(count);
             for (mz_uint i = 0; i < count; i++) {
                 mz_zip_archive_file_stat st;
-                if (!mz_zip_reader_file_stat(&layer.zip, i, &st) || mz_zip_reader_is_file_a_directory(&layer.zip, i))
+                if (!mz_zip_reader_file_stat(&layer.zip, i, &st) ||
+                    mz_zip_reader_is_file_a_directory(&layer.zip, i))
                     continue;
                 std::string path = st.m_filename;
                 std::replace(path.begin(), path.end(), '\\', '/');
@@ -154,7 +158,8 @@ namespace perlin {
             if (!prefixFound)
                 for (const auto& [lower, idx] : entries) {
                     const size_t at = lower.find("textures/");
-                    if (at != std::string::npos && (at == 0 || lower[at - 1] == '/') && (!prefixFound || at < prefix.size())) {
+                    if (at != std::string::npos && (at == 0 || lower[at - 1] == '/') &&
+                        (!prefixFound || at < prefix.size())) {
                         prefix = lower.substr(0, at);
                         prefixFound = true;
                     }
@@ -168,13 +173,16 @@ namespace perlin {
                 if (path.compare(0, prefix.size(), prefix) == 0)
                     layer.index.emplace(path.substr(prefix.size()), idx);
             layer.label = name;
-            layer.java = prefix.size() >= 17 && prefix.compare(prefix.size() - 17, 17, "assets/minecraft/") == 0;
-            Log("textures", "opened {} ({} files{})", name, layer.index.size(), (layer.java ? ", Java Edition" : ""));
+            layer.java =
+                prefix.size() >= 17 && prefix.compare(prefix.size() - 17, 17, "assets/minecraft/") == 0;
+            Log("textures", "opened {} ({} files{})", name, layer.index.size(),
+                (layer.java ? ", Java Edition" : ""));
             return true;
         }
     }
 
-    bool TexturePack::OpenStack(const std::string& packsDir, const std::vector<std::string>& names, std::string& error) {
+    bool TexturePack::OpenStack(const std::string& packsDir, const std::vector<std::string>& names,
+                                std::string& error) {
         std::lock_guard lock(impl->mutex);
         generation++;
         impl->Reset();
@@ -193,7 +201,8 @@ namespace perlin {
     }
 
     bool TexturePack::Open(const std::string& packsDir, const std::string& name, std::string& error) {
-        return OpenStack(packsDir, name.empty() ? std::vector<std::string>{} : std::vector<std::string>{name}, error);
+        return OpenStack(packsDir, name.empty() ? std::vector<std::string>{} : std::vector<std::string>{name},
+                         error);
     }
 
     bool TexturePack::Has(const std::string& rel) const {
@@ -201,22 +210,24 @@ namespace perlin {
         for (const auto& l : impl->layers) {
             if (l->java)
                 for (const javapack::Source& source : javapack::Sources(rel)) {
-                    if (l->zipMode ? (l->zipOpen && l->index.count(str::Lower(source.path)))
+                    if (l->zipMode ? (l->zipOpen && l->index.contains(str::Lower(source.path)))
                                    : (!l->folder.empty() && fs::exists(fs::path(l->folder) / source.path)))
                         return true;
                 }
             if (l->zipMode) {
-                if (l->zipOpen && l->index.count(str::Lower(rel)))
+                if (l->zipOpen && l->index.contains(str::Lower(rel)))
                     return true;
-                if (const size_t dot = rel.find_last_of('.'); l->zipOpen && dot != std::string::npos &&
-                                                               l->index.count(str::Lower(rel.substr(0, dot) + ".texture_set.json")))
+                if (const size_t dot = rel.find_last_of('.');
+                    l->zipOpen && dot != std::string::npos &&
+                    l->index.contains(str::Lower(rel.substr(0, dot) + ".texture_set.json")))
                     return true;
             } else if (!l->folder.empty()) {
                 std::error_code ec;
                 if (fs::exists(fs::path(l->folder) / rel, ec))
                     return true;
-                if (const size_t dot = rel.find_last_of('.'); dot != std::string::npos &&
-                                                               fs::exists(fs::path(l->folder) / (rel.substr(0, dot) + ".texture_set.json"), ec))
+                if (const size_t dot = rel.find_last_of('.');
+                    dot != std::string::npos &&
+                    fs::exists(fs::path(l->folder) / (rel.substr(0, dot) + ".texture_set.json"), ec))
                     return true;
             }
         }
@@ -226,61 +237,65 @@ namespace perlin {
     namespace {
         bool LoadDirect(TexturePack::Impl::Layer* l, const std::string& rel, Texture& out) {
             {
-            if (l->zipMode) {
-                if (!l->zipOpen)
-                    return false;
-                const auto it = l->index.find(str::Lower(rel));
-                if (it == l->index.end()) {
-                    const size_t dot = rel.find_last_of('.');
-                    if (dot == std::string::npos)
+                if (l->zipMode) {
+                    if (!l->zipOpen)
                         return false;
-                    const std::string base = rel.substr(0, dot);
-                    const auto setIt = l->index.find(str::Lower(base + ".texture_set.json"));
-                    if (setIt == l->index.end())
-                        return false;
-                    size_t setSize = 0;
-                    void* setData = mz_zip_reader_extract_to_heap(&l->zip, setIt->second, &setSize, 0);
-                    if (!setData)
-                        return false;
-                    std::string image;
-                    unsigned char rgba[4] = {255, 255, 255, 255};
-                    const bool parsed = TextureSetColor(std::string(static_cast<const char*>(setData), setSize), image, rgba);
-                    mz_free(setData);
-                    if (!parsed)
-                        return false;
-                    if (image.empty()) {
-                        MakeFlatTexture(rgba, 16, out);
-                        return true;
-                    }
-                    const size_t slash = rel.find_last_of('/');
-                    const std::string dir = slash == std::string::npos ? std::string() : rel.substr(0, slash + 1);
-                    for (const char* extension : {".png", ".tga"}) {
-                        const auto imageIt = l->index.find(str::Lower(dir + image + extension));
-                        if (imageIt == l->index.end())
-                            continue;
-                        size_t imageSize = 0;
-                        void* imageData = mz_zip_reader_extract_to_heap(&l->zip, imageIt->second, &imageSize, 0);
-                        if (!imageData)
-                            continue;
-                        const bool loaded = LoadTextureMemory(static_cast<const unsigned char*>(imageData), imageSize, out);
-                        mz_free(imageData);
-                        if (loaded && out.width > 0 && out.height > 0)
+                    const auto it = l->index.find(str::Lower(rel));
+                    if (it == l->index.end()) {
+                        const size_t dot = rel.find_last_of('.');
+                        if (dot == std::string::npos)
+                            return false;
+                        const std::string base = rel.substr(0, dot);
+                        const auto setIt = l->index.find(str::Lower(base + ".texture_set.json"));
+                        if (setIt == l->index.end())
+                            return false;
+                        size_t setSize = 0;
+                        void* setData = mz_zip_reader_extract_to_heap(&l->zip, setIt->second, &setSize, 0);
+                        if (!setData)
+                            return false;
+                        std::string image;
+                        unsigned char rgba[4] = {255, 255, 255, 255};
+                        const bool parsed = TextureSetColor(
+                            std::string(static_cast<const char*>(setData), setSize), image, rgba);
+                        mz_free(setData);
+                        if (!parsed)
+                            return false;
+                        if (image.empty()) {
+                            MakeFlatTexture(rgba, 16, out);
                             return true;
+                        }
+                        const size_t slash = rel.find_last_of('/');
+                        const std::string dir =
+                            slash == std::string::npos ? std::string() : rel.substr(0, slash + 1);
+                        for (const char* extension : {".png", ".tga"}) {
+                            const auto imageIt = l->index.find(str::Lower(dir + image + extension));
+                            if (imageIt == l->index.end())
+                                continue;
+                            size_t imageSize = 0;
+                            void* imageData =
+                                mz_zip_reader_extract_to_heap(&l->zip, imageIt->second, &imageSize, 0);
+                            if (!imageData)
+                                continue;
+                            const bool loaded = LoadTextureMemory(
+                                static_cast<const unsigned char*>(imageData), imageSize, out);
+                            mz_free(imageData);
+                            if (loaded && out.width > 0 && out.height > 0)
+                                return true;
+                        }
+                        return false;
                     }
-                    return false;
+                    size_t size = 0;
+                    void* data = mz_zip_reader_extract_to_heap(&l->zip, it->second, &size, 0);
+                    if (!data)
+                        return false;
+                    const bool ok = LoadTextureMemory(static_cast<const unsigned char*>(data), size, out);
+                    mz_free(data);
+                    if (ok && out.width > 0 && out.height > 0)
+                        return true;
+                } else if (!l->folder.empty()) {
+                    if (LoadTexture(l->folder + "/" + rel, out) && out.width > 0 && out.height > 0)
+                        return true;
                 }
-                size_t size = 0;
-                void* data = mz_zip_reader_extract_to_heap(&l->zip, it->second, &size, 0);
-                if (!data)
-                    return false;
-                const bool ok = LoadTextureMemory(static_cast<const unsigned char*>(data), size, out);
-                mz_free(data);
-                if (ok && out.width > 0 && out.height > 0)
-                    return true;
-            } else if (!l->folder.empty()) {
-                if (LoadTexture(l->folder + "/" + rel, out) && out.width > 0 && out.height > 0)
-                    return true;
-            }
             }
             return false;
         }
@@ -300,7 +315,8 @@ namespace perlin {
                 mz_free(data);
                 return ok && out.width > 0 && out.height > 0;
             }
-            return !l.folder.empty() && LoadTexture(l.folder + "/" + path, out) && out.width > 0 && out.height > 0;
+            return !l.folder.empty() && LoadTexture(l.folder + "/" + path, out) && out.width > 0 &&
+                   out.height > 0;
         }
 
         bool LoadJava(TexturePack::Impl::Layer& l, const std::string& rel, Texture& out) {
@@ -317,8 +333,7 @@ namespace perlin {
         std::lock_guard lock(impl->mutex);
         // packs may ship default skins in legacy 2:1 layout; everything downstream expects square
         const auto finish = [&]() {
-            if (rel.contains("entity/steve") || rel.contains("entity/alex") ||
-                rel.contains("entity/player/"))
+            if (rel.contains("entity/steve") || rel.contains("entity/alex") || rel.contains("entity/player/"))
                 UpgradeLegacySkinTexture(out);
             return true;
         };
@@ -358,7 +373,8 @@ namespace perlin {
         return out;
     }
 
-    std::vector<std::string> TexturePack::ListFiles(const std::string& dirRel, const std::string& suffix) const {
+    std::vector<std::string> TexturePack::ListFiles(const std::string& dirRel,
+                                                    const std::string& suffix) const {
         std::lock_guard lock(impl->mutex);
         std::vector<std::string> out;
         std::string prefix = str::Lower(dirRel);
@@ -366,8 +382,11 @@ namespace perlin {
             prefix += '/';
         const std::string lowerSuffix = str::Lower(suffix);
         const auto matches = [&](const std::string& lowerPath) {
-            return lowerPath.compare(0, prefix.size(), prefix) == 0 && lowerPath.find('/', prefix.size()) == std::string::npos &&
-                   lowerPath.size() >= lowerSuffix.size() && lowerPath.compare(lowerPath.size() - lowerSuffix.size(), lowerSuffix.size(), lowerSuffix) == 0;
+            return lowerPath.compare(0, prefix.size(), prefix) == 0 &&
+                   lowerPath.find('/', prefix.size()) == std::string::npos &&
+                   lowerPath.size() >= lowerSuffix.size() &&
+                   lowerPath.compare(lowerPath.size() - lowerSuffix.size(), lowerSuffix.size(),
+                                     lowerSuffix) == 0;
         };
         for (auto it = impl->layers.rbegin(); it != impl->layers.rend(); ++it) {
             const auto& l = *it;
@@ -379,7 +398,9 @@ namespace perlin {
                 std::error_code ec;
                 for (const auto& entry : fs::directory_iterator(fs::path(l->folder) / dirRel, ec))
                     if (entry.is_regular_file(ec)) {
-                        const std::string rel = (dirRel.empty() || dirRel.back() == '/' ? dirRel : dirRel + "/") + entry.path().filename().string();
+                        const std::string rel =
+                            (dirRel.empty() || dirRel.back() == '/' ? dirRel : dirRel + "/") +
+                            entry.path().filename().string();
                         if (matches(str::Lower(rel)))
                             out.push_back(rel);
                     }

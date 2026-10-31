@@ -6,9 +6,12 @@
 
 namespace perlin::heldbuild {
     namespace {
-        const glm::ivec3 kFaceNormal[6] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+        const glm::ivec3 kFaceNormal[6] = {{0, -1, 0}, {0, 1, 0},  {0, 0, -1},
+                                           {0, 0, 1},  {-1, 0, 0}, {1, 0, 0}};
 
-        bool Contains(const std::string& s, const char* part) { return s.contains(part); }
+        bool Contains(const std::string& s, const char* part) {
+            return s.contains(part);
+        }
     }
 
     int FacingFromVec(glm::vec3 v) {
@@ -21,11 +24,11 @@ namespace perlin::heldbuild {
     }
 
     bool IsSnappable(const std::string& name, const std::vector<physics::Box>& shape) {
-        if (Contains(name, "stairs") || Contains(name, "slab") || Contains(name, "fence") || Contains(name, "_wall") ||
-            Contains(name, "glass_pane") || Contains(name, "iron_bars"))
+        if (Contains(name, "stairs") || Contains(name, "slab") || Contains(name, "fence") ||
+            Contains(name, "_wall") || Contains(name, "glass_pane") || Contains(name, "iron_bars"))
             return true;
-        return shape.size() == 1 && shape[0].x0 <= 1e-6 && shape[0].y0 <= 1e-6 && shape[0].z0 <= 1e-6 && shape[0].x1 >= 1.0 - 1e-6 &&
-               shape[0].y1 >= 1.0 - 1e-6 && shape[0].z1 >= 1.0 - 1e-6;
+        return shape.size() == 1 && shape[0].x0 <= 1e-6 && shape[0].y0 <= 1e-6 && shape[0].z0 <= 1e-6 &&
+               shape[0].x1 >= 1.0 - 1e-6 && shape[0].y1 >= 1.0 - 1e-6 && shape[0].z1 >= 1.0 - 1e-6;
     }
 
     bool SegmentHitsCell(glm::vec3 a, glm::vec3 b, glm::ivec3 cell) {
@@ -83,7 +86,8 @@ namespace perlin::heldbuild {
         return 200;
     }
 
-    std::optional<Target> HeldBuild::Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs, uint64_t simulationTick,
+    std::optional<Target> HeldBuild::Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking,
+                                          uint64_t nowMs, uint64_t simulationTick,
                                           const std::function<bool(glm::ivec3)>& canBuildOver) {
         pendingLine = false;
         if (!active || lastAttemptTick == simulationTick)
@@ -106,12 +110,15 @@ namespace perlin::heldbuild {
         }
 
         // may the repeat go now, and the build line (GameMode::continueBuildBlock)
-        const glm::ivec3 cell = canBuildOver(click.support) ? click.support : click.support + kFaceNormal[std::clamp(click.face, 0, 5)];
+        const glm::ivec3 cell = canBuildOver(click.support)
+                                    ? click.support
+                                    : click.support + kFaceNormal[std::clamp(click.face, 0, 5)];
         const uint64_t deadline = lastBuildMs + Delay(posDelta, sneaking);
         if (deadline >= nowMs)
             return std::nullopt;
         // moving: a late repeat banks at most 180 ms of lost time, so the next isn't instant
-        nextBuildMs = glm::length(posDelta) > 0.0f ? std::max(deadline, nowMs > 180 ? nowMs - 180 : 0) : nowMs;
+        nextBuildMs =
+            glm::length(posDelta) > 0.0f ? std::max(deadline, nowMs > 180 ? nowMs - 180 : 0) : nowMs;
         if (sneaking || !lastSnappable)
             return click;
         if (!hasDirection) {
@@ -131,7 +138,8 @@ namespace perlin::heldbuild {
         return click;
     }
 
-    void HeldBuild::Built(const Target&, glm::ivec3 cell, bool snappable, bool interactive, uint64_t nowMs, bool fromRepeat) {
+    void HeldBuild::Built(const Target&, glm::ivec3 cell, bool snappable, bool interactive, uint64_t nowMs,
+                          bool fromRepeat) {
         if (fromRepeat && pendingLine)
             nextBuild += direction;
         pendingLine = false;

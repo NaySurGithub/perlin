@@ -36,8 +36,10 @@ namespace perlin::server::vanilla {
 
         // a repeatable float in [0, 1) for one block of one blob, independent of how many blocks were looked at before
         float HashFloat(uint64_t key, int x, int y, int z) {
-            const uint64_t h = MixStafford13(key ^ (static_cast<uint64_t>(static_cast<uint32_t>(x)) * 0x9E3779B1ull) ^
-                                             (static_cast<uint64_t>(static_cast<uint32_t>(y)) << 21) ^ (static_cast<uint64_t>(static_cast<uint32_t>(z)) << 42));
+            const uint64_t h =
+                MixStafford13(key ^ (static_cast<uint64_t>(static_cast<uint32_t>(x)) * 0x9E3779B1ull) ^
+                              (static_cast<uint64_t>(static_cast<uint32_t>(y)) << 21) ^
+                              (static_cast<uint64_t>(static_cast<uint32_t>(z)) << 42));
             return static_cast<float>(h >> 40) * 5.9604645E-8f;
         }
 
@@ -56,13 +58,15 @@ namespace perlin::server::vanilla {
             Feature f{d.count, d.discardChanceOnAirExposure, {}};
             for (int r = 0; r < d.replaceCount; r++) {
                 const OreReplaceDef& rd = d.replace[r];
-                f.replace.push_back({c.DefaultBlock(rd.place), c.DefaultBlock(rd.mayReplace0), rd.mayReplace1 ? c.DefaultBlock(rd.mayReplace1) : uint16_t(0xFFFF)});
+                f.replace.push_back({c.DefaultBlock(rd.place), c.DefaultBlock(rd.mayReplace0),
+                                     rd.mayReplace1 ? c.DefaultBlock(rd.mayReplace1) : uint16_t(0xFFFF)});
             }
             features.push_back(std::move(f));
         }
         for (int i = 0; i < kOreRuleCount; i++) {
             const OreRuleDef& d = kOreRules[i];
-            rules.push_back({&d, &features[static_cast<size_t>(d.feature)], MixStafford13(static_cast<uint64_t>(i) * kSilver64 + 0x51ED)});
+            rules.push_back({&d, &features[static_cast<size_t>(d.feature)],
+                             MixStafford13(static_cast<uint64_t>(i) * kSilver64 + 0x51ED)});
         }
     }
 
@@ -78,8 +82,10 @@ namespace perlin::server::vanilla {
             for (int dx = -1; dx <= 1; dx++)
                 for (int dz = -1; dz <= 1; dz++) {
                     const int ox = chunkX + dx, oz = chunkZ + dz;
-                    Stream s(static_cast<uint64_t>(seed) ^ rule.key, static_cast<uint64_t>(static_cast<uint32_t>(ox)) * 341873128712ull +
-                                                                         static_cast<uint64_t>(static_cast<uint32_t>(oz)) * 132897987541ull + rule.key);
+                    Stream s(static_cast<uint64_t>(seed) ^ rule.key,
+                             static_cast<uint64_t>(static_cast<uint32_t>(ox)) * 341873128712ull +
+                                 static_cast<uint64_t>(static_cast<uint32_t>(oz)) * 132897987541ull +
+                                 rule.key);
                     // the chance of the rule running at all in that chunk
                     if (def.scatterDenominator > 1 && s.Below(def.scatterDenominator) >= def.scatterNumerator)
                         continue;
@@ -121,14 +127,20 @@ namespace perlin::server::vanilla {
                         const int biome = biomes[biomeX * 16 + biomeZ];
                         if (!((def.biomeMask[biome >> 6] >> (biome & 63)) & 1))
                             continue;
-                        const uint64_t blobKey = MixStafford13(rule.key ^ MixStafford13(static_cast<uint64_t>(seed) + static_cast<uint64_t>(ox * 16 + lx) * 73856093ull +
-                                                                                           static_cast<uint64_t>(oz * 16 + lz) * 19349663ull +
-                                                                                           static_cast<uint64_t>(ly + 64) * 83492791ull + static_cast<uint64_t>(it)));
+                        const uint64_t blobKey = MixStafford13(
+                            rule.key ^ MixStafford13(static_cast<uint64_t>(seed) +
+                                                     static_cast<uint64_t>(ox * 16 + lx) * 73856093ull +
+                                                     static_cast<uint64_t>(oz * 16 + lz) * 19349663ull +
+                                                     static_cast<uint64_t>(ly + 64) * 83492791ull +
+                                                     static_cast<uint64_t>(it)));
                         for (int i = 0; i < n; i++) {
                             const double r = b.radius[i];
-                            const int minX = static_cast<int>(std::floor(b.cx[i] - r)), maxX = static_cast<int>(std::floor(b.cx[i] + r));
-                            const int minY = static_cast<int>(std::floor(b.cy[i] - r)), maxY = static_cast<int>(std::floor(b.cy[i] + r));
-                            const int minZ = static_cast<int>(std::floor(b.cz[i] - r)), maxZ = static_cast<int>(std::floor(b.cz[i] + r));
+                            const int minX = static_cast<int>(std::floor(b.cx[i] - r)),
+                                      maxX = static_cast<int>(std::floor(b.cx[i] + r));
+                            const int minY = static_cast<int>(std::floor(b.cy[i] - r)),
+                                      maxY = static_cast<int>(std::floor(b.cy[i] + r));
+                            const int minZ = static_cast<int>(std::floor(b.cz[i] - r)),
+                                      maxZ = static_cast<int>(std::floor(b.cz[i] + r));
                             for (int wx = std::max(minX, baseX); wx <= std::min(maxX, baseX + 15); wx++) {
                                 const double ddx = (wx + 0.5 - b.cx[i]) / r;
                                 if (ddx * ddx >= 1.0)
@@ -137,8 +149,11 @@ namespace perlin::server::vanilla {
                                     const double ddz = (wz + 0.5 - b.cz[i]) / r;
                                     if (ddx * ddx + ddz * ddz >= 1.0)
                                         continue;
-                                    uint16_t* col = blocks + static_cast<size_t>(((wx - baseX) * 16 + (wz - baseZ)) * kHeight);
-                                    for (int wy = std::max(minY, kMinY); wy <= std::min(maxY, kMinY + kHeight - 1); wy++) {
+                                    uint16_t* col =
+                                        blocks +
+                                        static_cast<size_t>(((wx - baseX) * 16 + (wz - baseZ)) * kHeight);
+                                    for (int wy = std::max(minY, kMinY);
+                                         wy <= std::min(maxY, kMinY + kHeight - 1); wy++) {
                                         const double ddy = (wy + 0.5 - b.cy[i]) / r;
                                         if (ddx * ddx + ddy * ddy + ddz * ddz >= 1.0)
                                             continue;
@@ -156,10 +171,13 @@ namespace perlin::server::vanilla {
                                             const int lx2 = wx - baseX, lz2 = wz - baseZ, ly2 = wy - kMinY;
                                             bool exposed = false;
                                             const auto air = [&](int ax, int ay, int az) {
-                                                return ax >= 0 && ax < 16 && az >= 0 && az < 16 && ay >= 0 && ay < kHeight &&
-                                                       blocks[static_cast<size_t>((ax * 16 + az) * kHeight + ay)] == 0;
+                                                return ax >= 0 && ax < 16 && az >= 0 && az < 16 && ay >= 0 &&
+                                                       ay < kHeight &&
+                                                       blocks[static_cast<size_t>((ax * 16 + az) * kHeight +
+                                                                                  ay)] == 0;
                                             };
-                                            exposed = air(lx2 - 1, ly2, lz2) || air(lx2 + 1, ly2, lz2) || air(lx2, ly2 - 1, lz2) || air(lx2, ly2 + 1, lz2) ||
+                                            exposed = air(lx2 - 1, ly2, lz2) || air(lx2 + 1, ly2, lz2) ||
+                                                      air(lx2, ly2 - 1, lz2) || air(lx2, ly2 + 1, lz2) ||
                                                       air(lx2, ly2, lz2 - 1) || air(lx2, ly2, lz2 + 1);
                                             if (exposed && HashFloat(blobKey, wx, wy, wz) < feature.discard)
                                                 continue;

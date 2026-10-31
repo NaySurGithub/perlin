@@ -82,23 +82,39 @@ namespace perlin {
                 if (r.fail || depth > 32)
                     return r.fail = true, void();
                 switch (type) {
-                case 1: r.Skip(1); break;
-                case 2: r.Skip(2); break;
-                case 3: r.I32(); break;
-                case 4: r.net ? static_cast<void>(r.Var(10)) : r.Skip(8); break;
-                case 5: r.Skip(4); break;
-                case 6: r.Skip(8); break;
+                case 1:
+                    r.Skip(1);
+                    break;
+                case 2:
+                    r.Skip(2);
+                    break;
+                case 3:
+                    r.I32();
+                    break;
+                case 4:
+                    r.net ? static_cast<void>(r.Var(10)) : r.Skip(8);
+                    break;
+                case 5:
+                    r.Skip(4);
+                    break;
+                case 6:
+                    r.Skip(8);
+                    break;
                 case 7: {
                     const int32_t n = r.I32();
-                    if (n < 0) return r.fail = true, void();
+                    if (n < 0)
+                        return r.fail = true, void();
                     r.Skip(static_cast<size_t>(n));
                     break;
                 }
-                case 8: r.Str(); break;
+                case 8:
+                    r.Str();
+                    break;
                 case 9: {
                     const uint8_t t = r.U8();
                     const int32_t n = r.I32();
-                    if (n < 0) return r.fail = true, void();
+                    if (n < 0)
+                        return r.fail = true, void();
                     depth++;
                     for (int32_t i = 0; i < n && !r.fail; i++)
                         SkipPayload(t);
@@ -119,19 +135,23 @@ namespace perlin {
                 }
                 case 11: {
                     const int32_t n = r.I32();
-                    if (n < 0) return r.fail = true, void();
+                    if (n < 0)
+                        return r.fail = true, void();
                     for (int32_t i = 0; i < n && !r.fail; i++)
                         r.I32();
                     break;
                 }
                 case 12: {
                     const int32_t n = r.I32();
-                    if (n < 0) return r.fail = true, void();
+                    if (n < 0)
+                        return r.fail = true, void();
                     for (int32_t i = 0; i < n && !r.fail; i++)
                         r.net ? static_cast<void>(r.Var(10)) : r.Skip(8);
                     break;
                 }
-                default: r.fail = true; break;
+                default:
+                    r.fail = true;
+                    break;
                 }
             }
 

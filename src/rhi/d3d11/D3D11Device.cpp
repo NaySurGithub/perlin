@@ -14,14 +14,17 @@ namespace rhi::d3d11 {
         constexpr UINT kOptimizeFull = 1u << 15;
 
         bool IsIntegerFormat(Format f) {
-            return f == Format::R8Uint || f == Format::R16Uint || f == Format::R32Uint || f == Format::RG32Uint || f == Format::RGBA32Uint;
+            return f == Format::R8Uint || f == Format::R16Uint || f == Format::R32Uint ||
+                   f == Format::RG32Uint || f == Format::RGBA32Uint;
         }
 
-        int ClassIndex(char c) { return c == 'b' ? 0 : c == 't' ? 1 : c == 's' ? 2 : 3; }
+        int ClassIndex(char c) {
+            return c == 'b' ? 0 : c == 't' ? 1 : c == 's' ? 2 : 3;
+        }
     }
 
-    Device::Device(std::shared_ptr<InstanceState> instance, winrt::com_ptr<IDXGIAdapter1> adapterIn, const AdapterInfo& info,
-                   const DeviceOptions& opts)
+    Device::Device(std::shared_ptr<InstanceState> instance, winrt::com_ptr<IDXGIAdapter1> adapterIn,
+                   const AdapterInfo& info, const DeviceOptions& opts)
         : inst(std::move(instance)), adapter(std::move(adapterIn)), options(opts) {
         caps.adapter = info;
         options.framesInFlight = std::clamp(options.framesInFlight, 1u, 4u);
@@ -66,11 +69,13 @@ namespace rhi::d3d11 {
             if (debug && !(flags & D3D11_CREATE_DEVICE_DEBUG))
                 continue;
             const UINT f = debug ? flags : (flags & ~static_cast<UINT>(D3D11_CREATE_DEVICE_DEBUG));
-            for (const auto& levels : {std::span<const D3D_FEATURE_LEVEL>(both), std::span<const D3D_FEATURE_LEVEL>(only11)}) {
+            for (const auto& levels :
+                 {std::span<const D3D_FEATURE_LEVEL>(both), std::span<const D3D_FEATURE_LEVEL>(only11)}) {
                 device = nullptr;
                 immediate = nullptr;
-                hr = inst->lib.createDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, f, levels.data(), static_cast<UINT>(levels.size()),
-                                            D3D11_SDK_VERSION, device.put(), &got, immediate.put());
+                hr = inst->lib.createDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, f, levels.data(),
+                                            static_cast<UINT>(levels.size()), D3D11_SDK_VERSION, device.put(),
+                                            &got, immediate.put());
                 if (SUCCEEDED(hr))
                     break;
             }
@@ -84,9 +89,11 @@ namespace rhi::d3d11 {
         device1 = device.try_as<ID3D11Device1>();
         if (device1) {
             D3D11_FEATURE_DATA_D3D11_OPTIONS options11{};
-            if (SUCCEEDED(device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &options11, sizeof(options11))))
+            if (SUCCEEDED(
+                    device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &options11, sizeof(options11))))
                 // opt-in only: drivers disagree on offset binding from deferred contexts, so default to copying each range
-                constantOffsetting = options11.ConstantBufferOffsetting != FALSE && std::getenv("PERLIN_D3D11_CB_OFFSET") != nullptr;
+                constantOffsetting = options11.ConstantBufferOffsetting != FALSE &&
+                                     std::getenv("PERLIN_D3D11_CB_OFFSET") != nullptr;
         }
         FillCaps();
         frameFence = CreateFence(0);
@@ -111,7 +118,9 @@ namespace rhi::d3d11 {
         l.maxMsaaSamples = 1;
         for (const UINT samples : {8u, 4u, 2u}) {
             UINT levels = 0;
-            if (SUCCEEDED(device->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, samples, &levels)) && levels > 0) {
+            if (SUCCEEDED(
+                    device->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, samples, &levels)) &&
+                levels > 0) {
                 l.maxMsaaSamples = samples;
                 break;
             }
@@ -122,7 +131,8 @@ namespace rhi::d3d11 {
         f.textureCompressionBC = true;
         f.depthClipControl = true;
         f.drawIndirectFirstInstance = true;
-        f.unifiedMemory = caps.adapter.type == AdapterType::Integrated || caps.adapter.type == AdapterType::Cpu;
+        f.unifiedMemory =
+            caps.adapter.type == AdapterType::Integrated || caps.adapter.type == AdapterType::Cpu;
         f.tearing = inst->tearing;
         // one immediate context: no async compute, no multi draw, no count buffers
         f.multiDrawIndirect = false;
@@ -140,7 +150,8 @@ namespace rhi::d3d11 {
             device->CheckFormatSupport(fm.view, &s);
             FormatUse use = FormatUse::None;
             if (s & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE)
-                use = use | FormatUse::Sampled | (IsIntegerFormat(fmt) ? FormatUse::None : FormatUse::SampledLinear);
+                use = use | FormatUse::Sampled |
+                      (IsIntegerFormat(fmt) ? FormatUse::None : FormatUse::SampledLinear);
             if (s & D3D11_FORMAT_SUPPORT_RENDER_TARGET)
                 use = use | FormatUse::ColorTarget;
             if (s & D3D11_FORMAT_SUPPORT_BLENDABLE)
@@ -160,7 +171,6 @@ namespace rhi::d3d11 {
             caps.formats[i] = use;
         }
     }
-
 
     BufferHandle Device::CreateBuffer(const BufferDesc& desc) {
         Buffer b;
@@ -201,7 +211,8 @@ namespace rhi::d3d11 {
         if (FAILED(device->CreateBuffer(&bd, nullptr, b.main.put())))
             return {};
 
-        if (Has(desc.usage, BufferUsage::Uniform) && constantOffsetting && desc.memory != MemoryClass::Readback) {
+        if (Has(desc.usage, BufferUsage::Uniform) && constantOffsetting &&
+            desc.memory != MemoryClass::Readback) {
             D3D11_BUFFER_DESC cd{};
             cd.ByteWidth = static_cast<UINT>(size);
             cd.Usage = D3D11_USAGE_DEFAULT;
@@ -272,8 +283,9 @@ namespace rhi::d3d11 {
         }
         uint64_t bytes = 0;
         for (uint32_t m = 0; m < t.desc.mips; m++)
-            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) * RowBlocks(desc.format, MipExtent(desc.height, m)) *
-                     LayerCountOf(t.desc) * DepthOf(t.desc);
+            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) *
+                     RowBlocks(desc.format, MipExtent(desc.height, m)) * LayerCountOf(t.desc) *
+                     DepthOf(t.desc);
         stats.textureBytes += bytes * t.desc.samples;
         stats.liveTextures++;
         const TextureHandle h = textures.Alloc(std::move(t));
@@ -317,7 +329,8 @@ namespace rhi::d3d11 {
     BindLayoutHandle Device::CreateBindLayout(const BindLayoutDesc& desc) {
         BindLayout l;
         l.entries.assign(desc.entries.begin(), desc.entries.end());
-        std::sort(l.entries.begin(), l.entries.end(), [](const BindLayoutEntry& a, const BindLayoutEntry& b) { return a.binding < b.binding; });
+        std::sort(l.entries.begin(), l.entries.end(),
+                  [](const BindLayoutEntry& a, const BindLayoutEntry& b) { return a.binding < b.binding; });
         return bindLayouts.Alloc(std::move(l));
     }
 
@@ -364,20 +377,32 @@ namespace rhi::d3d11 {
             stats.liveTextures--;
     }
 
-    void Device::Destroy(SamplerHandle h) { samplers.Free(h); }
-    void Device::Destroy(ShaderHandle h) { shaders.Free(h); }
-    void Device::Destroy(BindLayoutHandle h) { bindLayouts.Free(h); }
+    void Device::Destroy(SamplerHandle h) {
+        samplers.Free(h);
+    }
+    void Device::Destroy(ShaderHandle h) {
+        shaders.Free(h);
+    }
+    void Device::Destroy(BindLayoutHandle h) {
+        bindLayouts.Free(h);
+    }
     void Device::Destroy(BindGroupHandle h) {
         if (bindGroups.Free(h))
             stats.liveBindGroups--;
     }
-    void Device::Destroy(PipelineLayoutHandle h) { pipelineLayouts.Free(h); }
+    void Device::Destroy(PipelineLayoutHandle h) {
+        pipelineLayouts.Free(h);
+    }
     void Device::Destroy(PipelineHandle h) {
         if (pipelines.Free(h))
             stats.livePipelines--;
     }
-    void Device::Destroy(QuerySetHandle h) { queries.Free(h); }
-    void Device::Destroy(FenceHandle h) { fences.Free(h); }
+    void Device::Destroy(QuerySetHandle h) {
+        queries.Free(h);
+    }
+    void Device::Destroy(FenceHandle h) {
+        fences.Free(h);
+    }
 
     const BufferDesc* Device::GetDesc(BufferHandle h) const {
         const Buffer* b = buffers.Get(h);
@@ -406,7 +431,8 @@ namespace rhi::d3d11 {
         auto lock = LockContext();
         immediate->UpdateSubresource(b->main.get(), 0, &box, b->shadow.data() + lo, 0, 0);
         if (b->constant)
-            immediate->CopySubresourceRegion(b->constant.get(), 0, static_cast<UINT>(lo), 0, 0, b->main.get(), 0, &box);
+            immediate->CopySubresourceRegion(b->constant.get(), 0, static_cast<UINT>(lo), 0, 0, b->main.get(),
+                                             0, &box);
     }
 
     void Device::Invalidate(BufferHandle handle, uint64_t, uint64_t) {
@@ -430,14 +456,17 @@ namespace rhi::d3d11 {
             for (uint32_t y = 0; y < p.rows; y++) {
                 const uint64_t at = p.bufferOffset + static_cast<uint64_t>(y) * p.bufferRowPitch;
                 if (at + p.rowBytes <= b->shadow.size())
-                    std::memcpy(b->shadow.data() + at, static_cast<const uint8_t*>(mapped.pData) + static_cast<size_t>(y) * mapped.RowPitch, p.rowBytes);
+                    std::memcpy(b->shadow.data() + at,
+                                static_cast<const uint8_t*>(mapped.pData) +
+                                    static_cast<size_t>(y) * mapped.RowPitch,
+                                p.rowBytes);
             }
             immediate->Unmap(p.staging.get(), 0);
         }
     }
 
-
-    ID3D11ShaderResourceView* Device::SrvOf(Texture& t, const SubresourceRange& range, TextureDim dim, Format format, bool stencil) {
+    ID3D11ShaderResourceView* Device::SrvOf(Texture& t, const SubresourceRange& range, TextureDim dim,
+                                            Format format, bool stencil) {
         const SubresourceRange r = ResolveRange(range, t.desc);
         ViewKey key;
         key.kind = 0;
@@ -452,7 +481,8 @@ namespace rhi::d3d11 {
             return static_cast<ID3D11ShaderResourceView*>(it->second.get());
 
         D3D11_SHADER_RESOURCE_VIEW_DESC d{};
-        d.Format = format == Format::Unknown ? (stencil ? t.formats.stencilView : t.formats.view) : MapFormat(format).view;
+        d.Format = format == Format::Unknown ? (stencil ? t.formats.stencilView : t.formats.view)
+                                             : MapFormat(format).view;
         const bool ms = t.desc.samples > 1;
         switch (dim) {
         case TextureDim::Tex2D:
@@ -565,7 +595,8 @@ namespace rhi::d3d11 {
         D3D11_DEPTH_STENCIL_VIEW_DESC d{};
         d.Format = t.formats.dsv;
         if (readOnly)
-            d.Flags = D3D11_DSV_READ_ONLY_DEPTH | (HasStencil(t.desc.format) ? D3D11_DSV_READ_ONLY_STENCIL : 0);
+            d.Flags =
+                D3D11_DSV_READ_ONLY_DEPTH | (HasStencil(t.desc.format) ? D3D11_DSV_READ_ONLY_STENCIL : 0);
         const bool ms = t.desc.samples > 1;
         const bool array = LayerCountOf(t.desc) > 1 || layer > 0;
         if (ms) {
@@ -658,17 +689,20 @@ namespace rhi::d3d11 {
         t->resource.copy_from(texture);
     }
 
-    void Device::ReleaseBackbuffer(TextureHandle handle) { Destroy(handle); }
-
+    void Device::ReleaseBackbuffer(TextureHandle handle) {
+        Destroy(handle);
+    }
 
     // slang numbers registers by rhi binding and uses spaces for sets; d3d11 has neither, and only 16 sampler slots
-    bool Device::CompileStage(const Shader& sh, const PipelineLayoutDesc& layout, uint32_t stageIndex, std::vector<StageSlot>& slots,
-                              winrt::com_ptr<ID3DBlob>& blob, std::string& error) {
+    bool Device::CompileStage(const Shader& sh, const PipelineLayoutDesc& layout, uint32_t stageIndex,
+                              std::vector<StageSlot>& slots, winrt::com_ptr<ID3DBlob>& blob,
+                              std::string& error) {
         std::vector<const ShaderResource*> resources;
         for (const ShaderResource& r : sh.iface.resources)
             resources.push_back(&r);
         std::sort(resources.begin(), resources.end(), [](const ShaderResource* a, const ShaderResource* b) {
-            return std::tie(a->set, a->binding, a->registerClass) < std::tie(b->set, b->binding, b->registerClass);
+            return std::tie(a->set, a->binding, a->registerClass) <
+                   std::tie(b->set, b->binding, b->registerClass);
         });
 
         const uint32_t limits[4] = {14, 128, 16, stageIndex == kStageCompute ? 64u : 8u};
@@ -705,7 +739,8 @@ namespace rhi::d3d11 {
                     }
                 }
             slots.push_back(s);
-            edits.push_back({r->clauseBegin, r->clauseEnd, std::string("register(") + r->registerClass + std::to_string(s.slot) + ")"});
+            edits.push_back({r->clauseBegin, r->clauseEnd,
+                             std::string("register(") + r->registerClass + std::to_string(s.slot) + ")"});
         }
 
         std::sort(edits.begin(), edits.end(), [](const Edit& a, const Edit& b) { return a.begin > b.begin; });
@@ -713,7 +748,9 @@ namespace rhi::d3d11 {
         for (const Edit& e : edits)
             patched.replace(e.begin, e.end - e.begin, e.text);
 
-        const char* profile = stageIndex == kStageVertex ? "vs_5_0" : stageIndex == kStagePixel ? "ps_5_0" : "cs_5_0";
+        const char* profile = stageIndex == kStageVertex  ? "vs_5_0"
+                              : stageIndex == kStagePixel ? "ps_5_0"
+                                                          : "cs_5_0";
         const std::string key = std::string(profile) + '|' + sh.entry + '|' + patched;
         {
             std::lock_guard lock(shaderCacheMutex);
@@ -727,10 +764,13 @@ namespace rhi::d3d11 {
             return false;
         }
         winrt::com_ptr<ID3DBlob> errors;
-        const HRESULT hr = inst->lib.compile(patched.data(), patched.size(), sh.entry.c_str(), nullptr, nullptr, sh.entry.c_str(), profile,
-                                             kOptimizeFull, 0, blob.put(), errors.put());
+        const HRESULT hr =
+            inst->lib.compile(patched.data(), patched.size(), sh.entry.c_str(), nullptr, nullptr,
+                              sh.entry.c_str(), profile, kOptimizeFull, 0, blob.put(), errors.put());
         if (FAILED(hr)) {
-            error = errors ? std::string(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize()) : "D3DCompile failed";
+            error = errors ? std::string(static_cast<const char*>(errors->GetBufferPointer()),
+                                         errors->GetBufferSize())
+                           : "D3DCompile failed";
             return false;
         }
         std::lock_guard lock(shaderCacheMutex);
@@ -751,12 +791,15 @@ namespace rhi::d3d11 {
         winrt::com_ptr<ID3DBlob> vsBlob, psBlob;
         if (!CompileStage(*vs, layout->desc, kStageVertex, p.stages[kStageVertex], vsBlob, error) ||
             (ps && !CompileStage(*ps, layout->desc, kStagePixel, p.stages[kStagePixel], psBlob, error))) {
-            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") + "): " + error);
+            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") +
+                        "): " + error);
             return {};
         }
-        if (FAILED(device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, p.vs.put())))
+        if (FAILED(device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr,
+                                              p.vs.put())))
             return {};
-        if (psBlob && FAILED(device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, p.ps.put())))
+        if (psBlob && FAILED(device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(),
+                                                       nullptr, p.ps.put())))
             return {};
 
         std::array<D3D11_INPUT_ELEMENT_DESC, kMaxVertexAttributes> elements{};
@@ -768,14 +811,16 @@ namespace rhi::d3d11 {
             e.Format = MapFormat(a.format).view;
             e.InputSlot = a.stream;
             e.AlignedByteOffset = a.offset;
-            const bool instance = a.stream < desc.streamCount && desc.streams[a.stream].step == VertexStep::Instance;
+            const bool instance =
+                a.stream < desc.streamCount && desc.streams[a.stream].step == VertexStep::Instance;
             e.InputSlotClass = instance ? D3D11_INPUT_PER_INSTANCE_DATA : D3D11_INPUT_PER_VERTEX_DATA;
             e.InstanceDataStepRate = instance ? 1 : 0;
         }
         if (desc.attributeCount &&
-            FAILED(device->CreateInputLayout(elements.data(), desc.attributeCount, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(),
-                                             p.inputLayout.put()))) {
-            ReportError(std::string("input layout does not match the vertex shader (") + (desc.name ? desc.name : "?") + ")");
+            FAILED(device->CreateInputLayout(elements.data(), desc.attributeCount, vsBlob->GetBufferPointer(),
+                                             vsBlob->GetBufferSize(), p.inputLayout.put()))) {
+            ReportError(std::string("input layout does not match the vertex shader (") +
+                        (desc.name ? desc.name : "?") + ")");
             return {};
         }
         p.streamCount = desc.streamCount;
@@ -785,7 +830,9 @@ namespace rhi::d3d11 {
 
         D3D11_RASTERIZER_DESC rd{};
         rd.FillMode = desc.raster.wireframe ? D3D11_FILL_WIREFRAME : D3D11_FILL_SOLID;
-        rd.CullMode = desc.raster.cull == CullMode::None ? D3D11_CULL_NONE : desc.raster.cull == CullMode::Back ? D3D11_CULL_BACK : D3D11_CULL_FRONT;
+        rd.CullMode = desc.raster.cull == CullMode::None   ? D3D11_CULL_NONE
+                      : desc.raster.cull == CullMode::Back ? D3D11_CULL_BACK
+                                                           : D3D11_CULL_FRONT;
         rd.FrontCounterClockwise = desc.raster.frontFace == FrontFace::CounterClockwise;
         rd.DepthBias = static_cast<INT>(std::lround(desc.raster.depthBiasConstant));
         rd.DepthBiasClamp = desc.raster.depthBiasClamp;
@@ -805,8 +852,10 @@ namespace rhi::d3d11 {
         dd.StencilEnable = hasDepth && ds.stencilTest;
         dd.StencilReadMask = ds.stencilReadMask;
         dd.StencilWriteMask = ds.stencilWriteMask;
-        dd.FrontFace = {ToD3D(ds.front.fail), ToD3D(ds.front.depthFail), ToD3D(ds.front.pass), ToD3D(ds.front.compare)};
-        dd.BackFace = {ToD3D(ds.back.fail), ToD3D(ds.back.depthFail), ToD3D(ds.back.pass), ToD3D(ds.back.compare)};
+        dd.FrontFace = {ToD3D(ds.front.fail), ToD3D(ds.front.depthFail), ToD3D(ds.front.pass),
+                        ToD3D(ds.front.compare)};
+        dd.BackFace = {ToD3D(ds.back.fail), ToD3D(ds.back.depthFail), ToD3D(ds.back.pass),
+                       ToD3D(ds.back.compare)};
         if (FAILED(device->CreateDepthStencilState(&dd, p.depthStencil.put())))
             return {};
 
@@ -844,15 +893,16 @@ namespace rhi::d3d11 {
         std::string error;
         winrt::com_ptr<ID3DBlob> blob;
         if (!CompileStage(*cs, layout->desc, kStageCompute, p.stages[kStageCompute], blob, error)) {
-            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") + "): " + error);
+            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") +
+                        "): " + error);
             return {};
         }
-        if (FAILED(device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, p.cs.put())))
+        if (FAILED(device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr,
+                                               p.cs.put())))
             return {};
         stats.livePipelines++;
         return pipelines.Alloc(std::move(p));
     }
-
 
     FenceHandle Device::CreateFence(uint64_t initialValue) {
         Fence f;
@@ -929,7 +979,9 @@ namespace rhi::d3d11 {
                 }
             }
             if (timeoutNs != ~0ull &&
-                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()) >= timeoutNs)
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now() - start)
+                                          .count()) >= timeoutNs)
                 return false;
             std::this_thread::yield();
         }
@@ -977,7 +1029,6 @@ namespace rhi::d3d11 {
         m.deviceUsage = stats.bufferBytes + stats.textureBytes;
         return m;
     }
-
 
     CommandList* Device::AcquireCommandList(QueueType queue) {
         std::lock_guard lock(listMutex);
@@ -1027,5 +1078,7 @@ namespace rhi::d3d11 {
         stats.submits++;
     }
 
-    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) { return MakeSwapchain(*this, desc); }
+    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) {
+        return MakeSwapchain(*this, desc);
+    }
 }

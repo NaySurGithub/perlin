@@ -56,8 +56,8 @@ namespace perlin::material {
         bool msaa = true;
         std::map<std::string, Def> variants;
 
-        bool Define(const std::string& d) const { return defines.count(d) != 0; }
-        bool State(const std::string& s) const { return states.count(s) != 0; }
+        bool Define(const std::string& d) const { return defines.contains(d); }
+        bool State(const std::string& s) const { return states.contains(s); }
         bool Blending() const { return State("Blending"); }
         bool DepthWrite() const { return !State("DisableDepthWrite"); }
         bool DepthTest() const { return !State("DisableDepthTest"); }
@@ -65,7 +65,9 @@ namespace perlin::material {
         bool AlphaWrite() const { return !State("DisableAlphaWrite"); }
         bool NoCull() const { return State("DisableCulling"); }
         bool AlphaToCoverage() const { return State("EnableAlphaToCoverage"); }
-        CullMode Cull() const { return NoCull() ? CullMode::None : State("InvertCulling") ? CullMode::Front : CullMode::Back; }
+        CullMode Cull() const {
+            return NoCull() ? CullMode::None : State("InvertCulling") ? CullMode::Front : CullMode::Back;
+        }
     };
 
     enum class Mode : uint8_t { Fancy, Sad, Gameface };

@@ -342,7 +342,7 @@ namespace perlin {
             ui::CommandInfo info;
             info.name = cmd.name;
             info.description = cmd.description.empty() ? cmd.usage : cmd.description;
-            info.overloads.push_back({});
+            info.overloads.emplace_back();
             list.push_back(std::move(info));
         }
         chat.SetCommands(std::move(list));
@@ -625,7 +625,7 @@ namespace perlin {
                 current.insert(e.runtimeId);
             if (modEntitySeeded) {
                 for (const entity::Entity& e : list)
-                    if (!modEntityIds.count(e.runtimeId)) {
+                    if (!modEntityIds.contains(e.runtimeId)) {
                         abi::EventEntity ev;
                         ev.entity = ToEntity(e);
                         abi::Writer w;
@@ -633,7 +633,7 @@ namespace perlin {
                         mm.Dispatch(abi::Event::EntityAdded, w);
                     }
                 for (const uint64_t id : modEntityIds)
-                    if (!current.count(id)) {
+                    if (!current.contains(id)) {
                         abi::EventEntity ev;
                         ev.entity.runtimeId = id;
                         abi::Writer w;

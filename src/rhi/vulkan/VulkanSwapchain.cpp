@@ -50,7 +50,8 @@ namespace rhi::vk {
 
         template <class Info>
         VkSurfaceKHR CreateWith(VkInstance instance, const char* fnName, const Info& info) {
-            using Fn = VkResult(VKAPI_PTR*)(VkInstance, const Info*, const VkAllocationCallbacks*, VkSurfaceKHR*);
+            using Fn =
+                VkResult(VKAPI_PTR*)(VkInstance, const Info*, const VkAllocationCallbacks*, VkSurfaceKHR*);
             auto create = reinterpret_cast<Fn>(vkGetInstanceProcAddr(instance, fnName));
             VkSurfaceKHR surface = VK_NULL_HANDLE;
             if (!create || create(instance, &info, nullptr, &surface) != VK_SUCCESS)
@@ -73,20 +74,28 @@ namespace rhi::vk {
                 WaylandSurfaceInfo info{kWaylandType, nullptr, 0, w.display, w.window};
                 return CreateWith(instance, "vkCreateWaylandSurfaceKHR", info);
             }
-            XlibSurfaceInfo info{kXlibType, nullptr, 0, w.display, static_cast<unsigned long>(reinterpret_cast<uintptr_t>(w.window))};
+            XlibSurfaceInfo info{kXlibType, nullptr, 0, w.display,
+                                 static_cast<unsigned long>(reinterpret_cast<uintptr_t>(w.window))};
             return CreateWith(instance, "vkCreateXlibSurfaceKHR", info);
 #endif
         }
 
         Format FromVk(VkFormat f) {
             switch (f) {
-            case VK_FORMAT_B8G8R8A8_UNORM: return Format::BGRA8Unorm;
-            case VK_FORMAT_B8G8R8A8_SRGB: return Format::BGRA8Srgb;
-            case VK_FORMAT_R8G8B8A8_UNORM: return Format::RGBA8Unorm;
-            case VK_FORMAT_R8G8B8A8_SRGB: return Format::RGBA8Srgb;
-            case VK_FORMAT_R16G16B16A16_SFLOAT: return Format::RGBA16Float;
-            case VK_FORMAT_A2B10G10R10_UNORM_PACK32: return Format::RGB10A2Unorm;
-            default: return Format::Unknown;
+            case VK_FORMAT_B8G8R8A8_UNORM:
+                return Format::BGRA8Unorm;
+            case VK_FORMAT_B8G8R8A8_SRGB:
+                return Format::BGRA8Srgb;
+            case VK_FORMAT_R8G8B8A8_UNORM:
+                return Format::RGBA8Unorm;
+            case VK_FORMAT_R8G8B8A8_SRGB:
+                return Format::RGBA8Srgb;
+            case VK_FORMAT_R16G16B16A16_SFLOAT:
+                return Format::RGBA16Float;
+            case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+                return Format::RGB10A2Unorm;
+            default:
+                return Format::Unknown;
             }
         }
     }
@@ -135,10 +144,12 @@ namespace rhi::vk {
             if (swapchain && !needsRebuild) {
                 // some drivers (nvidia especially) keep handing out images of a stale size without ever reporting out-of-date
                 VkSurfaceCapabilitiesKHR caps{};
-                if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev.physical, surface, &caps) == VK_SUCCESS && caps.currentExtent.width != 0xFFFFFFFFu) {
+                if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev.physical, surface, &caps) == VK_SUCCESS &&
+                    caps.currentExtent.width != 0xFFFFFFFFu) {
                     if (!caps.currentExtent.width || !caps.currentExtent.height)
                         return false;
-                    if (caps.currentExtent.width != extent.width || caps.currentExtent.height != extent.height)
+                    if (caps.currentExtent.width != extent.width ||
+                        caps.currentExtent.height != extent.height)
                         needsRebuild = true;
                 }
             }
@@ -152,7 +163,8 @@ namespace rhi::vk {
             for (int attempt = 0; attempt < 2; attempt++) {
                 VkSemaphore sem = acquireSems[ring];
                 // bounded: a window that is hidden or occluded must not hang the whole game loop
-                const VkResult r = dev.fn.vkAcquireNextImageKHR(dev.device, swapchain, 250'000'000ull, sem, VK_NULL_HANDLE, &index);
+                const VkResult r = dev.fn.vkAcquireNextImageKHR(dev.device, swapchain, 250'000'000ull, sem,
+                                                                VK_NULL_HANDLE, &index);
                 if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) {
                     if (r == VK_SUBOPTIMAL_KHR)
                         needsRebuild = true;
@@ -268,7 +280,8 @@ namespace rhi::vk {
             hdrActive = false;
             if (desc.hdr)
                 for (const auto& f : formats)
-                    if (f.format == VK_FORMAT_R16G16B16A16_SFLOAT && f.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT) {
+                    if (f.format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                        f.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT) {
                         chosen = f;
                         found = hdrActive = true;
                     }
@@ -291,7 +304,9 @@ namespace rhi::vk {
             vkGetPhysicalDeviceSurfacePresentModesKHR(dev.physical, surface, &count, nullptr);
             std::vector<VkPresentModeKHR> modes(count);
             vkGetPhysicalDeviceSurfacePresentModesKHR(dev.physical, surface, &count, modes.data());
-            auto has = [&](VkPresentModeKHR m) { return std::find(modes.begin(), modes.end(), m) != modes.end(); };
+            auto has = [&](VkPresentModeKHR m) {
+                return std::find(modes.begin(), modes.end(), m) != modes.end();
+            };
             VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
             activeMode = PresentMode::Fifo;
             if (desc.present == PresentMode::Mailbox && has(VK_PRESENT_MODE_MAILBOX_KHR)) {
@@ -326,9 +341,12 @@ namespace rhi::vk {
             ci.imageArrayLayers = 1;
             ci.imageUsage = usage;
             ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            ci.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR : caps.currentTransform;
-            ci.compositeAlpha = (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-                                                                                                     : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+            ci.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+                                  ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+                                  : caps.currentTransform;
+            ci.compositeAlpha = (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
+                                    ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
+                                    : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
             ci.presentMode = mode;
             ci.clipped = VK_TRUE;
             ci.oldSwapchain = swapchain;
@@ -359,9 +377,11 @@ namespace rhi::vk {
             td.format = rhiFormat;
             td.width = ext.width;
             td.height = ext.height;
-            td.usage = TextureUsage::ColorTarget | ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) ? TextureUsage::CopySrc : TextureUsage::None) |
-                       ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? TextureUsage::CopyDst : TextureUsage::None) |
-                       ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) ? TextureUsage::Sampled : TextureUsage::None);
+            td.usage =
+                TextureUsage::ColorTarget |
+                ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) ? TextureUsage::CopySrc : TextureUsage::None) |
+                ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? TextureUsage::CopyDst : TextureUsage::None) |
+                ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) ? TextureUsage::Sampled : TextureUsage::None);
             td.name = "backbuffer";
             for (VkImage image : images)
                 handles.push_back(dev.WrapSwapchainImage(image, td, chosen.format));

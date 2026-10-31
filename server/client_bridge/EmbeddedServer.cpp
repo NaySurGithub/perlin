@@ -69,7 +69,9 @@ namespace perlin {
                     conn = nullptr;
                 }
             }
-            bool SendReliable(const std::vector<uint8_t>& data) override { return conn && api->send(conn, data.data(), data.size()) == 1; }
+            bool SendReliable(const std::vector<uint8_t>& data) override {
+                return conn && api->send(conn, data.data(), data.size()) == 1;
+            }
             bool SendUnreliable(const std::vector<uint8_t>& data) override { return SendReliable(data); }
             bool TryReceive(std::vector<uint8_t>& out) override {
                 if (!conn)
@@ -103,9 +105,12 @@ namespace perlin {
     };
 
     EmbeddedServer::EmbeddedServer() : impl(std::make_unique<Impl>()) {}
-    EmbeddedServer::~EmbeddedServer() { Stop(); }
+    EmbeddedServer::~EmbeddedServer() {
+        Stop();
+    }
 
-    bool EmbeddedServer::Start(const std::string& libraryPath, const std::string& dataDir, const std::string& configJson, std::string& error) {
+    bool EmbeddedServer::Start(const std::string& libraryPath, const std::string& dataDir,
+                               const std::string& configJson, std::string& error) {
         Stop();
         auto api = std::make_shared<Api>();
         api->lib = Open(libraryPath);
@@ -113,12 +118,12 @@ namespace perlin {
             error = "cannot load " + libraryPath;
             return false;
         }
-#define BIND(field, name)                                                          \
-    api->field = reinterpret_cast<decltype(api->field)>(Sym(api->lib, name));      \
-    if (!api->field) {                                                             \
-        error = std::string("perlin_server library lacks ") + name;                \
-        CloseLib(api->lib);                                                        \
-        return false;                                                              \
+#define BIND(field, name)                                                                                    \
+    api->field = reinterpret_cast<decltype(api->field)>(Sym(api->lib, name));                                \
+    if (!api->field) {                                                                                       \
+        error = std::string("perlin_server library lacks ") + name;                                          \
+        CloseLib(api->lib);                                                                                  \
+        return false;                                                                                        \
     }
         BIND(abi, "ps_abi_version")
         BIND(create, "ps_create")

@@ -1,4 +1,5 @@
 #include "util/Paths.hpp"
+#include "util/Platform.hpp"
 #include <cstdlib>
 #include <filesystem>
 
@@ -15,7 +16,7 @@
 #include <limits.h>
 #include <mach-o/dyld.h>
 #else
-#include <limits.h>
+#include <climits>
 #include <unistd.h>
 #endif
 
@@ -57,6 +58,9 @@ namespace perlin::paths {
         if (const char* path = SDL_GetAndroidInternalStoragePath(); path && *path)
             return (fs::path(path) / "Perlin").generic_string();
         return "/data/local/tmp/Perlin";
+#elif defined(PERLIN_IOS)
+        const char* home = std::getenv("HOME");
+        return (fs::path(home ? home : ".") / "Documents").generic_string();
 #elif defined(_WIN32)
         const char* base = std::getenv("APPDATA");
         return (fs::path(base ? base : ".") / "Perlin").generic_string();

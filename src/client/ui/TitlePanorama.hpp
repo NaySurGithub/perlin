@@ -21,5 +21,6 @@ namespace perlin::ui {
 
     PanoramaView PanoramaViewAt(double seconds);
 
-    void BuildPanorama(const PanoramaView& view, int width, int height, PanoramaFace (&faces)[6], int grid = 16);
+    void BuildPanorama(const PanoramaView& view, int width, int height, PanoramaFace (&faces)[6],
+                       int grid = 16);
 }

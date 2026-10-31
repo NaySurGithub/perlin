@@ -188,7 +188,8 @@ namespace perlin {
         rpKeyByName = std::move(rpKeys);
         propsByName = std::move(propNames);
         namesLoaded = true;
-        Log("blocks", "derived {} block-state ids for {} blocks from {} ({} collisions)", nameByHash.size(), rpKeyByName.size(), path, collisions);
+        Log("blocks", "derived {} block-state ids for {} blocks from {} ({} collisions)", nameByHash.size(),
+            rpKeyByName.size(), path, collisions);
         return true;
     }
 
@@ -235,7 +236,8 @@ namespace perlin {
                     reservedHashes.insert(hash);
                     continue;
                 }
-                if (const auto known = nameByHash.find(hash); known != nameByHash.end() && known->second == name)
+                if (const auto known = nameByHash.find(hash);
+                    known != nameByHash.end() && known->second == name)
                     continue;
             }
             auto it = nameByHash.find(hash);
@@ -307,10 +309,12 @@ namespace perlin {
         // these blocks without their properties, which would give one state where the game has many.
         keptDataDriven.clear();
         for (const CustomRun& r : runs)
-            if (dataDriven.count(r.name))
+            if (dataDriven.contains(r.name))
                 keptDataDriven.insert(r.name);
         runs.erase(std::remove_if(runs.begin(), runs.end(),
-                                  [&](const CustomRun& r) { return vanilla.count(r.name) > 0 || dataDriven.count(r.name) > 0; }),
+                                  [&](const CustomRun& r) {
+                                      return vanilla.contains(r.name) || dataDriven.contains(r.name);
+                                  }),
                    runs.end());
         customRuns = std::move(runs);
         layoutVerified = false;
@@ -323,7 +327,7 @@ namespace perlin {
         for (size_t i = 0; i < baseSequence.size(); ++i) {
             if (dataDrivenHashes.contains(baseSequence[i])) {
                 const auto name = nameByHash.find(baseSequence[i]);
-                if (name == nameByHash.end() || !keptDataDriven.count(name->second))
+                if (name == nameByHash.end() || !keptDataDriven.contains(name->second))
                     continue;
             }
             sequence.push_back(baseSequence[i]);
@@ -336,6 +340,7 @@ namespace perlin {
                 const CustomRun* run;
             };
             std::vector<Keyed> order;
+            order.reserve(customRuns.size());
             for (const CustomRun& r : customRuns)
                 order.push_back({NameSortKey(r.name), &r});
             if (appended) {
@@ -386,7 +391,8 @@ namespace perlin {
         if (layoutVerified || baseSequence.empty() || serverAirId < 0)
             return layoutVerified;
         const auto airIs = [&] {
-            return static_cast<size_t>(serverAirId) < sequence.size() && sequence[static_cast<size_t>(serverAirId)] == AirHash();
+            return static_cast<size_t>(serverAirId) < sequence.size() &&
+                   sequence[static_cast<size_t>(serverAirId)] == AirHash();
         };
         if (airIs()) {
             layoutVerified = true;
@@ -397,7 +403,10 @@ namespace perlin {
             BuildLayoutLocked(!original);
             if (airIs()) {
                 layoutVerified = true;
-                Log("blocks", "server block ids do not sort custom blocks among the vanilla ones; {} {} custom blocks instead (air={})", (layoutAppended ? "appending" : "sorting"), customRuns.size(), serverAirId);
+                Log("blocks",
+                    "server block ids do not sort custom blocks among the vanilla ones; {} {} custom blocks "
+                    "instead (air={})",
+                    (layoutAppended ? "appending" : "sorting"), customRuns.size(), serverAirId);
                 return true;
             }
             BuildLayoutLocked(original);
@@ -420,12 +429,14 @@ namespace perlin {
                 lowest[name] = hash;
         }
         std::vector<std::pair<int32_t, std::string>> out;
+        out.reserve(lowest.size());
         for (const auto& [name, hash] : lowest)
             out.emplace_back(hash, name);
         return out;
     }
 
-    int32_t BlockPalette::FindHash(const std::string& fullName, const std::string& key, const std::string& valueText) const {
+    int32_t BlockPalette::FindHash(const std::string& fullName, const std::string& key,
+                                   const std::string& valueText) const {
         std::lock_guard<std::mutex> lk(mutex);
         bool have = false;
         int32_t best = 0;
@@ -464,14 +475,15 @@ namespace perlin {
                     found = true;
                 }
             }
-            if (found && reservedHashes.count(hash))
+            if (found && reservedHashes.contains(hash))
                 return 0;
             if (found)
                 return Intern(hash);
             static std::atomic<bool> warned{false};
             if (!warned.exchange(true))
                 std::cout << "[blocks] server uses sequential block ids but no sequence table is loaded; "
-                             "blocks it sends will read as air" << std::endl;
+                             "blocks it sends will read as air"
+                          << std::endl;
             return 0;
         }
         return Intern(runtimeId);

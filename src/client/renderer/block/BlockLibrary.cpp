@@ -30,7 +30,6 @@
 namespace perlin {
     namespace {
 
-
         void WriteFile(const std::string& path, const char* content) {
             if (FILE* f = fopen(path.c_str(), "w")) {
                 fwrite(content, 1, strlen(content), f);
@@ -57,8 +56,9 @@ namespace perlin {
     void BlockLibrary::SetTexturePack(bool active) {
         int widest = 16;
         if (active) {
-            static const char* const kProbe[] = {"stone", "dirt", "cobblestone", "planks_oak", "sand", "grass_side",
-                                                 "log_oak", "bedrock", "gravel", "iron_block"};
+            static const char* const kProbe[] = {"stone",  "dirt",       "cobblestone", "planks_oak",
+                                                 "sand",   "grass_side", "log_oak",     "bedrock",
+                                                 "gravel", "iron_block"};
             TexturePack& pack = TexturePack::Instance();
             for (const char* name : kProbe) {
                 Texture t;
@@ -73,7 +73,8 @@ namespace perlin {
         while (size < widest && size < 256)
             size <<= 1;
         tilePxValue = size;
-        Log("textures", "pack={} tile={}px", (active ? TexturePack::Instance().Description() : "<vanilla>"), size);
+        Log("textures", "pack={} tile={}px", (active ? TexturePack::Instance().Description() : "<vanilla>"),
+            size);
     }
 
     namespace {
@@ -87,8 +88,10 @@ namespace perlin {
                         const int sy = std::min(h - 1, (int)((int64_t)y * h / size));
                         src = data + ((size_t)sy * stride + sx) * 4;
                     } else {
-                        const int x0 = (int)((int64_t)x * w / size), x1 = std::max(x0 + 1, (int)((int64_t)(x + 1) * w / size));
-                        const int y0 = (int)((int64_t)y * h / size), y1 = std::max(y0 + 1, (int)((int64_t)(y + 1) * h / size));
+                        const int x0 = (int)((int64_t)x * w / size),
+                                  x1 = std::max(x0 + 1, (int)((int64_t)(x + 1) * w / size));
+                        const int y0 = (int)((int64_t)y * h / size),
+                                  y1 = std::max(y0 + 1, (int)((int64_t)(y + 1) * h / size));
                         double r = 0, g = 0, b = 0, a = 0;
                         int n = 0;
                         for (int yy = y0; yy < y1 && yy < h; yy++)
@@ -155,9 +158,10 @@ namespace perlin {
                 Log("blocks", "atlas full: glass connection disabled for remaining glass tiles");
                 break;
             }
-            const std::vector<uint8_t> src(atlas.begin() + (size_t)base * T * T * 4, atlas.begin() + ((size_t)base + 1) * T * T * 4);
+            const std::vector<uint8_t> src(atlas.begin() + (size_t)base * T * T * 4,
+                                           atlas.begin() + ((size_t)base + 1) * T * T * 4);
             const TileAlpha baseAlpha = AlphaOf(base);
-            const bool keepInterior = tinted.count(base) > 0;
+            const bool keepInterior = tinted.contains(base);
             std::vector<int> list(2, 0);
             uint8_t wash[4] = {0, 0, 0, 0};
             if (keepInterior) {
@@ -200,7 +204,8 @@ namespace perlin {
                         }
                         if (mode == 3)
                             continue;
-                        const bool exposed = (l && (mask & 1)) || (r && (mask & 2)) || (tp && (mask & 4)) || (bt && (mask & 8));
+                        const bool exposed = (l && (mask & 1)) || (r && (mask & 2)) || (tp && (mask & 4)) ||
+                                             (bt && (mask & 8));
                         if (exposed)
                             continue;
                         if (keepInterior && mode < 2) {
@@ -237,18 +242,21 @@ namespace perlin {
             const size_t slash = path.rfind('/');
             const std::string name = path.substr(slash == std::string::npos ? 0 : slash + 1);
             uint8_t kind = 0;
-            if (has(name, "leaves") || name.starts_with("vine") || has(name, "cave_vines") || has(name, "weeping_vines") ||
-                has(name, "twisting_vines"))
+            if (has(name, "leaves") || name.starts_with("vine") || has(name, "cave_vines") ||
+                has(name, "weeping_vines") || has(name, "twisting_vines"))
                 kind = 1;
             else if (has(name, "double_plant") || has(name, "doubletall") || has(name, "pitcher_plant"))
                 kind = has(name, "bottom") ? 3 : 4;
-            else if (has(name, "tallgrass") || has(name, "short_grass") || has(name, "fern") || name.starts_with("flower_") ||
-                     has(name, "sapling") || has(name, "deadbush") || has(name, "_stage") || has(name, "sweet_berry_bush") ||
-                     has(name, "seagrass") || has(name, "torchflower") || has(name, "wither_rose") || has(name, "nether_sprouts") ||
-                     has(name, "crimson_roots") || has(name, "warped_roots") || has(name, "azalea_plant") || has(name, "pink_petals") ||
-                     has(name, "wildflowers") || has(name, "bush") || has(name, "firefly_bush") || has(name, "cactus_flower"))
+            else if (has(name, "tallgrass") || has(name, "short_grass") || has(name, "fern") ||
+                     name.starts_with("flower_") || has(name, "sapling") || has(name, "deadbush") ||
+                     has(name, "_stage") || has(name, "sweet_berry_bush") || has(name, "seagrass") ||
+                     has(name, "torchflower") || has(name, "wither_rose") || has(name, "nether_sprouts") ||
+                     has(name, "crimson_roots") || has(name, "warped_roots") || has(name, "azalea_plant") ||
+                     has(name, "pink_petals") || has(name, "wildflowers") || has(name, "bush") ||
+                     has(name, "firefly_bush") || has(name, "cactus_flower"))
                 kind = 2;
-            if (has(name, "melon_stem") || has(name, "pumpkin_stem") || has(name, "cocoa") || has(name, "nether_wart") || has(name, "_cake"))
+            if (has(name, "melon_stem") || has(name, "pumpkin_stem") || has(name, "cocoa") ||
+                has(name, "nether_wart") || has(name, "_cake"))
                 kind = 0;
             if (!kind)
                 continue;
@@ -287,7 +295,8 @@ namespace perlin {
             std::vector<Texture> decoded(paths.size());
             std::vector<char> ok(paths.size(), 0);
             ThreadPool pool(HardwareThreads());
-            pool.ParallelFor(paths.size(), [&](size_t i) { ok[i] = LoadTexture(paths[i], decoded[i]) ? 1 : 0; });
+            pool.ParallelFor(paths.size(),
+                             [&](size_t i) { ok[i] = LoadTexture(paths[i], decoded[i]) ? 1 : 0; });
             auto& cache = PrefetchCache();
             cache.clear();
             cache.reserve(paths.size());
@@ -314,7 +323,8 @@ namespace perlin {
         std::vector<std::string> tries;
         std::string stem = pngRelPath;
         const std::string suffix = "_opaque";
-        if (stem.size() > suffix.size() && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0)
+        if (stem.size() > suffix.size() &&
+            stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0)
             stem.resize(stem.size() - suffix.size());
         const std::string order[2] = {fancy ? stem : stem + suffix, fancy ? stem + suffix : stem};
         for (const std::string& base : order) {
@@ -349,7 +359,8 @@ namespace perlin {
                 const auto cached = PrefetchCache().find(full);
                 if (cached != PrefetchCache().end())
                     tex = cached->second;
-                if ((cached != PrefetchCache().end() || LoadTexture(full, tex)) && tex.width > 0 && tex.height > 0) {
+                if ((cached != PrefetchCache().end() || LoadTexture(full, tex)) && tex.width > 0 &&
+                    tex.height > 0) {
                     w = tex.width;
                     h = tex.height;
                     ok = true;
@@ -369,7 +380,8 @@ namespace perlin {
             }
             const double scale = count && luma > 0 ? 0.82 * 255.0 * count / luma : 1.0;
             for (size_t i = 0; i < tex.pixels.size(); i += 4) {
-                const double y = 0.299 * tex.pixels[i] + 0.587 * tex.pixels[i + 1] + 0.114 * tex.pixels[i + 2];
+                const double y =
+                    0.299 * tex.pixels[i] + 0.587 * tex.pixels[i + 1] + 0.114 * tex.pixels[i + 2];
                 const unsigned char gray = static_cast<unsigned char>(std::min(255.0, y * scale));
                 tex.pixels[i] = tex.pixels[i + 1] = tex.pixels[i + 2] = gray;
                 tex.pixels[i + 3] = 178;
@@ -427,7 +439,9 @@ namespace perlin {
             for (size_t i = 0; i < count; i++)
                 hash = (hash ^ words[i]) * 1099511628211ull;
             const auto same = tileByHash.find(hash);
-            if (same != tileByHash.end() && std::memcmp(atlas.data() + (size_t)same->second * kTilePx * kTilePx * 4, tilePixels, (size_t)kTilePx * kTilePx * 4) == 0) {
+            if (same != tileByHash.end() &&
+                std::memcmp(atlas.data() + (size_t)same->second * kTilePx * kTilePx * 4, tilePixels,
+                            (size_t)kTilePx * kTilePx * 4) == 0) {
                 alphaByTile.erase(tile);
                 nextTile--;
                 atlas.resize((size_t)nextTile * kTilePx * kTilePx * 4);
@@ -462,7 +476,8 @@ namespace perlin {
         const int px = tilePxValue;
         const int tile = NewTile();
         uint8_t* out = atlas.data() + static_cast<size_t>(tile) * px * px * 4;
-        const float base[3] = {90.0f + static_cast<float>(h & 0x7F), 90.0f + static_cast<float>((h >> 7) & 0x7F),
+        const float base[3] = {90.0f + static_cast<float>(h & 0x7F),
+                               90.0f + static_cast<float>((h >> 7) & 0x7F),
                                90.0f + static_cast<float>((h >> 14) & 0x7F)};
         for (int y = 0; y < px; y++)
             for (int x = 0; x < px; x++) {
@@ -470,8 +485,8 @@ namespace perlin {
                              (static_cast<uint32_t>(y / std::max(1, px / 16)) * 668265263u);
                 n = (n ^ (n >> 13)) * 1274126177u;
                 const float jitter = 0.88f + 0.12f * static_cast<float>(n & 0xFF) / 255.0f;
-                const bool edge = x < std::max(1, px / 16) || y < std::max(1, px / 16) || x >= px - std::max(1, px / 16) ||
-                                  y >= px - std::max(1, px / 16);
+                const bool edge = x < std::max(1, px / 16) || y < std::max(1, px / 16) ||
+                                  x >= px - std::max(1, px / 16) || y >= px - std::max(1, px / 16);
                 const float shade = edge ? 0.72f : jitter;
                 uint8_t* p = out + (static_cast<size_t>(y) * px + x) * 4;
                 for (int c = 0; c < 3; c++)
@@ -484,7 +499,8 @@ namespace perlin {
         return tile;
     }
 
-    int BlockLibrary::FetchOrSynth(const std::string& pngRelPath, const std::string& vanillaRpRoot, const std::string& label,
+    int BlockLibrary::FetchOrSynth(const std::string& pngRelPath, const std::string& vanillaRpRoot,
+                                   const std::string& label,
                                    const std::unordered_map<std::string, std::string>& stems) {
         int tile = FetchTile(pngRelPath, vanillaRpRoot);
         if (tile > 0)
@@ -976,7 +992,7 @@ namespace perlin {
                         app.shape == BlockAppearance::Shape::Wall)
                         app.cutout = true;
                     app.overlayFrac = 0;
-                    if (app.side && overlayMaskTiles.count(app.side) && nextTile + 2 <= MaxTiles()) {
+                    if (app.side && overlayMaskTiles.contains(app.side) && nextTile + 2 <= MaxTiles()) {
                         const int src = app.side;
                         const size_t px = (size_t)kTilePx * kTilePx;
                         bool anyMask = false, anyClear = false;
@@ -1102,10 +1118,8 @@ namespace perlin {
             const std::array<float, 3> wc = ResolveDefaultWater(vanillaRpRoot);
             for (auto& [name, app] : appearances) {
                 auto isWaterNamed = [](const std::string& t) {
-                    return t.contains("still_water") ||
-                           t.contains("water_flow") ||
-                           t.contains("flowing_water") ||
-                           t.contains("water_still");
+                    return t.contains("still_water") || t.contains("water_flow") ||
+                           t.contains("flowing_water") || t.contains("water_still");
                 };
                 if (isWaterNamed(app.texTop) || isWaterNamed(app.texSide)) {
                     auto tintTowards = [&](float& r, float& g, float& b) {
@@ -1120,7 +1134,8 @@ namespace perlin {
                 }
             }
         }
-        Log("blocks", "appearances: {} names, {} without vanilla textures, {} atlas tiles", allNames.size(), noTexture, nextTile);
+        Log("blocks", "appearances: {} names, {} without vanilla textures, {} atlas tiles", allNames.size(),
+            noTexture, nextTile);
         {
             FILE* f = fopen((paths::DataDir() + "/blocks.log").c_str(), "w");
             if (f) {
@@ -1248,8 +1263,9 @@ namespace perlin {
         std::unordered_map<std::string, std::string> stems;
         for (const std::string& dir : serverDirs) {
             std::error_code ec;
-            for (std::filesystem::recursive_directory_iterator it(std::filesystem::path(dir) / "textures",
-                                                                  std::filesystem::directory_options::skip_permission_denied, ec),
+            for (std::filesystem::recursive_directory_iterator
+                     it(std::filesystem::path(dir) / "textures",
+                        std::filesystem::directory_options::skip_permission_denied, ec),
                  end;
                  !ec && it != end; it.increment(ec)) {
                 if (!it->is_regular_file(ec))
@@ -1258,7 +1274,8 @@ namespace perlin {
                 constexpr std::string_view kSet = ".texture_set.json";
                 std::string stem;
                 size_t extSize = 0;
-                if (name.size() > kSet.size() && name.compare(name.size() - kSet.size(), kSet.size(), kSet) == 0) {
+                if (name.size() > kSet.size() &&
+                    name.compare(name.size() - kSet.size(), kSet.size(), kSet) == 0) {
                     stem = name.substr(0, name.size() - kSet.size());
                     extSize = kSet.size();
                 } else {
@@ -1273,7 +1290,8 @@ namespace perlin {
                 stems.emplace(std::move(stem), std::move(rel));
             }
         }
-        const BlockGeometry::FetchFn fetchGeometry = [this, &stems](const std::string& p, const std::string& root) {
+        const BlockGeometry::FetchFn fetchGeometry = [this, &stems](const std::string& p,
+                                                                    const std::string& root) {
             fetchingGeometry = true;
             int tile = FetchTile(p, root);
             if (tile == 0) {
@@ -1301,7 +1319,7 @@ namespace perlin {
                         continue;
                     const auto p = pathByKey.find(f->second);
                     const auto v = vanillaPathByKey.find(f->second);
-                    const std::string path = p != pathByKey.end()   ? p->second
+                    const std::string path = p != pathByKey.end()          ? p->second
                                              : v != vanillaPathByKey.end() ? v->second
                                                                            : "textures/blocks/" + f->second;
                     pathOut = path;
@@ -1318,15 +1336,18 @@ namespace perlin {
                 const BlockAppearance* base = nullptr;
                 {
                     std::string shortName = AfterColon(def.name);
-                    static const char* const kSuffixes[] = {"_double_slab", "_stairs", "_slab", "_wall", "_fence", "_pillar"};
+                    static const char* const kSuffixes[] = {"_double_slab", "_stairs", "_slab",
+                                                            "_wall",        "_fence",  "_pillar"};
                     for (const char* suffix : kSuffixes) {
                         const size_t n = std::strlen(suffix);
                         if (shortName.size() <= n || shortName.compare(shortName.size() - n, n, suffix) != 0)
                             continue;
                         const std::string stem = shortName.substr(0, shortName.size() - n);
-                        for (const std::string& candidate : {stem, stem + "_planks", stem + "s", stem + "_block"}) {
+                        for (const std::string& candidate :
+                             {stem, stem + "_planks", stem + "s", stem + "_block"}) {
                             const auto found = appearances.find("minecraft:" + candidate);
-                            if (found != appearances.end() && found->second.shape == BlockAppearance::Shape::Cube &&
+                            if (found != appearances.end() &&
+                                found->second.shape == BlockAppearance::Shape::Cube &&
                                 (found->second.top | found->second.side | found->second.bottom) != 0) {
                                 base = &found->second;
                                 break;
@@ -1359,7 +1380,7 @@ namespace perlin {
                 static constexpr const char* kFaces[4] = {"east", "west", "south", "north"};
                 for (int i = 0; i < 4; i++) {
                     std::string unusedPath;
-                    if (faceTex.count(kFaces[i])) {
+                    if (faceTex.contains(kFaces[i])) {
                         const int t = resolve({kFaces[i]}, unusedPath);
                         if (t > 0 && t != side)
                             a.sideTile[i] = t;
@@ -1420,8 +1441,8 @@ namespace perlin {
                 bit = kLightBlock;
             else if (shortName == "structure_void")
                 bit = kStructureVoid;
-            else if (shortName == "piston_arm_collision" || shortName == "sticky_piston_arm_collision" || shortName == "moving_block" ||
-                     shortName == "movingblock")
+            else if (shortName == "piston_arm_collision" || shortName == "sticky_piston_arm_collision" ||
+                     shortName == "moving_block" || shortName == "movingblock")
                 return fallback;
             if (bit && !(technicalMask.load(std::memory_order_relaxed) & bit))
                 return fallback;

@@ -69,9 +69,6 @@ namespace perlin {
         using abi::Op;
         using abi::Status;
         using mods::CallContext;
-        const uint32_t control = static_cast<uint32_t>(abi::Permission::Control);
-        const uint32_t files = static_cast<uint32_t>(abi::Permission::Files);
-        const uint32_t network = static_cast<uint32_t>(abi::Permission::Network);
 
         ui::SetHudElementFilter([this](std::string_view renderer, float& dx, float& dy) {
             std::lock_guard lock(modHooks.mutex);
@@ -179,7 +176,7 @@ namespace perlin {
             const std::string key = o.entity ? "id:" + std::to_string(o.entity) : "type:" + o.type;
             std::lock_guard lock(modHooks.mutex);
             auto& mine = modHooks.entities[ctx.plugin];
-            if (!mine.count(key) && mine.size() >= kMaxEntityRules)
+            if (!mine.contains(key) && mine.size() >= kMaxEntityRules)
                 return Status::Failed;
             mine[key] = {After(o.ticks), std::move(o)};
             return Status::Ok;
@@ -334,86 +331,77 @@ namespace perlin {
             return Status::Ok;
         });
 
-        mm.Register(
-            Op::ServerPing,
-            [this](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
-                const abi::ServerPingRequest q = r.read<abi::ServerPingRequest>();
-                if (!r.Ok() || q.host.empty() || q.host.size() > 253 || q.port == 0)
-                    return Status::BadArguments;
-                const uint32_t id = modHooks.nextPing++;
-                std::thread([this, plugin = ctx.plugin, q, id] {
-                    const auto start = Clock::now();
-                    std::string ad, error;
-                    abi::EventServerPing e;
-                    e.id = id;
-                    e.ok = RakNet::Ping(q.host, q.port, ad, error, 2500);
-                    e.latencyMs = std::chrono::duration<float, std::milli>(Clock::now() - start).count();
-                    if (e.ok) {
-                        // MCPE;motd;protocol;version;players;max;...
-                        std::vector<std::string> f;
-                        size_t from = 0;
-                        for (size_t at; (at = ad.find(';', from)) != std::string::npos; from = at + 1)
-                            f.push_back(ad.substr(from, at - from));
-                        f.push_back(ad.substr(from));
-                        if (f.size() > 1)
-                            e.motd = f[1];
-                        if (f.size() > 2)
-                            e.protocol = std::atoi(f[2].c_str());
-                        if (f.size() > 3)
-                            e.version = f[3];
-                        if (f.size() > 5) {
-                            e.players = std::atoi(f[4].c_str());
-                            e.maxPlayers = std::atoi(f[5].c_str());
-                        }
+        mm.Register(Op::ServerPing, [this](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
+            const abi::ServerPingRequest q = r.read<abi::ServerPingRequest>();
+            if (!r.Ok() || q.host.empty() || q.host.size() > 253 || q.port == 0)
+                return Status::BadArguments;
+            const uint32_t id = modHooks.nextPing++;
+            std::thread([this, plugin = ctx.plugin, q, id] {
+                const auto start = Clock::now();
+                std::string ad, error;
+                abi::EventServerPing e;
+                e.id = id;
+                e.ok = RakNet::Ping(q.host, q.port, ad, error, 2500);
+                e.latencyMs = std::chrono::duration<float, std::milli>(Clock::now() - start).count();
+                if (e.ok) {
+                    // MCPE;motd;protocol;version;players;max;...
+                    std::vector<std::string> f;
+                    size_t from = 0;
+                    for (size_t at; (at = ad.find(';', from)) != std::string::npos; from = at + 1)
+                        f.push_back(ad.substr(from, at - from));
+                    f.push_back(ad.substr(from));
+                    if (f.size() > 1)
+                        e.motd = f[1];
+                    if (f.size() > 2)
+                        e.protocol = std::atoi(f[2].c_str());
+                    if (f.size() > 3)
+                        e.version = f[3];
+                    if (f.size() > 5) {
+                        e.players = std::atoi(f[4].c_str());
+                        e.maxPlayers = std::atoi(f[5].c_str());
                     }
-                    std::lock_guard lock(modHooks.mutex);
-                    modHooks.pings.emplace_back(plugin, std::move(e));
-                }).detach();
-                w.write(id);
-                return Status::Ok;
-            },
-            network);
-
-        mm.Register(
-            Op::PackRegister,
-            [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
-                const abi::PackRegistration p = r.read<abi::PackRegistration>();
-                if (!r.Ok() || p.path.empty() || p.path.size() > 256 || p.path.contains("..") ||
-                    fs::path(p.path).is_absolute())
-                    return Status::BadArguments;
-                const std::string full = (fs::path(ctx.storageRoot) / p.path).lexically_normal().string();
-                std::error_code ec;
-                if (p.enabled && !fs::exists(full, ec))
-                    return Status::NotFound;
-                {
-                    std::lock_guard lock(modHooks.mutex);
-                    auto& packs = modHooks.packs;
-                    const auto it = std::find(packs.begin(), packs.end(), std::make_pair(ctx.plugin, full));
-                    if (p.enabled == (it != packs.end()))
-                        return Status::Ok;
-                    if (p.enabled)
-                        packs.emplace_back(ctx.plugin, full);
-                    else
-                        packs.erase(it);
                 }
-                mods::ModManager::Instance().PostMain([this] { ApplyTexturePacks(); });
-                return Status::Ok;
-            },
-            files);
+                std::lock_guard lock(modHooks.mutex);
+                modHooks.pings.emplace_back(plugin, std::move(e));
+            }).detach();
+            w.write(id);
+            return Status::Ok;
+        });
 
-        mm.Register(
-            Op::ShaderPackSet,
-            [this](CallContext&, abi::Reader& r, abi::Writer&) {
-                const std::string name = r.str();
-                if (!r.Ok() || name.size() > 128 || name.contains("..") || name.contains('/'))
-                    return Status::BadArguments;
-                mods::ModManager::Instance().PostMain([this, name] {
-                    options.shaderPack = name;
-                    ApplyShaderPack();
-                });
-                return Status::Ok;
-            },
-            control);
+        mm.Register(Op::PackRegister, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const abi::PackRegistration p = r.read<abi::PackRegistration>();
+            if (!r.Ok() || p.path.empty() || p.path.size() > 256 || p.path.contains("..") ||
+                fs::path(p.path).is_absolute())
+                return Status::BadArguments;
+            const std::string full = (fs::path(ctx.storageRoot) / p.path).lexically_normal().string();
+            std::error_code ec;
+            if (p.enabled && !fs::exists(full, ec))
+                return Status::NotFound;
+            {
+                std::lock_guard lock(modHooks.mutex);
+                auto& packs = modHooks.packs;
+                const auto it = std::find(packs.begin(), packs.end(), std::make_pair(ctx.plugin, full));
+                if (p.enabled == (it != packs.end()))
+                    return Status::Ok;
+                if (p.enabled)
+                    packs.emplace_back(ctx.plugin, full);
+                else
+                    packs.erase(it);
+            }
+            mods::ModManager::Instance().PostMain([this] { ApplyTexturePacks(); });
+            return Status::Ok;
+        });
+
+        mm.Register(Op::ShaderPackSet, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const std::string name = r.str();
+            if (!r.Ok() || name.size() > 128 || name.contains("..") || name.contains('/'))
+                return Status::BadArguments;
+            mods::ModManager::Instance().PostMain([this, name] {
+                options.shaderPack = name;
+                ApplyShaderPack();
+            });
+            return Status::Ok;
+        });
 
         mm.Register(Op::ParticleSpawn, [this](CallContext&, abi::Reader& r, abi::Writer&) {
             abi::ParticleRequest p = r.read<abi::ParticleRequest>();
@@ -709,7 +697,7 @@ namespace perlin {
                     owners.insert(modHooks.customOwner);
             }
             for (const std::string& owner : owners)
-                if (!running.count(owner))
+                if (!running.contains(owner))
                     DropModHooks(owner);
         }
 

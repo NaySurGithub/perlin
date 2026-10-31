@@ -23,7 +23,6 @@
 #include <iterator>
 #include <regex>
 
-
 namespace perlin::gpu {
     namespace {
         // converted programs are kept on disk: glslang, the cross compiler and fxc take seconds per program for a big pack,
@@ -53,7 +52,8 @@ namespace perlin::gpu {
             return HashBytes(h, &n, sizeof(n));
         }
 
-        std::filesystem::path CacheFile(const jshader::ExpandedSource& vs, const jshader::ExpandedSource& fs, const jshader::TransformOptions& o, int kind,
+        std::filesystem::path CacheFile(const jshader::ExpandedSource& vs, const jshader::ExpandedSource& fs,
+                                        const jshader::TransformOptions& o, int kind,
                                         const std::string& name) {
             uint64_t h = 1469598103934665603ull;
             h = HashString(h, vs.text);
@@ -62,12 +62,15 @@ namespace perlin::gpu {
                 h = HashString(h, m.first);
                 h = HashString(h, m.second);
             }
-            const int flags[] = {kCacheVersion, kind, o.flipVertexY, o.flipFragCoordY, o.zeroToOneDepth, o.splitSamplers, o.explicitLod,
-                                 static_cast<int>(o.availableAttribs)};
+            const int flags[] = {kCacheVersion,    kind,
+                                 o.flipVertexY,    o.flipFragCoordY,
+                                 o.zeroToOneDepth, o.splitSamplers,
+                                 o.explicitLod,    static_cast<int>(o.availableAttribs)};
             h = HashBytes(h, flags, sizeof(flags));
             h = HashString(h, __DATE__ " " __TIME__);
             try {
-                const std::filesystem::path dir = std::filesystem::temp_directory_path() / "perlin_javapack_cache";
+                const std::filesystem::path dir =
+                    std::filesystem::temp_directory_path() / "perlin_javapack_cache";
                 std::filesystem::create_directories(dir);
                 char file[64];
                 std::snprintf(file, sizeof(file), "%016llx.prog", static_cast<unsigned long long>(h));
@@ -78,8 +81,7 @@ namespace perlin::gpu {
             }
         }
 
-        template <class T>
-        void Put(std::string& out, const T& v) {
+        template <class T> void Put(std::string& out, const T& v) {
             out.append(reinterpret_cast<const char*>(&v), sizeof(T));
         }
         void PutString(std::string& out, const std::string& s) {
@@ -90,8 +92,7 @@ namespace perlin::gpu {
             const std::string& d;
             size_t at = 0;
             bool ok = true;
-            template <class T>
-            T Get() {
+            template <class T> T Get() {
                 T v{};
                 if (at + sizeof(T) > d.size()) {
                     ok = false;
@@ -148,8 +149,7 @@ namespace perlin::gpu {
                     f.write(out.data(), static_cast<std::streamsize>(out.size()));
                 }
                 std::filesystem::rename(tmp, file);
-            } catch (...) {
-            }
+            } catch (...) {}
         }
 
         bool LoadCache(const std::filesystem::path& file, CachedProgram& c) {
@@ -206,7 +206,15 @@ namespace perlin::gpu {
 
         // vertex stream of the pack, 72 bytes: position, abgr, uv, light uv, normal (half4), mc_Entity, mid uv, midBlock (half4), tangent (half4)
         enum PackOffset : uint32_t {
-            kPos = 0, kColor = 12, kUv = 16, kLight = 24, kNormal = 32, kEntity = 40, kMid = 48, kMidBlock = 56, kTangent = 64
+            kPos = 0,
+            kColor = 12,
+            kUv = 16,
+            kLight = 24,
+            kNormal = 32,
+            kEntity = 40,
+            kMid = 48,
+            kMidBlock = 56,
+            kTangent = 64
         };
 
         uint16_t ToHalf(float f) {
@@ -224,7 +232,8 @@ namespace perlin::gpu {
             }
             if (exp >= 31)
                 return static_cast<uint16_t>(sign | 0x7BFFu);
-            return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exp) << 10) | ((mant + 0x1000u) >> 13));
+            return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exp) << 10) |
+                                         ((mant + 0x1000u) >> 13));
         }
 
         glm::mat4 ToMat(const float* m) {
@@ -232,7 +241,9 @@ namespace perlin::gpu {
             std::memcpy(&out[0][0], m, sizeof(float) * 16);
             return out;
         }
-        void FromMat(const glm::mat4& m, float* out) { std::memcpy(out, &m[0][0], sizeof(float) * 16); }
+        void FromMat(const glm::mat4& m, float* out) {
+            std::memcpy(out, &m[0][0], sizeof(float) * 16);
+        }
 
         // the engine's clip z is 0..1; the pack's matrices are opengl, -1..1
         void ToGlDepth(const float* in, float* out) {
@@ -252,7 +263,8 @@ namespace perlin::gpu {
             size_t start = 0;
             for (;;) {
                 const size_t colon = entry.find(':', start);
-                parts.push_back(entry.substr(start, colon == std::string::npos ? std::string::npos : colon - start));
+                parts.push_back(
+                    entry.substr(start, colon == std::string::npos ? std::string::npos : colon - start));
                 if (colon == std::string::npos)
                     break;
                 start = colon + 1;
@@ -269,13 +281,31 @@ namespace perlin::gpu {
         // bedrock names for blocks the java packs list under their old ids
         const char* Alias(const std::string& n) {
             static const std::pair<const char*, const char*> table[] = {
-                {"flowing_water", "water"}, {"flowing_lava", "lava"}, {"tallgrass", "short_grass"}, {"grass", "grass_block"},
-                {"web", "cobweb"}, {"yellow_flower", "dandelion"}, {"red_flower", "poppy"}, {"reeds", "sugar_cane"},
-                {"deadbush", "dead_bush"}, {"waterlily", "lily_pad"}, {"snow_layer", "snow"}, {"lit_furnace", "furnace"},
-                {"lit_redstone_lamp", "redstone_lamp"}, {"lit_redstone_ore", "redstone_ore"}, {"portal", "nether_portal"},
-                {"sea_lantern", "sea_lantern"}, {"mob_spawner", "spawner"}, {"stonebrick", "stone_bricks"},
-                {"wooden_slab", "oak_slab"}, {"double_plant", "tall_grass"}, {"concretePowder", "white_concrete_powder"},
-                {"leaves", "oak_leaves"}, {"leaves2", "acacia_leaves"}, {"log", "oak_log"}, {"log2", "acacia_log"}};
+                {"flowing_water", "water"},
+                {"flowing_lava", "lava"},
+                {"tallgrass", "short_grass"},
+                {"grass", "grass_block"},
+                {"web", "cobweb"},
+                {"yellow_flower", "dandelion"},
+                {"red_flower", "poppy"},
+                {"reeds", "sugar_cane"},
+                {"deadbush", "dead_bush"},
+                {"waterlily", "lily_pad"},
+                {"snow_layer", "snow"},
+                {"lit_furnace", "furnace"},
+                {"lit_redstone_lamp", "redstone_lamp"},
+                {"lit_redstone_ore", "redstone_ore"},
+                {"portal", "nether_portal"},
+                {"sea_lantern", "sea_lantern"},
+                {"mob_spawner", "spawner"},
+                {"stonebrick", "stone_bricks"},
+                {"wooden_slab", "oak_slab"},
+                {"double_plant", "tall_grass"},
+                {"concretePowder", "white_concrete_powder"},
+                {"leaves", "oak_leaves"},
+                {"leaves2", "acacia_leaves"},
+                {"log", "oak_log"},
+                {"log2", "acacia_log"}};
             for (const auto& e : table)
                 if (n == e.first)
                     return e.second;
@@ -291,7 +321,8 @@ namespace perlin::gpu {
                     for (int j = 0; j < 2; j++)
                         for (int i = 0; i < 2; i++) {
                             const int sx = std::min(sw - 1, x * 2 + i), sy = std::min(sh - 1, y * 2 + j);
-                            const uint8_t* p = src + static_cast<size_t>(sy) * sstride + static_cast<size_t>(sx) * 4;
+                            const uint8_t* p =
+                                src + static_cast<size_t>(sy) * sstride + static_cast<size_t>(sx) * 4;
                             sum[0] += p[0] * p[3];
                             sum[1] += p[1] * p[3];
                             sum[2] += p[2] * p[3];
@@ -313,26 +344,45 @@ namespace perlin::gpu {
         rhi::Format ToFormat(jshader::BufferFormat f) {
             using B = jshader::BufferFormat;
             switch (f) {
-            case B::RGBA8: return rhi::Format::RGBA8Unorm;
-            case B::RGBA16: return rhi::Format::RGBA16Unorm;
-            case B::RGBA16F: return rhi::Format::RGBA16Float;
-            case B::RGBA32F: return rhi::Format::RGBA32Float;
-            case B::R8: return rhi::Format::R8Unorm;
-            case B::RG8: return rhi::Format::RG8Unorm;
-            case B::R16F: return rhi::Format::R16Float;
-            case B::RG16F: return rhi::Format::RG16Float;
-            case B::R32F: return rhi::Format::R32Float;
+            case B::RGBA8:
+                return rhi::Format::RGBA8Unorm;
+            case B::RGBA16:
+                return rhi::Format::RGBA16Unorm;
+            case B::RGBA16F:
+                return rhi::Format::RGBA16Float;
+            case B::RGBA32F:
+                return rhi::Format::RGBA32Float;
+            case B::R8:
+                return rhi::Format::R8Unorm;
+            case B::RG8:
+                return rhi::Format::RG8Unorm;
+            case B::R16F:
+                return rhi::Format::R16Float;
+            case B::RG16F:
+                return rhi::Format::RG16Float;
+            case B::R32F:
+                return rhi::Format::R32Float;
             // no three-channel render targets, no signed or integer ones: the nearest wider format keeps the values
-            case B::RGB8: return rhi::Format::RGBA8Unorm;
-            case B::RGB16F: return rhi::Format::RGBA16Float;
-            case B::R11F_G11F_B10F: return rhi::Format::R11G11B10Float;
-            case B::RGB10_A2: return rhi::Format::RGB10A2Unorm;
-            case B::RG16: return rhi::Format::RG16Unorm;
-            case B::R16: return rhi::Format::R16Float;
-            case B::RGBA8_SNORM: return rhi::Format::RGBA16Float;
-            case B::RGB16: return rhi::Format::RGBA16Unorm;
-            case B::RGBA32I: return rhi::Format::RGBA32Float;
-            case B::RG32F: return rhi::Format::RG32Float;
+            case B::RGB8:
+                return rhi::Format::RGBA8Unorm;
+            case B::RGB16F:
+                return rhi::Format::RGBA16Float;
+            case B::R11F_G11F_B10F:
+                return rhi::Format::R11G11B10Float;
+            case B::RGB10_A2:
+                return rhi::Format::RGB10A2Unorm;
+            case B::RG16:
+                return rhi::Format::RG16Unorm;
+            case B::R16:
+                return rhi::Format::R16Float;
+            case B::RGBA8_SNORM:
+                return rhi::Format::RGBA16Float;
+            case B::RGB16:
+                return rhi::Format::RGBA16Unorm;
+            case B::RGBA32I:
+                return rhi::Format::RGBA32Float;
+            case B::RG32F:
+                return rhi::Format::RG32Float;
             }
             return rhi::Format::RGBA8Unorm;
         }
@@ -340,17 +390,28 @@ namespace perlin::gpu {
         rhi::BlendFactor GlFactor(int gl) {
             using F = rhi::BlendFactor;
             switch (gl) {
-            case 0: return F::Zero;
-            case 1: return F::One;
-            case 0x300: return F::SrcColor;
-            case 0x301: return F::InvSrcColor;
-            case 0x302: return F::SrcAlpha;
-            case 0x303: return F::InvSrcAlpha;
-            case 0x304: return F::DstAlpha;
-            case 0x305: return F::InvDstAlpha;
-            case 0x306: return F::DstColor;
-            case 0x307: return F::InvDstColor;
-            case 0x308: return F::SrcAlphaSaturate;
+            case 0:
+                return F::Zero;
+            case 1:
+                return F::One;
+            case 0x300:
+                return F::SrcColor;
+            case 0x301:
+                return F::InvSrcColor;
+            case 0x302:
+                return F::SrcAlpha;
+            case 0x303:
+                return F::InvSrcAlpha;
+            case 0x304:
+                return F::DstAlpha;
+            case 0x305:
+                return F::InvDstAlpha;
+            case 0x306:
+                return F::DstColor;
+            case 0x307:
+                return F::InvDstColor;
+            case 0x308:
+                return F::SrcAlphaSaturate;
             }
             return F::One;
         }
@@ -364,15 +425,25 @@ namespace perlin::gpu {
             return s;
         }
 
-        const char* kFullscreenVertex =
-            "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = ftransform(); texcoord = gl_MultiTexCoord0.xy; }\n";
+        const char* kFullscreenVertex = "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = "
+                                        "ftransform(); texcoord = gl_MultiTexCoord0.xy; }\n";
         // the engine's depth is reversed (1 near, 0 far): the pack's conventional depth goes back as 1 - d
         const char* kReverseDepthFragment =
-            "#version 120\nuniform sampler2D depthtex0;\nvarying vec2 texcoord;\nvoid main() { gl_FragDepth = 1.0 - texture2D(depthtex0, texcoord).r; }\n";
+            "#version 120\nuniform sampler2D depthtex0;\nvarying vec2 texcoord;\nvoid main() { gl_FragDepth "
+            "= 1.0 - texture2D(depthtex0, texcoord).r; }\n";
         const char* kCopyColorFragment =
-            "#version 120\nuniform sampler2D colortex0;\nvarying vec2 texcoord;\n/* DRAWBUFFERS:0 */\nvoid main() { gl_FragData[0] = texture2D(colortex0, texcoord); }\n";
+            "#version 120\nuniform sampler2D colortex0;\nvarying vec2 texcoord;\n/* DRAWBUFFERS:0 */\nvoid "
+            "main() { gl_FragData[0] = texture2D(colortex0, texcoord); }\n";
 
-        enum SamplerId : int { SPointClamp, SLinearClamp, SLinearRepeat, SAtlas, SCompareLinear, SComparePoint, SCount };
+        enum SamplerId : int {
+            SPointClamp,
+            SLinearClamp,
+            SLinearRepeat,
+            SAtlas,
+            SCompareLinear,
+            SComparePoint,
+            SCount
+        };
 
         struct QuadVertex {
             float x, y, z, u, v;
@@ -396,7 +467,8 @@ namespace perlin::gpu {
             t.join();
     }
 
-    std::shared_future<std::shared_ptr<JavaPack::Converted>> JavaPack::Pool::Submit(std::function<std::shared_ptr<Converted>()> fn) {
+    std::shared_future<std::shared_ptr<JavaPack::Converted>>
+    JavaPack::Pool::Submit(std::function<std::shared_ptr<Converted>()> fn) {
         auto task = std::make_shared<std::packaged_task<std::shared_ptr<Converted>()>>(std::move(fn));
         auto fut = task->get_future().share();
         {
@@ -492,7 +564,8 @@ namespace perlin::gpu {
         customTextures.clear();
     }
 
-    rhi::TextureHandle JavaPack::MakeTexture(uint32_t w, uint32_t h, rhi::Format format, rhi::TextureUsage usage, const char* texName) {
+    rhi::TextureHandle JavaPack::MakeTexture(uint32_t w, uint32_t h, rhi::Format format,
+                                             rhi::TextureUsage usage, const char* texName) {
         rhi::TextureDesc td;
         td.format = format;
         td.width = std::max(1u, w);
@@ -548,8 +621,12 @@ namespace perlin::gpu {
         rhi::Device& dev = gpu.Dev();
         std::vector<rhi::BindLayoutEntry> entries;
         for (uint32_t s = 0; s < kTextureSlots; s++) {
-            entries.push_back({s * 2, rhi::BindingType::SampledTexture, rhi::ShaderStage::Fragment | rhi::ShaderStage::Vertex, 1, rhi::TextureDim::Tex2D, true});
-            entries.push_back({s * 2 + 1, rhi::BindingType::Sampler, rhi::ShaderStage::Fragment | rhi::ShaderStage::Vertex, 1, rhi::TextureDim::Tex2D, true});
+            entries.push_back({s * 2, rhi::BindingType::SampledTexture,
+                               rhi::ShaderStage::Fragment | rhi::ShaderStage::Vertex, 1,
+                               rhi::TextureDim::Tex2D, true});
+            entries.push_back({s * 2 + 1, rhi::BindingType::Sampler,
+                               rhi::ShaderStage::Fragment | rhi::ShaderStage::Vertex, 1,
+                               rhi::TextureDim::Tex2D, true});
         }
         rhi::BindLayoutDesc bl;
         bl.entries = entries;
@@ -561,13 +638,15 @@ namespace perlin::gpu {
         pl.name = "java pack";
         pipelineLayout = dev.CreatePipelineLayout(pl);
 
-        const QuadVertex verts[6] = {{0, 0, 0, 0, 0}, {1, 0, 0, 1, 0}, {1, 1, 0, 1, 1}, {0, 0, 0, 0, 0}, {1, 1, 0, 1, 1}, {0, 1, 0, 0, 1}};
+        const QuadVertex verts[6] = {{0, 0, 0, 0, 0}, {1, 0, 0, 1, 0}, {1, 1, 0, 1, 1},
+                                     {0, 0, 0, 0, 0}, {1, 1, 0, 1, 1}, {0, 1, 0, 0, 1}};
         quad = gpu.CreateStatic(verts, sizeof(verts), rhi::BufferUsage::Vertex, "java pack quad");
         return textureLayout && pipelineLayout && quad;
     }
 
     void JavaPack::CreateStatic() {
-        const uint8_t whitePx[4] = {255, 255, 255, 255}, normalPx[4] = {128, 128, 255, 255}, blackPx[4] = {0, 0, 0, 0};
+        const uint8_t whitePx[4] = {255, 255, 255, 255}, normalPx[4] = {128, 128, 255, 255},
+                      blackPx[4] = {0, 0, 0, 0};
         const auto make = [&](const uint8_t* px, const char* texName) {
             rhi::TextureDesc td;
             td.format = rhi::Format::RGBA8Unorm;
@@ -593,7 +672,8 @@ namespace perlin::gpu {
             if (!instance->Source().Read(clean, bytes))
                 return {};
             int w = 0, h = 0, n = 0;
-            unsigned char* data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(bytes.data()), static_cast<int>(bytes.size()), &w, &h, &n, 4);
+            unsigned char* data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(bytes.data()),
+                                                        static_cast<int>(bytes.size()), &w, &h, &n, 4);
             if (!data)
                 return {};
             rhi::TextureDesc td;
@@ -615,7 +695,7 @@ namespace perlin::gpu {
                 noise = t;
         }
         for (const jshader::CustomTexture& ct : config.textures) {
-            if (customTextures.count(ct.sampler))
+            if (customTextures.contains(ct.sampler))
                 continue;
             const rhi::TextureHandle t = load(ct.path);
             if (t)
@@ -631,7 +711,8 @@ namespace perlin::gpu {
             for (const std::string& n : instance->PassChain(base))
                 names.insert(n);
         names.insert("final");
-        const std::regex re("(colortex|shadowcolor|gaux)([0-9]+)|\\b(gcolor|gdepth)\\b|\\bshadowtex[01]\\b|\\bshadow\\b|\\bwatershadow\\b|\\bshadowcolor\\b");
+        const std::regex re("(colortex|shadowcolor|gaux)([0-9]+)|\\b(gcolor|gdepth)\\b|\\bshadowtex[01]\\b|"
+                            "\\bshadow\\b|\\bwatershadow\\b|\\bshadowcolor\\b");
         bufs[0].used = true;
         for (const std::string& n : names) {
             if (!instance->ProgramExists(n))
@@ -655,12 +736,16 @@ namespace perlin::gpu {
                     const size_t len = e - i;
                     if (len >= 5 && len <= 12) {
                         const char* w = t.data() + i;
-                        const auto digits = [&](size_t prefix) { return len > prefix && std::all_of(w + prefix, w + len, [](char d) { return d >= '0' && d <= '9'; }); };
+                        const auto digits = [&](size_t prefix) {
+                            return len > prefix && std::all_of(w + prefix, w + len,
+                                                               [](char d) { return d >= '0' && d <= '9'; });
+                        };
                         if (len > 8 && std::strncmp(w, "colortex", 8) == 0 && digits(8)) {
                             const int idx = std::atoi(std::string(w + 8, len - 8).c_str());
                             if (idx < jshader::kMaxColorTex)
                                 bufs[static_cast<size_t>(idx)].used = true;
-                        } else if (len == 5 && std::strncmp(w, "gaux", 4) == 0 && w[4] >= '1' && w[4] <= '4') {
+                        } else if (len == 5 && std::strncmp(w, "gaux", 4) == 0 && w[4] >= '1' &&
+                                   w[4] <= '4') {
                             bufs[static_cast<size_t>(3 + (w[4] - '0'))].used = true;
                         } else if (len > 11 && std::strncmp(w, "shadowcolor", 11) == 0 && digits(11)) {
                             const int idx = std::atoi(std::string(w + 11, len - 11).c_str());
@@ -675,8 +760,11 @@ namespace perlin::gpu {
                         } else if (len == 11 && std::strncmp(w, "shadowcolor", 11) == 0) {
                             shadowColorUsed[0] = true;
                             shadowUsed = true;
-                        } else if ((len == 9 && std::strncmp(w, "shadowtex", 9) == 0) || (len == 10 && std::strncmp(w, "shadowtex", 9) == 0 && (w[9] == '0' || w[9] == '1')) ||
-                                   (len == 6 && std::strncmp(w, "shadow", 6) == 0) || (len == 12 && std::strncmp(w, "watershadow", 11) == 0)) {
+                        } else if ((len == 9 && std::strncmp(w, "shadowtex", 9) == 0) ||
+                                   (len == 10 && std::strncmp(w, "shadowtex", 9) == 0 &&
+                                    (w[9] == '0' || w[9] == '1')) ||
+                                   (len == 6 && std::strncmp(w, "shadow", 6) == 0) ||
+                                   (len == 12 && std::strncmp(w, "watershadow", 11) == 0)) {
                             shadowUsed = true;
                         }
                     } else if (len == 6 && std::strncmp(t.data() + i, "shadow", 6) == 0) {
@@ -697,25 +785,31 @@ namespace perlin::gpu {
     bool JavaPack::CreateTargets(uint32_t w, uint32_t h) {
         width = w;
         height = h;
-        constexpr rhi::TextureUsage kColor = rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopySrc;
+        constexpr rhi::TextureUsage kColor =
+            rhi::TextureUsage::ColorTarget | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopySrc;
         for (int i = 0; i < jshader::kMaxColorTex; i++) {
             Buffer& b = bufs[static_cast<size_t>(i)];
             if (!b.used)
                 continue;
             const jshader::BufferSetup& cfg = config.color[static_cast<size_t>(i)];
-            b.w = cfg.fixedWidth > 0 ? static_cast<uint32_t>(cfg.fixedWidth) : std::max(1u, static_cast<uint32_t>(static_cast<float>(w) * cfg.scaleX));
-            b.h = cfg.fixedHeight > 0 ? static_cast<uint32_t>(cfg.fixedHeight) : std::max(1u, static_cast<uint32_t>(static_cast<float>(h) * cfg.scaleY));
-            for (int k = 0; k < 2; k++) {
-                b.tex[k] = MakeTexture(b.w, b.h, ToFormat(cfg.format), kColor, "pack color");
-                if (!b.tex[k])
+            b.w = cfg.fixedWidth > 0
+                      ? static_cast<uint32_t>(cfg.fixedWidth)
+                      : std::max(1u, static_cast<uint32_t>(static_cast<float>(w) * cfg.scaleX));
+            b.h = cfg.fixedHeight > 0
+                      ? static_cast<uint32_t>(cfg.fixedHeight)
+                      : std::max(1u, static_cast<uint32_t>(static_cast<float>(h) * cfg.scaleY));
+            for (auto& k : b.tex) {
+                k = MakeTexture(b.w, b.h, ToFormat(cfg.format), kColor, "pack color");
+                if (!k)
                     return false;
             }
             b.cur = 0;
         }
-        constexpr rhi::TextureUsage kDepth = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopySrc | rhi::TextureUsage::CopyDst;
-        for (int k = 0; k < 3; k++) {
-            depth[k] = MakeTexture(w, h, rhi::Format::D32Float, kDepth, "pack depth");
-            if (!depth[k])
+        constexpr rhi::TextureUsage kDepth = rhi::TextureUsage::DepthTarget | rhi::TextureUsage::Sampled |
+                                             rhi::TextureUsage::CopySrc | rhi::TextureUsage::CopyDst;
+        for (auto& k : depth) {
+            k = MakeTexture(w, h, rhi::Format::D32Float, kDepth, "pack depth");
+            if (!k)
                 return false;
         }
         if (shadowUsed) {
@@ -723,7 +817,8 @@ namespace perlin::gpu {
             shadowDepth = MakeTexture(res, res, rhi::Format::D32Float, kDepth, "pack shadow depth");
             for (int i = 0; i < 2; i++)
                 if (shadowColorUsed[i])
-                    shadowColor[i] = MakeTexture(res, res, ToFormat(config.shadowColorFormat[i]), kColor, "pack shadow color");
+                    shadowColor[i] = MakeTexture(res, res, ToFormat(config.shadowColorFormat[i]), kColor,
+                                                 "pack shadow color");
             if (!shadowDepth)
                 return false;
         }
@@ -757,7 +852,10 @@ namespace perlin::gpu {
     bool JavaPack::Load(const Config& cfg, std::string& error) {
         const rhi::Api api = gpu.Api();
         if (api != rhi::Api::Vulkan && api != rhi::Api::D3D12 && api != rhi::Api::D3D11) {
-            error = std::string("Java shader packs need the Vulkan, Direct3D 12 or Direct3D 11 renderer (this one is ") + rhi::ApiName(api) + ")";
+            error =
+                std::string(
+                    "Java shader packs need the Vulkan, Direct3D 12 or Direct3D 11 renderer (this one is ") +
+                rhi::ApiName(api) + ")";
             lastError = error;
             return false;
         }
@@ -765,7 +863,9 @@ namespace perlin::gpu {
         const auto lap = [&](const char* what) {
             if (std::getenv("JSHADER_TRACE"))
                 std::fprintf(stderr, "[jshader] load %s: %lld ms\n", what,
-                             static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()));
+                             static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                        std::chrono::steady_clock::now() - t0)
+                                                        .count()));
         };
         auto source = jshader::OpenPack(cfg.path);
         if (!source) {
@@ -775,8 +875,9 @@ namespace perlin::gpu {
         }
         path = cfg.path;
         blockName = cfg.blockName;
-        instance = std::make_shared<jshader::ShaderPackInstance>(std::shared_ptr<jshader::PackSource>(std::move(source)), cfg.options,
-                                                                  jshader::EngineMacros(260300, false));
+        instance = std::make_shared<jshader::ShaderPackInstance>(
+            std::shared_ptr<jshader::PackSource>(std::move(source)), cfg.options,
+            jshader::EngineMacros(260300, false));
         lap("opened");
         instance->SetDimension(cfg.dimension);
         name = instance->Name().empty() ? cfg.path : instance->Name();
@@ -784,7 +885,9 @@ namespace perlin::gpu {
         lap("parsed config");
         custom.Load(config.customUniformProps);
         table.SetCustom(&custom);
-        pool.Start(static_cast<int>(std::max(2u, std::min(6u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 1 : 2u))));
+        pool.Start(static_cast<int>(std::max(2u, std::min(6u, std::thread::hardware_concurrency() > 2
+                                                                  ? std::thread::hardware_concurrency() - 1
+                                                                  : 2u))));
         if (!CreateLayouts()) {
             error = "could not create the shader pack's bind layouts";
             lastError = error;
@@ -861,7 +964,8 @@ namespace perlin::gpu {
         gridCols = std::min(gridCols, std::max(1, maxTex / tilePx));
         gridRows = (tiles + gridCols - 1) / gridCols;
         if (gridRows * tilePx > maxTex) {
-            std::fprintf(stderr, "[javapack] atlas of %d tiles (%dpx) does not fit a %d texture\n", tiles, tilePx, maxTex);
+            std::fprintf(stderr, "[javapack] atlas of %d tiles (%dpx) does not fit a %d texture\n", tiles,
+                         tilePx, maxTex);
             gridRows = std::max(1, maxTex / tilePx);
             atlasTiles = gridRows * gridCols;
         }
@@ -882,8 +986,11 @@ namespace perlin::gpu {
             for (int t = 0; t < atlasTiles; t++) {
                 const int gx = t % gridCols, gy = t / gridCols;
                 for (int y = 0; y < tilePx; y++)
-                    std::memcpy(&base[(static_cast<size_t>(gy * tilePx + y) * W + static_cast<size_t>(gx) * tilePx) * 4],
-                                rgba + tileBytes * static_cast<size_t>(t) + static_cast<size_t>(y) * tilePx * 4, static_cast<size_t>(tilePx) * 4);
+                    std::memcpy(
+                        &base[(static_cast<size_t>(gy * tilePx + y) * W + static_cast<size_t>(gx) * tilePx) *
+                              4],
+                        rgba + tileBytes * static_cast<size_t>(t) + static_cast<size_t>(y) * tilePx * 4,
+                        static_cast<size_t>(tilePx) * 4);
             }
         }
         for (int l = 1; l <= tileLevels; l++) {
@@ -895,8 +1002,11 @@ namespace perlin::gpu {
             const int pw = sizes[static_cast<size_t>(l) - 1].first;
             for (int t = 0; t < atlasTiles; t++) {
                 const int gx = t % gridCols, gy = t / gridCols;
-                BoxDown(&prev[(static_cast<size_t>(gy * ps) * pw + static_cast<size_t>(gx) * ps) * 4], ps, ps, pw * 4,
-                        &levels[static_cast<size_t>(l)][(static_cast<size_t>(gy * s) * lw + static_cast<size_t>(gx) * s) * 4], lw * 4);
+                BoxDown(&prev[(static_cast<size_t>(gy * ps) * pw + static_cast<size_t>(gx) * ps) * 4], ps, ps,
+                        pw * 4,
+                        &levels[static_cast<size_t>(l)]
+                               [(static_cast<size_t>(gy * s) * lw + static_cast<size_t>(gx) * s) * 4],
+                        lw * 4);
             }
         }
         rhi::TextureDesc td;
@@ -911,7 +1021,8 @@ namespace perlin::gpu {
             return;
         }
         for (size_t l = 0; l < levels.size(); l++)
-            gpu.WriteTexture(atlas, 0, 0, 0, static_cast<uint32_t>(sizes[l].first), static_cast<uint32_t>(sizes[l].second), levels[l].data(), 0,
+            gpu.WriteTexture(atlas, 0, 0, 0, static_cast<uint32_t>(sizes[l].first),
+                             static_cast<uint32_t>(sizes[l].second), levels[l].data(), 0,
                              static_cast<uint32_t>(l));
     }
 
@@ -922,8 +1033,9 @@ namespace perlin::gpu {
         std::vector<uint8_t> cur(rgba, rgba + static_cast<size_t>(atlasTilePx) * atlasTilePx * 4), next;
         int s = atlasTilePx;
         for (int l = 0; l < atlasLevels; l++) {
-            gpu.WriteTexture(atlas, 0, static_cast<uint32_t>(gx * s), static_cast<uint32_t>(gy * s), static_cast<uint32_t>(s), static_cast<uint32_t>(s),
-                             cur.data(), 0, static_cast<uint32_t>(l));
+            gpu.WriteTexture(atlas, 0, static_cast<uint32_t>(gx * s), static_cast<uint32_t>(gy * s),
+                             static_cast<uint32_t>(s), static_cast<uint32_t>(s), cur.data(), 0,
+                             static_cast<uint32_t>(l));
             if (l + 1 >= atlasLevels)
                 break;
             next.assign(static_cast<size_t>(s / 2) * (s / 2) * 4, 0);
@@ -941,11 +1053,15 @@ namespace perlin::gpu {
         out.assign(verts.size() * kPackVertexBytes, 0);
         const float inset = 1.0f / (2.0f * static_cast<float>(atlasTilePx));
         const float span = 1.0f - 2.0f * inset;
-        const float invCols = 1.0f / static_cast<float>(gridCols), invRows = 1.0f / static_cast<float>(gridRows);
-        const auto put = [&](uint8_t* base, uint32_t offset, const void* data, size_t bytes) { std::memcpy(base + offset, data, bytes); };
+        const float invCols = 1.0f / static_cast<float>(gridCols),
+                    invRows = 1.0f / static_cast<float>(gridRows);
+        const auto put = [&](uint8_t* base, uint32_t offset, const void* data, size_t bytes) {
+            std::memcpy(base + offset, data, bytes);
+        };
         for (size_t q = 0; q + 3 < verts.size(); q += 4) {
             const Vertex* v = &verts[q];
-            const glm::vec3 p0(v[0].x, v[0].y, v[0].z), p1(v[1].x, v[1].y, v[1].z), p2(v[2].x, v[2].y, v[2].z), p3(v[3].x, v[3].y, v[3].z);
+            const glm::vec3 p0(v[0].x, v[0].y, v[0].z), p1(v[1].x, v[1].y, v[1].z),
+                p2(v[2].x, v[2].y, v[2].z), p3(v[3].x, v[3].y, v[3].z);
             glm::vec3 n = glm::cross(p1 - p0, p2 - p0);
             if (glm::dot(n, n) < 1e-12f)
                 n = glm::cross(p2 - p0, p3 - p0);
@@ -959,7 +1075,10 @@ namespace perlin::gpu {
                 const QuadInfo& info = quads[q / 4];
                 blockOrigin = glm::vec3(info.bx, info.by, info.bz);
                 block = info.block;
-                layerType = (info.layer == static_cast<uint8_t>(RenderLayer::Translucent) || info.layer == static_cast<uint8_t>(RenderLayer::TranslucentCull)) ? 1.0f : 0.0f;
+                layerType = (info.layer == static_cast<uint8_t>(RenderLayer::Translucent) ||
+                             info.layer == static_cast<uint8_t>(RenderLayer::TranslucentCull))
+                                ? 1.0f
+                                : 0.0f;
             } else {
                 blockOrigin = glm::floor(centre - n * 0.01f);
             }
@@ -982,17 +1101,21 @@ namespace perlin::gpu {
             float au[4], av[4];
             for (int i = 0; i < 4; i++) {
                 const uint32_t tile = v[i].light >> 16;
-                const int gx = static_cast<int>(tile % static_cast<uint32_t>(gridCols)), gy = static_cast<int>(tile / static_cast<uint32_t>(gridCols));
+                const int gx = static_cast<int>(tile % static_cast<uint32_t>(gridCols)),
+                          gy = static_cast<int>(tile / static_cast<uint32_t>(gridCols));
                 au[i] = (static_cast<float>(gx) + inset + v[i].u * span) * invCols;
                 av[i] = (static_cast<float>(gy) + inset + v[i].v * span) * invRows;
             }
-            const float mid[2] = {(au[0] + au[1] + au[2] + au[3]) * 0.25f, (av[0] + av[1] + av[2] + av[3]) * 0.25f};
+            const float mid[2] = {(au[0] + au[1] + au[2] + au[3]) * 0.25f,
+                                  (av[0] + av[1] + av[2] + av[3]) * 0.25f};
             const uint16_t normal[4] = {ToHalf(n.x), ToHalf(n.y), ToHalf(n.z), 0};
             const uint16_t tang[4] = {ToHalf(tangent.x), ToHalf(tangent.y), ToHalf(tangent.z), ToHalf(1.0f)};
             if (layerType > 0.5f && std::getenv("JSHADER_WATERDBG")) {
                 static int shown = 0;
                 if (shown++ < 6)
-                    std::fprintf(stderr, "[jshader] translucent quad block=%u name='%s' packId=%d rgba=%08x\n", block, blockName ? blockName(block).c_str() : "?", packId, v[0].rgba);
+                    std::fprintf(stderr,
+                                 "[jshader] translucent quad block=%u name='%s' packId=%d rgba=%08x\n", block,
+                                 blockName ? blockName(block).c_str() : "?", packId, v[0].rgba);
             }
             const float entity[2] = {static_cast<float>(packId), layerType};
             for (int i = 0; i < 4; i++) {
@@ -1000,9 +1123,11 @@ namespace perlin::gpu {
                 const float pos[3] = {v[i].x, v[i].y, v[i].z};
                 const uint32_t abgr = v[i].rgba;
                 const float uv[2] = {au[i], av[i]};
-                const float light[2] = {static_cast<float>(v[i].light & 0xFF), static_cast<float>((v[i].light >> 8) & 0xFF)};
+                const float light[2] = {static_cast<float>(v[i].light & 0xFF),
+                                        static_cast<float>((v[i].light >> 8) & 0xFF)};
                 const glm::vec3 toMid = (blockCentre - glm::vec3(pos[0], pos[1], pos[2])) * 64.0f;
-                const uint16_t midBlock[4] = {ToHalf(std::clamp(std::round(toMid.x), -127.0f, 127.0f)), ToHalf(std::clamp(std::round(toMid.y), -127.0f, 127.0f)),
+                const uint16_t midBlock[4] = {ToHalf(std::clamp(std::round(toMid.x), -127.0f, 127.0f)),
+                                              ToHalf(std::clamp(std::round(toMid.y), -127.0f, 127.0f)),
                                               ToHalf(std::clamp(std::round(toMid.z), -127.0f, 127.0f)), 0};
                 put(o, kPos, pos, 12);
                 put(o, kColor, &abgr, 4);
@@ -1019,7 +1144,9 @@ namespace perlin::gpu {
 
     // -- programs ------------------------------------------------------------------------------------------------------
 
-    std::string JavaPack::KeyFor(const std::string& n, bool toBackbuffer) const { return n + (toBackbuffer ? "#B" : "#O"); }
+    std::string JavaPack::KeyFor(const std::string& n, bool toBackbuffer) const {
+        return n + (toBackbuffer ? "#B" : "#O");
+    }
 
     JavaPack::SamplerBind JavaPack::ResolveSampler(const jshader::RhiSampler& s) {
         SamplerBind b;
@@ -1038,33 +1165,61 @@ namespace perlin::gpu {
             return true;
         };
         int idx = 0;
-        if (numeric("colortex", idx) && idx < jshader::kMaxColorTex) { b.kind = Kind::Color; b.index = idx; }
-        else if (n == "gcolor") { b.kind = Kind::Color; b.index = 0; }
-        else if (n == "gdepth") { b.kind = Kind::Color; b.index = 1; }
-        else if (n.compare(0, 4, "gaux") == 0 && n.size() == 5 && n[4] >= '1' && n[4] <= '4') { b.kind = Kind::Color; b.index = 3 + (n[4] - '0'); }
-        else if (n == "depthtex0" || n == "gdepthtex") { b.kind = Kind::Depth; b.index = 0; }
-        else if (n == "depthtex1") { b.kind = Kind::Depth; b.index = 1; }
-        else if (n == "depthtex2") { b.kind = Kind::Depth; b.index = 2; }
-        else if (n == "shadowtex0" || n == "shadowtex1" || n == "shadow" || n == "watershadow") { b.kind = Kind::ShadowDepth; b.index = 0; }
-        else if (n == "shadowcolor0" || n == "shadowcolor") { b.kind = Kind::ShadowColor; b.index = 0; }
-        else if (n == "shadowcolor1") { b.kind = Kind::ShadowColor; b.index = 1; }
-        else if (n == "noisetex") b.kind = Kind::Noise;
-        else if (n == "gtexture" || n == "tex" || n == "texture" || n == "iris_texture") b.kind = Kind::Atlas;
-        else if (n == "lightmap" || n == "iris_lightmap") b.kind = Kind::Lightmap;
-        else if (n == "normals") b.kind = Kind::Normals;
-        else if (n == "specular") b.kind = Kind::Specular;
-        else if (n == "iris_overlay") b.kind = Kind::Overlay;
-        else if (customTextures.count(n)) b.kind = Kind::Custom;
-        else b.kind = Kind::Dummy;
+        if (numeric("colortex", idx) && idx < jshader::kMaxColorTex) {
+            b.kind = Kind::Color;
+            b.index = idx;
+        } else if (n == "gcolor") {
+            b.kind = Kind::Color;
+            b.index = 0;
+        } else if (n == "gdepth") {
+            b.kind = Kind::Color;
+            b.index = 1;
+        } else if (n.compare(0, 4, "gaux") == 0 && n.size() == 5 && n[4] >= '1' && n[4] <= '4') {
+            b.kind = Kind::Color;
+            b.index = 3 + (n[4] - '0');
+        } else if (n == "depthtex0" || n == "gdepthtex") {
+            b.kind = Kind::Depth;
+            b.index = 0;
+        } else if (n == "depthtex1") {
+            b.kind = Kind::Depth;
+            b.index = 1;
+        } else if (n == "depthtex2") {
+            b.kind = Kind::Depth;
+            b.index = 2;
+        } else if (n == "shadowtex0" || n == "shadowtex1" || n == "shadow" || n == "watershadow") {
+            b.kind = Kind::ShadowDepth;
+            b.index = 0;
+        } else if (n == "shadowcolor0" || n == "shadowcolor") {
+            b.kind = Kind::ShadowColor;
+            b.index = 0;
+        } else if (n == "shadowcolor1") {
+            b.kind = Kind::ShadowColor;
+            b.index = 1;
+        } else if (n == "noisetex")
+            b.kind = Kind::Noise;
+        else if (n == "gtexture" || n == "tex" || n == "texture" || n == "iris_texture")
+            b.kind = Kind::Atlas;
+        else if (n == "lightmap" || n == "iris_lightmap")
+            b.kind = Kind::Lightmap;
+        else if (n == "normals")
+            b.kind = Kind::Normals;
+        else if (n == "specular")
+            b.kind = Kind::Specular;
+        else if (n == "iris_overlay")
+            b.kind = Kind::Overlay;
+        else if (customTextures.contains(n))
+            b.kind = Kind::Custom;
+        else
+            b.kind = Kind::Dummy;
         return b;
     }
 
-    JavaPack::Program* JavaPack::Finish(const std::string& key, const std::string& progName, const Converted& c,
-                                        std::shared_ptr<jshader::ProgramSource> source) {
+    JavaPack::Program* JavaPack::Finish(const std::string& key, const std::string& progName,
+                                        const Converted& c, std::shared_ptr<jshader::ProgramSource> source) {
         auto p = std::make_unique<Program>();
         p->source = std::move(source);
         const jshader::RhiProgram& rp = c.program;
-        const rhi::ShaderFormat format = rp.kind == jshader::RhiShaderKind::SpirV ? rhi::ShaderFormat::SpirV
+        const rhi::ShaderFormat format = rp.kind == jshader::RhiShaderKind::SpirV  ? rhi::ShaderFormat::SpirV
                                          : rp.kind == jshader::RhiShaderKind::Dxbc ? rhi::ShaderFormat::Dxbc
                                                                                    : rhi::ShaderFormat::Hlsl;
         rhi::ShaderDesc sd;
@@ -1080,24 +1235,28 @@ namespace perlin::gpu {
         p->regs = rp.uniformRegs;
         for (const jshader::RhiSampler& s : rp.samplers) {
             if (s.slot >= static_cast<int>(kTextureSlots)) {
-                std::fprintf(stderr, "[jshader] %s: sampler '%s' needs slot %d (only %u exist)\n", progName.c_str(), s.name.c_str(), s.slot, kTextureSlots);
+                std::fprintf(stderr, "[jshader] %s: sampler '%s' needs slot %d (only %u exist)\n",
+                             progName.c_str(), s.name.c_str(), s.slot, kTextureSlots);
                 p->valid = false;
                 continue;
             }
             p->samplers.push_back(ResolveSampler(s));
         }
         if (p->regs > 256) {
-            std::fprintf(stderr, "[jshader] %s: %d uniform registers (limit 256)\n", progName.c_str(), p->regs);
+            std::fprintf(stderr, "[jshader] %s: %d uniform registers (limit 256)\n", progName.c_str(),
+                         p->regs);
             p->valid = false;
         }
         for (const jshader::UniformDecl& d : c.transform.uniforms) {
             UniformSlot slot;
             slot.decl = d;
             slot.known = table.Known(d.name);
-            static const std::set<std::string> perDraw = {"entityColor", "entityId", "blockEntityId", "currentRenderedItemId", "renderStage"};
-            slot.perDraw = d.name.compare(0, 5, "iris_") == 0 || perDraw.count(d.name) != 0;
+            static const std::set<std::string> perDraw = {"entityColor", "entityId", "blockEntityId",
+                                                          "currentRenderedItemId", "renderStage"};
+            slot.perDraw = d.name.compare(0, 5, "iris_") == 0 || perDraw.contains(d.name);
             if (!slot.known && loggedMissing.insert(progName + ":" + d.name).second)
-                std::fprintf(stderr, "[jshader] %s: unknown uniform '%s' (left at 0)\n", progName.c_str(), d.name.c_str());
+                std::fprintf(stderr, "[jshader] %s: unknown uniform '%s' (left at 0)\n", progName.c_str(),
+                             d.name.c_str());
             p->anyPerDraw = p->anyPerDraw || slot.perDraw;
             p->slots.push_back(std::move(slot));
         }
@@ -1115,7 +1274,8 @@ namespace perlin::gpu {
         return raw;
     }
 
-    JavaPack::Program* JavaPack::GetProgram(const std::string& progName, bool toBackbuffer, const jshader::ExpandedSource* vs,
+    JavaPack::Program* JavaPack::GetProgram(const std::string& progName, bool toBackbuffer,
+                                            const jshader::ExpandedSource* vs,
                                             const jshader::ExpandedSource* fs, rhi::Format) {
         const std::string key = KeyFor(progName, toBackbuffer);
         const auto ready = programs.find(key);
@@ -1145,19 +1305,24 @@ namespace perlin::gpu {
             opts.availableAttribs = AttribMask();
             opts.zeroToOneDepth = true;
             opts.splitSamplers = true;
-            opts.explicitLod = progName.compare(0, 8, "gbuffers") != 0 && progName.compare(0, 6, "shadow") != 0 && progName.compare(0, 4, "hand") != 0 &&
+            opts.explicitLod = progName.compare(0, 8, "gbuffers") != 0 &&
+                               progName.compare(0, 6, "shadow") != 0 && progName.compare(0, 4, "hand") != 0 &&
                                progName.compare(0, 6, "entity") != 0;
             // offscreen targets are stored upside down against the screen so the pack's opengl uv convention holds
             opts.flipVertexY = !toBackbuffer;
             opts.flipFragCoordY = toBackbuffer;
             const rhi::Api api = gpu.Api();
-            const jshader::RhiShaderKind kind = api == rhi::Api::Vulkan ? jshader::RhiShaderKind::SpirV
+            const jshader::RhiShaderKind kind = api == rhi::Api::Vulkan  ? jshader::RhiShaderKind::SpirV
                                                 : api == rhi::Api::D3D12 ? jshader::RhiShaderKind::Dxbc
                                                                          : jshader::RhiShaderKind::Hlsl;
-            const jshader::RhiShaderKind kindUsed = std::getenv("JSHADER_FORCE_HLSL") ? jshader::RhiShaderKind::Hlsl : kind; // conversion check without a d3d device
+            const jshader::RhiShaderKind kindUsed = std::getenv("JSHADER_FORCE_HLSL")
+                                                        ? jshader::RhiShaderKind::Hlsl
+                                                        : kind; // conversion check without a d3d device
             const jshader::DxbcCompiler dxbc = jshader::SystemDxbcCompiler();
-            const std::filesystem::path cacheFile = CacheFile(vertex, fragment, opts, static_cast<int>(kind), progName);
-            auto fut = pool.Submit([vertex = std::move(vertex), fragment = std::move(fragment), opts, kind = kindUsed, dxbc, cacheFile]() {
+            const std::filesystem::path cacheFile =
+                CacheFile(vertex, fragment, opts, static_cast<int>(kind), progName);
+            auto fut = pool.Submit([vertex = std::move(vertex), fragment = std::move(fragment), opts,
+                                    kind = kindUsed, dxbc, cacheFile]() {
                 auto c = std::make_shared<Converted>();
                 CachedProgram cached;
                 if (LoadCache(cacheFile, cached)) {
@@ -1176,7 +1341,8 @@ namespace perlin::gpu {
                 }
                 c->transform = jshader::TransformProgram(vertex, fragment, opts);
                 if (!c->transform.ok()) {
-                    c->error = c->transform.vertex.ok ? c->transform.fragment.error : c->transform.vertex.error;
+                    c->error =
+                        c->transform.vertex.ok ? c->transform.fragment.error : c->transform.vertex.error;
                     return c;
                 }
                 c->program = jshader::BuildRhiProgram(c->transform, kind, dxbc);
@@ -1184,8 +1350,10 @@ namespace perlin::gpu {
                 if (const char* dumpName = std::getenv("JSHADER_DUMP_HLSL")) {
                     // writes the converted hlsl of every program next to the given prefix
                     const std::string base = dumpName;
-                    std::ofstream(base + std::to_string(std::hash<std::string>()(fragment.text)) + ".ps.hlsl") << c->program.fragmentSource;
-                    std::ofstream(base + std::to_string(std::hash<std::string>()(fragment.text)) + ".vs.hlsl") << c->program.vertexSource;
+                    std::ofstream(base + std::to_string(std::hash<std::string>()(fragment.text)) + ".ps.hlsl")
+                        << c->program.fragmentSource;
+                    std::ofstream(base + std::to_string(std::hash<std::string>()(fragment.text)) + ".vs.hlsl")
+                        << c->program.vertexSource;
                 }
                 if (!c->ok) {
                     c->error = c->program.error;
@@ -1207,10 +1375,12 @@ namespace perlin::gpu {
             return nullptr;
         std::shared_ptr<Converted> c = it->second.get();
         if (!c->ok) {
-            std::fprintf(stderr, "[jshader] program %s failed: %.1500s\n", progName.c_str(), c->error.c_str());
+            std::fprintf(stderr, "[jshader] program %s failed: %.1500s\n", progName.c_str(),
+                         c->error.c_str());
             if (const char* dump = std::getenv("JSHADER_DUMP"))
                 if (progName == dump)
-                    std::fprintf(stderr, "---- %s vertex (failed)\n%s\n---- fragment (failed)\n%s\n", progName.c_str(), c->transform.vertex.glsl.c_str(),
+                    std::fprintf(stderr, "---- %s vertex (failed)\n%s\n---- fragment (failed)\n%s\n",
+                                 progName.c_str(), c->transform.vertex.glsl.c_str(),
                                  c->transform.fragment.glsl.c_str());
             lastError = c->error;
             programs[key] = std::make_unique<Program>();
@@ -1218,10 +1388,12 @@ namespace perlin::gpu {
         }
         if (const char* dump = std::getenv("JSHADER_DUMP"))
             if (progName == dump)
-                std::fprintf(stderr, "---- %s vertex\n%s\n---- fragment\n%s\n", progName.c_str(), c->transform.vertex.glsl.c_str(), c->transform.fragment.glsl.c_str());
+                std::fprintf(stderr, "---- %s vertex\n%s\n---- fragment\n%s\n", progName.c_str(),
+                             c->transform.vertex.glsl.c_str(), c->transform.fragment.glsl.c_str());
         Program* p = Finish(key, progName, *c, source);
         if (!p->valid) {
-            std::fprintf(stderr, "[jshader] program %s could not be created on this device\n", progName.c_str());
+            std::fprintf(stderr, "[jshader] program %s could not be created on this device\n",
+                         progName.c_str());
             return nullptr;
         }
         return p;
@@ -1231,9 +1403,9 @@ namespace perlin::gpu {
         int remaining = 0, started = 0;
         const auto touch = [&](const std::string& n, bool toBackbuffer) {
             const std::string key = KeyFor(n, toBackbuffer);
-            if (programs.count(key))
+            if (programs.contains(key))
                 return;
-            if (!pending.count(key)) {
+            if (!pending.contains(key)) {
                 if (started >= 2) {
                     remaining++;
                     return;
@@ -1241,7 +1413,7 @@ namespace perlin::gpu {
                 started++;
             }
             GetProgram(n, toBackbuffer);
-            if (!programs.count(key))
+            if (!programs.contains(key))
                 remaining++;
         };
         for (const char* n : {"gbuffers_terrain", "gbuffers_water", "shadow"})
@@ -1261,9 +1433,11 @@ namespace perlin::gpu {
 
     rhi::PipelineHandle JavaPack::PipelineFor(Program& p, const PipeState& st) {
         char key[256];
-        std::snprintf(key, sizeof(key), "%p|%d|%u|%d|%d%d|%d|%d|%d,%d,%d,%d|%d|", static_cast<void*>(&p), st.scene ? 1 : 0, st.colorCount,
-                      static_cast<int>(st.depth), st.depthTest, st.depthWrite, static_cast<int>(st.depthOp), st.blend ? 1 : 0, static_cast<int>(st.src),
-                      static_cast<int>(st.dst), static_cast<int>(st.srcA), static_cast<int>(st.dstA), static_cast<int>(st.mask));
+        std::snprintf(key, sizeof(key), "%p|%d|%u|%d|%d%d|%d|%d|%d,%d,%d,%d|%d|", static_cast<void*>(&p),
+                      st.scene ? 1 : 0, st.colorCount, static_cast<int>(st.depth), st.depthTest,
+                      st.depthWrite, static_cast<int>(st.depthOp), st.blend ? 1 : 0, static_cast<int>(st.src),
+                      static_cast<int>(st.dst), static_cast<int>(st.srcA), static_cast<int>(st.dstA),
+                      static_cast<int>(st.mask));
         std::string k = key;
         for (uint32_t i = 0; i < st.colorCount; i++)
             k += std::to_string(static_cast<int>(st.colors[i])) + ",";
@@ -1345,13 +1519,15 @@ namespace perlin::gpu {
             FillUniforms(p, jshader::PackDrawState(), false);
             p.drawRegs = p.frameRegs;
         }
-        if (p.anyPerDraw && (!p.haveDraw || std::memcmp(&p.lastDraw, &draw, sizeof(jshader::PackDrawState)) != 0)) {
+        if (p.anyPerDraw &&
+            (!p.haveDraw || std::memcmp(&p.lastDraw, &draw, sizeof(jshader::PackDrawState)) != 0)) {
             FillUniforms(p, draw, true);
             p.lastDraw = draw;
             p.haveDraw = true;
         }
         const uint64_t bytes = static_cast<uint64_t>(std::max(1, p.regs)) * 16;
-        const RingSlice slice = gpu.Ring(bytes, std::max<uint32_t>(256, gpu.Caps().limits.uniformBufferAlignment));
+        const RingSlice slice =
+            gpu.Ring(bytes, std::max<uint32_t>(256, gpu.Caps().limits.uniformBufferAlignment));
         if (!slice.data)
             return false;
         std::memcpy(slice.data, p.drawRegs.data(), static_cast<size_t>(bytes));
@@ -1385,13 +1561,16 @@ namespace perlin::gpu {
         return g;
     }
 
-    rhi::BindGroupHandle JavaPack::Textures(rhi::CommandList& list, Program& p, const std::vector<rhi::TextureHandle>& attached) {
+    rhi::BindGroupHandle JavaPack::Textures(rhi::CommandList& list, Program& p,
+                                            const std::vector<rhi::TextureHandle>& attached) {
         PackSet set;
         for (size_t i = 0; i < kTextureSlots; i++) {
             set.texture[i] = white;
             set.sampler[i] = SLinearClamp;
         }
-        const auto isAttached = [&](rhi::TextureHandle t) { return std::find(attached.begin(), attached.end(), t) != attached.end(); };
+        const auto isAttached = [&](rhi::TextureHandle t) {
+            return std::find(attached.begin(), attached.end(), t) != attached.end();
+        };
         for (const SamplerBind& s : p.samplers) {
             rhi::TextureHandle t = white;
             int smp = SLinearClamp;
@@ -1432,14 +1611,19 @@ namespace perlin::gpu {
                 if (lightmapTex)
                     t = lightmapTex;
                 break;
-            case Kind::Normals: t = flatNormal; break;
+            case Kind::Normals:
+                t = flatNormal;
+                break;
             case Kind::Specular:
-            case Kind::Overlay: t = blackTex; break;
+            case Kind::Overlay:
+                t = blackTex;
+                break;
             case Kind::Custom:
                 t = customTextures[s.name];
                 smp = SLinearRepeat;
                 break;
-            case Kind::Dummy: break;
+            case Kind::Dummy:
+                break;
             }
             if (!t || isAttached(t))
                 t = white;
@@ -1490,7 +1674,8 @@ namespace perlin::gpu {
         s.moonPhase = static_cast<int>(std::floor(params.sky.moonPhase)) & 7;
         const glm::vec3 sunDir(-std::sin(static_cast<float>(a)), std::cos(static_cast<float>(a)), 0.0f);
         const glm::mat3 rot3(rotation);
-        const glm::vec3 sunView = rot3 * sunDir * 100.0f, moonView = -sunView, upView = rot3 * glm::vec3(0, 1, 0) * 100.0f;
+        const glm::vec3 sunView = rot3 * sunDir * 100.0f, moonView = -sunView,
+                        upView = rot3 * glm::vec3(0, 1, 0) * 100.0f;
         for (int i = 0; i < 3; i++) {
             s.sunPosition[i] = sunView[i];
             s.moonPosition[i] = moonView[i];
@@ -1536,7 +1721,8 @@ namespace perlin::gpu {
         // the shadow camera sits on the light and snaps to whole shadow texels so the map does not swim while the player moves
         glm::vec3 lightDir = dayLight ? sunDir : -sunDir;
         if (std::fabs(config.sunPathRotation) > 0.001f) {
-            const glm::mat4 tilt = glm::rotate(glm::mat4(1.0f), glm::radians(config.sunPathRotation), glm::vec3(1, 0, 0));
+            const glm::mat4 tilt =
+                glm::rotate(glm::mat4(1.0f), glm::radians(config.sunPathRotation), glm::vec3(1, 0, 0));
             lightDir = glm::vec3(tilt * glm::vec4(lightDir, 0.0f));
         }
         lightDir = glm::normalize(lightDir);
@@ -1550,7 +1736,8 @@ namespace perlin::gpu {
         const glm::vec3 camLight = glm::mat3(lookAt) * camera;
         const glm::vec2 snapped = glm::round(glm::vec2(camLight) / texel) * texel;
         // the camera ends up (within a texel) at the middle of the map, halfway down the depth range so occluders toward the light are kept
-        const glm::mat4 sv = glm::translate(glm::mat4(1.0f), glm::vec3(-snapped.x, -snapped.y, -camLight.z - 128.0f)) * lookAt;
+        const glm::mat4 sv =
+            glm::translate(glm::mat4(1.0f), glm::vec3(-snapped.x, -snapped.y, -camLight.z - 128.0f)) * lookAt;
         // the pack's shaders hand shadowModelView camera-relative positions; the shadow pass draws world positions
         FromMat(sv * glm::translate(glm::mat4(1.0f), camera), shadowView);
         FromMat(glm::orthoRH_NO(-r, r, -r, r, 0.05f, 256.0f), shadowProjection);
@@ -1568,7 +1755,8 @@ namespace perlin::gpu {
         std::memcpy(d.projection, frameState.projection, sizeof(d.projection));
         const glm::mat3 normalMat(ToMat(frame.view));
         std::memcpy(d.normalMatrix, &normalMat[0][0], sizeof(d.normalMatrix));
-        const float lm[16] = {1.0f / 256.0f, 0, 0, 0, 0, 1.0f / 256.0f, 0, 0, 0, 0, 1, 0, 1.0f / 32.0f, 1.0f / 32.0f, 0, 1};
+        const float lm[16] = {1.0f / 256.0f, 0, 0, 0, 0, 1.0f / 256.0f, 0, 0, 0, 0, 1, 0, 1.0f / 32.0f,
+                              1.0f / 32.0f,  0, 1};
         std::memcpy(d.textureMatrix1, lm, sizeof(lm));
         for (int i = 0; i < 3; i++)
             d.fogColor[i] = frameState.fogColor[i];
@@ -1594,7 +1782,8 @@ namespace perlin::gpu {
             meshes.CollectRuns(layer, ordered, layerRuns[static_cast<size_t>(l)]);
         }
         const float reach = std::max(8.0f, config.shadowDistance) * 1.5f + 24.0f;
-        static const RenderLayer kShadowLayers[3] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull};
+        static const RenderLayer kShadowLayers[3] = {RenderLayer::Solid, RenderLayer::Cutout,
+                                                     RenderLayer::CutoutCull};
         for (auto& v : shadowRuns)
             v.clear();
         if (!config.shadowEnabled)
@@ -1603,22 +1792,26 @@ namespace perlin::gpu {
             const ChunkMeshStore::Chunk& g = entry.second;
             if (g.page < 0)
                 continue;
-            const float dx = static_cast<float>(g.cx) * static_cast<float>(g.size) + static_cast<float>(g.size) * 0.5f - camX;
-            const float dz = static_cast<float>(g.cz) * static_cast<float>(g.size) + static_cast<float>(g.size) * 0.5f - camZ;
+            const float dx = static_cast<float>(g.cx) * static_cast<float>(g.size) +
+                             static_cast<float>(g.size) * 0.5f - camX;
+            const float dz = static_cast<float>(g.cz) * static_cast<float>(g.size) +
+                             static_cast<float>(g.size) * 0.5f - camZ;
             if (dx * dx + dz * dz > reach * reach)
                 continue;
             for (size_t i = 0; i < 3; i++) {
                 const size_t slot = static_cast<size_t>(kShadowLayers[i]);
                 if (g.layerCount[slot])
-                    shadowRuns[i].push_back({static_cast<uint32_t>(g.page), g.iOff[slot], g.layerCount[slot]});
+                    shadowRuns[i].push_back(
+                        {static_cast<uint32_t>(g.page), g.iOff[slot], g.layerCount[slot]});
             }
         }
     }
 
     // -- passes --------------------------------------------------------------------------------------------------------
 
-    void JavaPack::BeginPass(rhi::CommandList& list, const std::vector<rhi::TextureHandle>& colors, rhi::TextureHandle depthTex, uint32_t w, uint32_t h,
-                             bool clearDepth, const std::vector<std::array<float, 4>>* clears, const char* passName) {
+    void JavaPack::BeginPass(rhi::CommandList& list, const std::vector<rhi::TextureHandle>& colors,
+                             rhi::TextureHandle depthTex, uint32_t w, uint32_t h, bool clearDepth,
+                             const std::vector<std::array<float, 4>>* clears, const char* passName) {
         rhi::RenderingDesc rd;
         rd.colorCount = static_cast<uint32_t>(colors.size());
         for (size_t i = 0; i < colors.size(); i++) {
@@ -1668,22 +1861,28 @@ namespace perlin::gpu {
                 clears.push_back(c);
             }
             const bool first = g == 0;
-            BeginPass(list, tex, first ? depth[0] : rhi::TextureHandle{}, bufs[static_cast<size_t>(used[g])].w, bufs[static_cast<size_t>(used[g])].h, first,
+            BeginPass(list, tex, first ? depth[0] : rhi::TextureHandle{},
+                      bufs[static_cast<size_t>(used[g])].w, bufs[static_cast<size_t>(used[g])].h, first,
                       &clears, "pack clear");
             list.EndRendering();
         }
     }
 
-    bool JavaPack::DrawLayers(rhi::CommandList& list, const char* programName, const std::vector<RenderLayer>& layers, bool translucent, bool shadow) {
+    bool JavaPack::DrawLayers(rhi::CommandList& list, const char* programName,
+                              const std::vector<RenderLayer>& layers, bool translucent, bool shadow) {
         Program* p = GetProgram(programName, false);
         if (!p)
             return false;
         bool any = false;
         if (trace)
-            std::fprintf(stderr, "[jshader] draw %s shadow=%d runs: solid %zu cutout %zu translucent %zu\n", programName, shadow ? 1 : 0,
-                         layerRuns[0].size(), layerRuns[1].size(), layerRuns[2].size());
+            std::fprintf(stderr, "[jshader] draw %s shadow=%d runs: solid %zu cutout %zu translucent %zu\n",
+                         programName, shadow ? 1 : 0, layerRuns[0].size(), layerRuns[1].size(),
+                         layerRuns[2].size());
         for (RenderLayer layer : layers) {
-            const auto& list2 = shadow ? shadowRuns[layer == RenderLayer::Solid ? 0 : layer == RenderLayer::Cutout ? 1 : 2] : layerRuns[static_cast<size_t>(layer)];
+            const auto& list2 = shadow ? shadowRuns[layer == RenderLayer::Solid    ? 0
+                                                    : layer == RenderLayer::Cutout ? 1
+                                                                                   : 2]
+                                       : layerRuns[static_cast<size_t>(layer)];
             any = any || !list2.empty();
         }
         if (!any)
@@ -1694,9 +1893,9 @@ namespace perlin::gpu {
         uint32_t w = width, h = height;
         PipeState st;
         if (shadow) {
-            for (int i = 0; i < 2; i++)
-                if (shadowColor[i])
-                    colors.push_back(shadowColor[i]);
+            for (auto i : shadowColor)
+                if (i)
+                    colors.push_back(i);
             depthTarget = shadowDepth;
             w = h = static_cast<uint32_t>(config.shadowMapResolution);
         } else {
@@ -1750,7 +1949,10 @@ namespace perlin::gpu {
         }
         list.SetBindGroup(1, textures);
         for (RenderLayer layer : layers) {
-            const auto& runList = shadow ? shadowRuns[layer == RenderLayer::Solid ? 0 : layer == RenderLayer::Cutout ? 1 : 2] : layerRuns[static_cast<size_t>(layer)];
+            const auto& runList = shadow ? shadowRuns[layer == RenderLayer::Solid    ? 0
+                                                      : layer == RenderLayer::Cutout ? 1
+                                                                                     : 2]
+                                         : layerRuns[static_cast<size_t>(layer)];
             if (runList.empty())
                 continue;
             PipeState ls = st;
@@ -1783,11 +1985,13 @@ namespace perlin::gpu {
                 const rhi::BufferHandle ib = meshes.Indices(r.page, layer);
                 if (!vb || !ib) {
                     if (trace)
-                        std::fprintf(stderr, "[jshader] %s: page %u has no %s\n", programName, r.page, vb ? "indices" : "pack vertices");
+                        std::fprintf(stderr, "[jshader] %s: page %u has no %s\n", programName, r.page,
+                                     vb ? "indices" : "pack vertices");
                     continue;
                 }
                 if (trace)
-                    std::fprintf(stderr, "[jshader] %s: draw %u indices from %u\n", programName, r.count, r.first);
+                    std::fprintf(stderr, "[jshader] %s: draw %u indices from %u\n", programName, r.count,
+                                 r.first);
                 list.SetVertexBuffer(0, vb);
                 list.SetIndexBuffer(ib, rhi::IndexType::U32);
                 list.DrawIndexed(r.count, 1, r.first, 0, 0);
@@ -1800,15 +2004,18 @@ namespace perlin::gpu {
     void JavaPack::DrawShadows(rhi::CommandList& list) {
         if (!config.shadowEnabled || !shadowDepth)
             return;
-        DrawLayers(list, "shadow", {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull}, false, true);
+        DrawLayers(list, "shadow", {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull}, false,
+                   true);
     }
 
     void JavaPack::DrawTerrain(rhi::CommandList& list) {
-        DrawLayers(list, "gbuffers_terrain", {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull}, false, false);
+        DrawLayers(list, "gbuffers_terrain",
+                   {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull}, false, false);
     }
 
     void JavaPack::DrawTranslucent(rhi::CommandList& list) {
-        DrawLayers(list, "gbuffers_water", {RenderLayer::Translucent, RenderLayer::TranslucentCull}, true, false);
+        DrawLayers(list, "gbuffers_water", {RenderLayer::Translucent, RenderLayer::TranslucentCull}, true,
+                   false);
     }
 
     namespace {
@@ -1829,7 +2036,8 @@ namespace perlin::gpu {
                 count++;
             }
             // quad around a centre in the plane spanned by right and up
-            void Quad(const glm::vec3& c, const glm::vec3& r, const glm::vec3& u, const uint8_t rgba[4], float u0, float v0, float u1, float v1) {
+            void Quad(const glm::vec3& c, const glm::vec3& r, const glm::vec3& u, const uint8_t rgba[4],
+                      float u0, float v0, float u1, float v1) {
                 const glm::vec3 p0 = c - r - u, p1 = c + r - u, p2 = c + r + u, p3 = c - r + u;
                 Vertex(p0.x, p0.y, p0.z, rgba, u0, v1);
                 Vertex(p1.x, p1.y, p1.z, rgba, u1, v1);
@@ -1841,8 +2049,10 @@ namespace perlin::gpu {
         };
     }
 
-    void JavaPack::DrawSkyObjects(rhi::CommandList& list, const char* programName, int stage, rhi::BufferHandle vb, uint32_t first, uint32_t count,
-                                  rhi::BufferHandle ring, uint64_t ringOffset, const float* modelView, rhi::TextureHandle texture, bool additive) {
+    void JavaPack::DrawSkyObjects(rhi::CommandList& list, const char* programName, int stage,
+                                  rhi::BufferHandle vb, uint32_t first, uint32_t count,
+                                  rhi::BufferHandle ring, uint64_t ringOffset, const float* modelView,
+                                  rhi::TextureHandle texture, bool additive) {
         Program* p = GetProgram(programName, false);
         if (!p || count == 0)
             return;
@@ -1900,7 +2110,8 @@ namespace perlin::gpu {
         }
         list.SetBindGroup(1, textures);
         list.SetPipeline(pipe);
-        list.SetVertexBuffer(0, ring ? ring : vb, ring ? ringOffset : static_cast<uint64_t>(first) * kPackVertexBytes);
+        list.SetVertexBuffer(0, ring ? ring : vb,
+                             ring ? ringOffset : static_cast<uint64_t>(first) * kPackVertexBytes);
         list.Draw(count, 1, 0, 0);
         list.EndRendering();
     }
@@ -1908,10 +2119,22 @@ namespace perlin::gpu {
     void JavaPack::DrawSky(rhi::CommandList& list) {
         if (!instance)
             return;
-        const float rot[16] = {frameState.modelView[0], frameState.modelView[1], frameState.modelView[2], frameState.modelView[3],
-                               frameState.modelView[4], frameState.modelView[5], frameState.modelView[6], frameState.modelView[7],
-                               frameState.modelView[8], frameState.modelView[9], frameState.modelView[10], frameState.modelView[11],
-                               0, 0, 0, 1};
+        const float rot[16] = {frameState.modelView[0],
+                               frameState.modelView[1],
+                               frameState.modelView[2],
+                               frameState.modelView[3],
+                               frameState.modelView[4],
+                               frameState.modelView[5],
+                               frameState.modelView[6],
+                               frameState.modelView[7],
+                               frameState.modelView[8],
+                               frameState.modelView[9],
+                               frameState.modelView[10],
+                               frameState.modelView[11],
+                               0,
+                               0,
+                               0,
+                               1};
         const double a = frame.sky.sunAngle;
         const glm::mat4 spin = glm::rotate(glm::mat4(1.0f), static_cast<float>(a), glm::vec3(0, 0, 1));
         float spun[16];
@@ -1927,16 +2150,19 @@ namespace perlin::gpu {
                 return static_cast<float>((seed >> 8) & 0xFFFFFF) / 16777216.0f;
             };
             for (int i = 0; i < 1500; i++) {
-                const float z = rnd() * 2.0f - 1.0f, t = rnd() * 6.2831853f, r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+                const float z = rnd() * 2.0f - 1.0f, t = rnd() * 6.2831853f,
+                            r = std::sqrt(std::max(0.0f, 1.0f - z * z));
                 const glm::vec3 dir(r * std::cos(t), z, r * std::sin(t));
-                const glm::vec3 right = glm::normalize(glm::cross(dir, std::fabs(dir.y) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0)));
+                const glm::vec3 right = glm::normalize(
+                    glm::cross(dir, std::fabs(dir.y) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0)));
                 const glm::vec3 up = glm::cross(dir, right);
                 const float size = 0.15f + rnd() * 0.1f;
                 sb.Quad(dir * 100.0f, right * size, up * size, white, 0, 0, 1, 1);
             }
             starVertexCount = sb.count;
             sb.Quad(glm::vec3(0, 100, 0), glm::vec3(0, 0, 30), glm::vec3(30, 0, 0), white, 0, 0, 1, 1);
-            skyStatic = gpu.CreateStatic(sb.bytes.data(), sb.bytes.size(), rhi::BufferUsage::Vertex, "java pack sky");
+            skyStatic =
+                gpu.CreateStatic(sb.bytes.data(), sb.bytes.size(), rhi::BufferUsage::Vertex, "java pack sky");
         }
         if (!skyStatic)
             return;
@@ -1944,17 +2170,21 @@ namespace perlin::gpu {
         // dome around the camera, tinted with the sky colour
         {
             SkyBuilder sb;
-            const uint8_t sc[4] = {static_cast<uint8_t>(std::clamp(frameState.skyColor[0], 0.0f, 1.0f) * 255.0f),
-                                   static_cast<uint8_t>(std::clamp(frameState.skyColor[1], 0.0f, 1.0f) * 255.0f),
-                                   static_cast<uint8_t>(std::clamp(frameState.skyColor[2], 0.0f, 1.0f) * 255.0f), 255};
+            const uint8_t sc[4] = {
+                static_cast<uint8_t>(std::clamp(frameState.skyColor[0], 0.0f, 1.0f) * 255.0f),
+                static_cast<uint8_t>(std::clamp(frameState.skyColor[1], 0.0f, 1.0f) * 255.0f),
+                static_cast<uint8_t>(std::clamp(frameState.skyColor[2], 0.0f, 1.0f) * 255.0f), 255};
             constexpr int kLat = 12, kLon = 24;
             const auto point = [](int la, int lo) {
-                const float phi = (static_cast<float>(la) / kLat - 0.5f) * 3.14159265f, th = static_cast<float>(lo) / kLon * 6.2831853f;
-                return glm::vec3(std::cos(phi) * std::cos(th), std::sin(phi), std::cos(phi) * std::sin(th)) * 100.0f;
+                const float phi = (static_cast<float>(la) / kLat - 0.5f) * 3.14159265f,
+                            th = static_cast<float>(lo) / kLon * 6.2831853f;
+                return glm::vec3(std::cos(phi) * std::cos(th), std::sin(phi), std::cos(phi) * std::sin(th)) *
+                       100.0f;
             };
             for (int la = 0; la < kLat; la++)
                 for (int lo = 0; lo < kLon; lo++) {
-                    const glm::vec3 p00 = point(la, lo), p10 = point(la + 1, lo), p11 = point(la + 1, lo + 1), p01 = point(la, lo + 1);
+                    const glm::vec3 p00 = point(la, lo), p10 = point(la + 1, lo), p11 = point(la + 1, lo + 1),
+                                    p01 = point(la, lo + 1);
                     sb.Vertex(p00.x, p00.y, p00.z, sc, 0, 0);
                     sb.Vertex(p10.x, p10.y, p10.z, sc, 0, 0);
                     sb.Vertex(p11.x, p11.y, p11.z, sc, 0, 0);
@@ -1965,29 +2195,34 @@ namespace perlin::gpu {
             const gpu::RingSlice slice = gpu.Ring(sb.bytes.size(), 16);
             if (slice.data) {
                 std::memcpy(slice.data, sb.bytes.data(), sb.bytes.size());
-                DrawSkyObjects(list, "gbuffers_skybasic", 1, {}, 0, sb.count, slice.buffer, slice.offset, rot, {}, false);
+                DrawSkyObjects(list, "gbuffers_skybasic", 1, {}, 0, sb.count, slice.buffer, slice.offset, rot,
+                               {}, false);
             }
         }
         // stars rotate with the sun
         DrawSkyObjects(list, "gbuffers_skybasic", 6, skyStatic, 0, starVertexCount, {}, 0, spun, {}, false);
         // sun
-        DrawSkyObjects(list, "gbuffers_skytextured", 4, skyStatic, starVertexCount, 6, {}, 0, spun, skySunTex, true);
+        DrawSkyObjects(list, "gbuffers_skytextured", 4, skyStatic, starVertexCount, 6, {}, 0, spun, skySunTex,
+                       true);
         // moon: opposite the sun, one phase cell of the 4x2 sheet
         {
             SkyBuilder sb;
             const uint8_t white[4] = {255, 255, 255, 255};
             const int phase = static_cast<int>(std::floor(frame.sky.moonPhase)) & 7;
             const float u0 = static_cast<float>(phase % 4) / 4.0f, v0 = static_cast<float>(phase / 4) / 2.0f;
-            sb.Quad(glm::vec3(0, -100, 0), glm::vec3(0, 0, 20), glm::vec3(20, 0, 0), white, u0, v0, u0 + 0.25f, v0 + 0.5f);
+            sb.Quad(glm::vec3(0, -100, 0), glm::vec3(0, 0, 20), glm::vec3(20, 0, 0), white, u0, v0,
+                    u0 + 0.25f, v0 + 0.5f);
             const gpu::RingSlice slice = gpu.Ring(sb.bytes.size(), 16);
             if (slice.data) {
                 std::memcpy(slice.data, sb.bytes.data(), sb.bytes.size());
-                DrawSkyObjects(list, "gbuffers_skytextured", 5, {}, 0, sb.count, slice.buffer, slice.offset, spun, skyMoonTex, false);
+                DrawSkyObjects(list, "gbuffers_skytextured", 5, {}, 0, sb.count, slice.buffer, slice.offset,
+                               spun, skyMoonTex, false);
             }
         }
     }
 
-    bool JavaPack::RunPass(rhi::CommandList& list, const std::string& passName, bool toBackbuffer, const Output& out) {
+    bool JavaPack::RunPass(rhi::CommandList& list, const std::string& passName, bool toBackbuffer,
+                           const Output& out) {
         Program* p = GetProgram(passName, toBackbuffer);
         if (!p)
             return false;
@@ -2016,7 +2251,8 @@ namespace perlin::gpu {
             }
             if (targets.empty())
                 return true;
-            const Buffer& b0 = bufs[static_cast<size_t>(std::max(0, std::min(p->attachments[0], jshader::kMaxColorTex - 1)))];
+            const Buffer& b0 = bufs[static_cast<size_t>(
+                std::max(0, std::min(p->attachments[0], jshader::kMaxColorTex - 1)))];
             rw = b0.w;
             rh = b0.h;
         }
@@ -2052,7 +2288,8 @@ namespace perlin::gpu {
         list.Draw(6, 1, 0, 0);
         list.EndRendering();
         if (trace)
-            std::fprintf(stderr, "[jshader] pass %s %ux%u targets %zu\n", passName.c_str(), vw, vh, targets.size());
+            std::fprintf(stderr, "[jshader] pass %s %ux%u targets %zu\n", passName.c_str(), vw, vh,
+                         targets.size());
         for (int idx : p->attachments) {
             if (idx < 0 || idx >= jshader::kMaxColorTex)
                 continue;
@@ -2084,7 +2321,8 @@ namespace perlin::gpu {
     void JavaPack::DepthToEngine(rhi::CommandList& list, const Output& out) {
         if (!out.depth)
             return;
-        static const jshader::ExpandedSource vs = MakeSource(kFullscreenVertex), fs = MakeSource(kReverseDepthFragment);
+        static const jshader::ExpandedSource vs = MakeSource(kFullscreenVertex),
+                                             fs = MakeSource(kReverseDepthFragment);
         Program* p = GetProgram("builtin_reverse_depth", true, &vs, &fs);
         if (!p)
             return;
@@ -2164,9 +2402,11 @@ namespace perlin::gpu {
         if (!done) {
             std::string copySrc = kCopyColorFragment;
             if (debugTex)
-                for (size_t at = copySrc.find("colortex0"); at != std::string::npos; at = copySrc.find("colortex0", at + 1))
+                for (size_t at = copySrc.find("colortex0"); at != std::string::npos;
+                     at = copySrc.find("colortex0", at + 1))
                     copySrc.replace(at, 9, std::string("colortex") + debugTex);
-            static const jshader::ExpandedSource vs = MakeSource(kFullscreenVertex), fs = MakeSource(copySrc.c_str());
+            static const jshader::ExpandedSource vs = MakeSource(kFullscreenVertex),
+                                                 fs = MakeSource(copySrc.c_str());
             Program* p = GetProgram("builtin_copy_color", true, &vs, &fs);
             if (!p)
                 return false;

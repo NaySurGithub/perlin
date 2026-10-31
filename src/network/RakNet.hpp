@@ -24,8 +24,8 @@ namespace perlin {
         };
         static bool Discover(std::vector<LanServer>& found, std::string& error, int timeoutMs = 1500);
 
-        static bool Ping(const std::string& host, uint16_t port, std::string& advertisement, std::string& error,
-                         int timeoutMs = 1500);
+        static bool Ping(const std::string& host, uint16_t port, std::string& advertisement,
+                         std::string& error, int timeoutMs = 1500);
 
         bool Connect(const std::string& host, uint16_t port);
         void Disconnect() override;

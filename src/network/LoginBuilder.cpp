@@ -20,8 +20,8 @@ namespace perlin {
         }
     }
 
-    std::string BuildIdentityJson(ClientIdentity& identity, const std::string* onlineChainJson, std::string& error,
-                                  const std::string& displayName) {
+    std::string BuildIdentityJson(ClientIdentity& identity, const std::string* onlineChainJson,
+                                  std::string& error, const std::string& displayName) {
         const std::string& mpToken = identity.MultiplayerToken();
         const std::string cpk = identity.PublicKeyB64();
         if (!identity.Valid() || mpToken.empty() || cpk.empty()) {

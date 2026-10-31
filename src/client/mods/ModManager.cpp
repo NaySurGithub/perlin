@@ -28,56 +28,103 @@ namespace perlin::mods {
         const char* const kExit = "plugin exited";
 
         int64_t UnixMs() {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
+                .count();
         }
 
         const char* EventName(uint32_t id) {
             switch (static_cast<abi::Event>(id)) {
-            case abi::Event::Tick: return "tick";
-            case abi::Event::Frame: return "frame";
-            case abi::Event::ChatReceived: return "chat";
-            case abi::Event::ChatSending: return "chat_sending";
-            case abi::Event::Connected: return "connected";
-            case abi::Event::Disconnected: return "disconnected";
-            case abi::Event::Key: return "key";
-            case abi::Event::Command: return "command";
-            case abi::Event::Damage: return "damage";
-            case abi::Event::Death: return "death";
-            case abi::Event::Respawned: return "respawned";
-            case abi::Event::DimensionChanged: return "dimension";
-            case abi::Event::ScreenChanged: return "screen";
-            case abi::Event::SlotChanged: return "slot";
-            case abi::Event::EntityAdded: return "entity_added";
-            case abi::Event::EntityRemoved: return "entity_removed";
-            case abi::Event::Sound: return "sound";
-            case abi::Event::HttpResponse: return "http";
-            case abi::Event::Packet: return "packet";
-            case abi::Event::Title: return "title";
-            case abi::Event::SettingChanged: return "setting_changed";
-            case abi::Event::Look: return "look";
-            case abi::Event::MouseMove: return "mouse_move";
-            case abi::Event::MouseButton: return "mouse_button";
-            case abi::Event::MouseWheel: return "mouse_wheel";
-            case abi::Event::KeyRaw: return "key_raw";
-            case abi::Event::TextInput: return "text_input";
-            case abi::Event::ScreenRender: return "screen_render";
-            case abi::Event::SlotClick: return "slot_click";
-            case abi::Event::Interact: return "interact";
-            case abi::Event::ChunkLoaded: return "chunk_loaded";
-            case abi::Event::ChunkUnloaded: return "chunk_unloaded";
-            case abi::Event::BlockChanged: return "block_changed";
-            case abi::Event::ResourcesReloaded: return "resources_reloaded";
-            case abi::Event::LevelLoaded: return "level_loaded";
-            case abi::Event::LevelUnloaded: return "level_unloaded";
-            case abi::Event::ModsLoaded: return "mods_loaded";
-            case abi::Event::ClientStopping: return "client_stopping";
-            case abi::Event::Toast: return "toast";
-            case abi::Event::ModMessage: return "mod_message";
-            case abi::Event::Tooltip: return "tooltip";
-            case abi::Event::ScreenButton: return "screen_button";
-            case abi::Event::WindowFocus: return "window_focus";
-            case abi::Event::ServerPing: return "server_ping";
-            default: return nullptr;
+            case abi::Event::Tick:
+                return "tick";
+            case abi::Event::Frame:
+                return "frame";
+            case abi::Event::ChatReceived:
+                return "chat";
+            case abi::Event::ChatSending:
+                return "chat_sending";
+            case abi::Event::Connected:
+                return "connected";
+            case abi::Event::Disconnected:
+                return "disconnected";
+            case abi::Event::Key:
+                return "key";
+            case abi::Event::Command:
+                return "command";
+            case abi::Event::Damage:
+                return "damage";
+            case abi::Event::Death:
+                return "death";
+            case abi::Event::Respawned:
+                return "respawned";
+            case abi::Event::DimensionChanged:
+                return "dimension";
+            case abi::Event::ScreenChanged:
+                return "screen";
+            case abi::Event::SlotChanged:
+                return "slot";
+            case abi::Event::EntityAdded:
+                return "entity_added";
+            case abi::Event::EntityRemoved:
+                return "entity_removed";
+            case abi::Event::Sound:
+                return "sound";
+            case abi::Event::HttpResponse:
+                return "http";
+            case abi::Event::Packet:
+                return "packet";
+            case abi::Event::Title:
+                return "title";
+            case abi::Event::SettingChanged:
+                return "setting_changed";
+            case abi::Event::Look:
+                return "look";
+            case abi::Event::MouseMove:
+                return "mouse_move";
+            case abi::Event::MouseButton:
+                return "mouse_button";
+            case abi::Event::MouseWheel:
+                return "mouse_wheel";
+            case abi::Event::KeyRaw:
+                return "key_raw";
+            case abi::Event::TextInput:
+                return "text_input";
+            case abi::Event::ScreenRender:
+                return "screen_render";
+            case abi::Event::SlotClick:
+                return "slot_click";
+            case abi::Event::Interact:
+                return "interact";
+            case abi::Event::ChunkLoaded:
+                return "chunk_loaded";
+            case abi::Event::ChunkUnloaded:
+                return "chunk_unloaded";
+            case abi::Event::BlockChanged:
+                return "block_changed";
+            case abi::Event::ResourcesReloaded:
+                return "resources_reloaded";
+            case abi::Event::LevelLoaded:
+                return "level_loaded";
+            case abi::Event::LevelUnloaded:
+                return "level_unloaded";
+            case abi::Event::ModsLoaded:
+                return "mods_loaded";
+            case abi::Event::ClientStopping:
+                return "client_stopping";
+            case abi::Event::Toast:
+                return "toast";
+            case abi::Event::ModMessage:
+                return "mod_message";
+            case abi::Event::Tooltip:
+                return "tooltip";
+            case abi::Event::ScreenButton:
+                return "screen_button";
+            case abi::Event::WindowFocus:
+                return "window_focus";
+            case abi::Event::ServerPing:
+                return "server_ping";
+            default:
+                return nullptr;
             }
         }
 
@@ -230,7 +277,8 @@ namespace perlin::mods {
     struct HostBridge {
         static ModManager* manager;
 
-        static bool Call(ModManager::Plugin& plugin, WasmInstance::HostContext& ctx, const uint64_t* a, uint32_t n, uint64_t* r) {
+        static bool Call(ModManager::Plugin& plugin, WasmInstance::HostContext& ctx, const uint64_t* a,
+                         uint32_t n, uint64_t* r) {
             if (plugin.revoked) {
                 ctx.error = kRevoked;
                 return false;
@@ -246,7 +294,8 @@ namespace perlin::mods {
                 r[0] = static_cast<uint32_t>(static_cast<int32_t>(abi::Status::BadArguments));
                 return true;
             }
-            const int32_t rc = manager->HostCall(plugin, op, in, static_cast<uint32_t>(a[2]), out, static_cast<uint32_t>(a[4]));
+            const int32_t rc = manager->HostCall(plugin, op, in, static_cast<uint32_t>(a[2]), out,
+                                                 static_cast<uint32_t>(a[4]));
             if (rc == INT32_MIN) {
                 ctx.error = kRevoked;
                 return false;
@@ -283,10 +332,12 @@ namespace perlin::mods {
             using Ctx = WasmInstance::HostContext;
             if (name == "args_sizes_get" || name == "environ_sizes_get")
                 return [](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
-                    r[0] = n >= 2 && PutSize(c.instance, a[0], 0) && PutSize(c.instance, a[1], 0) ? 0 : kFault;
+                    r[0] =
+                        n >= 2 && PutSize(c.instance, a[0], 0) && PutSize(c.instance, a[1], 0) ? 0 : kFault;
                     return true;
                 };
-            if (name == "args_get" || name == "environ_get" || name == "fd_close" || name == "fd_sync" || name == "fd_datasync" || name == "sched_yield")
+            if (name == "args_get" || name == "environ_get" || name == "fd_close" || name == "fd_sync" ||
+                name == "fd_datasync" || name == "sched_yield")
                 return Const(0);
             if (name == "clock_time_get")
                 return [](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
@@ -295,9 +346,14 @@ namespace perlin::mods {
                         r[0] = kFault;
                         return true;
                     }
-                    const uint64_t ns = a[0] == 0
-                                            ? static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
-                                            : static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count());
+                    const uint64_t ns =
+                        a[0] == 0
+                            ? static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                        std::chrono::system_clock::now().time_since_epoch())
+                                                        .count())
+                            : static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                        Clock::now().time_since_epoch())
+                                                        .count());
                     std::memcpy(out, &ns, 8);
                     r[0] = 0;
                     return true;
@@ -352,7 +408,8 @@ namespace perlin::mods {
                             return true;
                         }
                         if (text.size() < 65536)
-                            text.append(reinterpret_cast<const char*>(buf), static_cast<size_t>(std::min<uint64_t>(len, 65536)));
+                            text.append(reinterpret_cast<const char*>(buf),
+                                        static_cast<size_t>(std::min<uint64_t>(len, 65536)));
                         total += len;
                     }
                     while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
@@ -394,7 +451,8 @@ namespace perlin::mods {
         WasmInstance::Resolver PluginImports(ModManager::Plugin& plugin) {
             return [&plugin](const std::string& module, const std::string& name) -> WasmInstance::HostFn {
                 if (module == "perlin" && name == "call")
-                    return [&plugin](WasmInstance::HostContext& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t nr) {
+                    return [&plugin](WasmInstance::HostContext& c, const uint64_t* a, uint32_t n, uint64_t* r,
+                                     uint32_t nr) {
                         if (nr != 1) {
                             c.error = "perlin.call must return i32";
                             return false;
@@ -415,7 +473,9 @@ namespace perlin::mods {
         return *instance;
     }
 
-    ModManager::~ModManager() { Stop(); }
+    ModManager::~ModManager() {
+        Stop();
+    }
 
     void ModManager::SetEnvironment(const std::string& version, const std::string& platformName) {
         std::lock_guard lock(mutex);
@@ -423,8 +483,8 @@ namespace perlin::mods {
         platform = platformName;
     }
 
-    void ModManager::Register(abi::Op op, OpHandler handler, uint32_t permission) {
-        ops[static_cast<uint32_t>(op)] = {std::move(handler), permission};
+    void ModManager::Register(abi::Op op, OpHandler handler) {
+        ops[static_cast<uint32_t>(op)] = {std::move(handler), abi::PermissionOf(op)};
     }
 
     void ModManager::SetDisabled(const std::vector<std::string>& names) {
@@ -443,9 +503,10 @@ namespace perlin::mods {
     }
 
     uint32_t ModManager::DangerousMask() {
-        return static_cast<uint32_t>(abi::Permission::Network) | static_cast<uint32_t>(abi::Permission::Packets) |
-               static_cast<uint32_t>(abi::Permission::Control) | static_cast<uint32_t>(abi::Permission::Files) |
-               static_cast<uint32_t>(abi::Permission::Native);
+        return static_cast<uint32_t>(abi::Permission::Network) |
+               static_cast<uint32_t>(abi::Permission::Packets) |
+               static_cast<uint32_t>(abi::Permission::Control) |
+               static_cast<uint32_t>(abi::Permission::Files) | static_cast<uint32_t>(abi::Permission::Native);
     }
 
     void ModManager::SetApproved(const std::vector<std::string>& entries) {
@@ -538,7 +599,12 @@ namespace perlin::mods {
             info.hasSettings = mod->loaded && !mod->settings.empty();
             if (!mod->runtimeIcon.empty())
                 info.iconPath = mod->runtimeIcon;
-            info.state = mod->needsApproval ? "approval" : !mod->enabled ? "disabled" : mod->stuck ? "unresponsive" : !mod->error.empty() ? "error" : mod->loaded ? "running" : "loading";
+            info.state = mod->needsApproval    ? "approval"
+                         : !mod->enabled       ? "disabled"
+                         : mod->stuck          ? "unresponsive"
+                         : !mod->error.empty() ? "error"
+                         : mod->loaded         ? "running"
+                                               : "loading";
             info.hooks.clear();
             if (mod->loaded) {
                 const uint64_t subs = mod->subs.load();
@@ -578,7 +644,8 @@ namespace perlin::mods {
             if (mod->loaded)
                 for (const auto& entry : mod->layers)
                     out.push_back(entry.second);
-        std::stable_sort(out.begin(), out.end(), [](const UiLayer& a, const UiLayer& b) { return a.z < b.z; });
+        std::stable_sort(out.begin(), out.end(),
+                         [](const UiLayer& a, const UiLayer& b) { return a.z < b.z; });
         return out;
     }
 
@@ -589,7 +656,8 @@ namespace perlin::mods {
             if (mod->loaded && !mod->revoked)
                 for (const auto& entry : mod->gfxLayers)
                     out.push_back(entry.second);
-        std::stable_sort(out.begin(), out.end(), [](const GfxLayer& a, const GfxLayer& b) { return a.z < b.z; });
+        std::stable_sort(out.begin(), out.end(),
+                         [](const GfxLayer& a, const GfxLayer& b) { return a.z < b.z; });
         return out;
     }
 
@@ -599,7 +667,8 @@ namespace perlin::mods {
         for (const auto& mod : mods)
             if (mod->loaded && !mod->revoked)
                 for (const auto& entry : mod->textures)
-                    out.push_back({mod->name, entry.first, entry.second.w, entry.second.h, entry.second.linear, entry.second.version, entry.second.rgba});
+                    out.push_back({mod->name, entry.first, entry.second.w, entry.second.h,
+                                   entry.second.linear, entry.second.version, entry.second.rgba});
         return out;
     }
 
@@ -631,7 +700,9 @@ namespace perlin::mods {
         RefreshGrabs();
     }
 
-    std::string ModManager::KeysFile(const Plugin& mod) const { return (fs::path(directory) / (mod.name + ".keys.json")).string(); }
+    std::string ModManager::KeysFile(const Plugin& mod) const {
+        return (fs::path(directory) / (mod.name + ".keys.json")).string();
+    }
 
     void ModManager::LoadKeys(Plugin& mod) {
         mod.savedKeys.clear();
@@ -662,7 +733,8 @@ namespace perlin::mods {
         out << text;
     }
 
-    void ModManager::SetKeyBinding(const std::string& plugin, const std::string& id, const std::string& binding) {
+    void ModManager::SetKeyBinding(const std::string& plugin, const std::string& id,
+                                   const std::string& binding) {
         std::lock_guard lock(mutex);
         for (auto& mod : mods) {
             if (mod->name != plugin)
@@ -675,7 +747,8 @@ namespace perlin::mods {
         }
     }
 
-    int32_t ModManager::HostCall(Plugin& mod, uint32_t op, const uint8_t* in, uint32_t inLen, uint8_t* out, uint32_t outCap) {
+    int32_t ModManager::HostCall(Plugin& mod, uint32_t op, const uint8_t* in, uint32_t inLen, uint8_t* out,
+                                 uint32_t outCap) {
         std::lock_guard gateLock(mod.gate);
         if (mod.revoked)
             return INT32_MIN;
@@ -762,7 +835,8 @@ namespace perlin::mods {
     }
 
     namespace {
-        bool CallEventFn(ModManager::Plugin& mod, uint32_t id, const std::vector<uint8_t>& payload, uint32_t& flags, std::string& error) {
+        bool CallEventFn(ModManager::Plugin& mod, uint32_t id, const std::vector<uint8_t>& payload,
+                         uint32_t& flags, std::string& error) {
             WasmInstance& w = *mod.instance;
             uint64_t ptr = 0;
             const uint64_t len = payload.size();
@@ -802,7 +876,8 @@ namespace perlin::mods {
             uint64_t mask = static_cast<uint32_t>(subs);
             // events 32+ come from a second export; plugins built before it only see the first 32
             uint64_t hi = 0;
-            if (mod.instance->HasExport("perlin_subscriptions_hi") && mod.instance->Call("perlin_subscriptions_hi", {}, &hi, ignored))
+            if (mod.instance->HasExport("perlin_subscriptions_hi") &&
+                mod.instance->Call("perlin_subscriptions_hi", {}, &hi, ignored))
                 mask |= static_cast<uint64_t>(static_cast<uint32_t>(hi)) << 32;
             mod.subs = mask;
         }
@@ -833,7 +908,8 @@ namespace perlin::mods {
             mod.arch = mod.instance->Is64() ? "wasm64" : "wasm32";
         }
         Log("mods", "{}: {} on {}", mod.name, mod.arch, WasmEngineName());
-        if (mod.instance->HasExport("_initialize") && !mod.instance->Call("_initialize", {}, nullptr, error)) {
+        if (mod.instance->HasExport("_initialize") &&
+            !mod.instance->Call("_initialize", {}, nullptr, error)) {
             mod.jobError = "_initialize: " + error;
             return;
         }
@@ -859,7 +935,8 @@ namespace perlin::mods {
             ReadSubscriptions(mod);
     }
 
-    bool ModManager::Call(Plugin& mod, abi::Event event, const abi::Writer& payload, double budgetMs, bool& cancelled) {
+    bool ModManager::Call(Plugin& mod, abi::Event event, const abi::Writer& payload, double budgetMs,
+                          bool& cancelled) {
         if (!mod.loaded || mod.stuck || tlsPlugin)
             return false;
         const auto started = Clock::now();
@@ -873,7 +950,8 @@ namespace perlin::mods {
         }
         mod.jobCv.notify_all();
         std::unique_lock lock(mod.jobMutex);
-        const bool finished = mod.doneCv.wait_for(lock, std::chrono::duration<double, std::milli>(budgetMs), [&] { return mod.done; });
+        const bool finished = mod.doneCv.wait_for(lock, std::chrono::duration<double, std::milli>(budgetMs),
+                                                  [&] { return mod.done; });
         if (!finished) {
             lock.unlock();
             Revoke(mod, "unresponsive: an event ran too long, the plugin was stopped");
@@ -931,7 +1009,9 @@ namespace perlin::mods {
                 if (mod->loaded && !mod->stuck)
                     list.push_back(mod.get());
         }
-        std::stable_sort(list.begin(), list.end(), [](const Plugin* a, const Plugin* b) { return a->meta.priority > b->meta.priority; });
+        std::stable_sort(list.begin(), list.end(), [](const Plugin* a, const Plugin* b) {
+            return a->meta.priority > b->meta.priority;
+        });
         const uint64_t bit = 1ull << static_cast<uint32_t>(event);
         bool cancelled = false;
         for (Plugin* mod : list) {
@@ -944,7 +1024,8 @@ namespace perlin::mods {
         return cancelled;
     }
 
-    void ModManager::DispatchTo(const std::string& plugin, abi::Event event, const abi::Writer& payload, double budgetMs) {
+    void ModManager::DispatchTo(const std::string& plugin, abi::Event event, const abi::Writer& payload,
+                                double budgetMs) {
         if (tlsPlugin)
             return;
         Plugin* mod = Find(plugin);
@@ -1109,7 +1190,8 @@ namespace perlin::mods {
         }
         mod.jobCv.notify_all();
         std::unique_lock lock(mod.jobMutex);
-        const bool finished = mod.doneCv.wait_for(lock, std::chrono::milliseconds(4000), [&] { return mod.done; });
+        const bool finished =
+            mod.doneCv.wait_for(lock, std::chrono::milliseconds(4000), [&] { return mod.done; });
         if (!finished) {
             lock.unlock();
             Revoke(mod, "unresponsive: the plugin did not finish loading");
@@ -1192,7 +1274,8 @@ namespace perlin::mods {
                 ReadMeta(*mod);
                 continue;
             }
-            const bool needLoad = !mod->loaded && mod->error.empty() && !mod->stuck && !mod->thread.joinable();
+            const bool needLoad =
+                !mod->loaded && mod->error.empty() && !mod->stuck && !mod->thread.joinable();
             const bool reload = force || (changed && (autoReload || first || !mod->loaded));
             if (!reload && !needLoad)
                 continue;
@@ -1302,7 +1385,8 @@ namespace perlin::mods {
             switch (def.kind) {
             case abi::SettingKind::Toggle: {
                 std::string v = in;
-                std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                std::transform(v.begin(), v.end(), v.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                 if (v == "true" || v == "1" || v == "on" || v == "yes") {
                     out = "true";
                     return true;
@@ -1376,16 +1460,25 @@ namespace perlin::mods {
                 };
                 abi::SettingDef def;
                 const std::string type = text("type");
-                if (type == "toggle") def.kind = abi::SettingKind::Toggle;
-                else if (type == "integer") def.kind = abi::SettingKind::Integer;
-                else if (type == "number") def.kind = abi::SettingKind::Number;
-                else if (type == "choice") def.kind = abi::SettingKind::Choice;
-                else if (type == "button") def.kind = abi::SettingKind::Button;
-                else if (type == "label") def.kind = abi::SettingKind::Label;
-                else if (type == "header") def.kind = abi::SettingKind::Header;
-                else continue;
+                if (type == "toggle")
+                    def.kind = abi::SettingKind::Toggle;
+                else if (type == "integer")
+                    def.kind = abi::SettingKind::Integer;
+                else if (type == "number")
+                    def.kind = abi::SettingKind::Number;
+                else if (type == "choice")
+                    def.kind = abi::SettingKind::Choice;
+                else if (type == "button")
+                    def.kind = abi::SettingKind::Button;
+                else if (type == "label")
+                    def.kind = abi::SettingKind::Label;
+                else if (type == "header")
+                    def.kind = abi::SettingKind::Header;
+                else
+                    continue;
                 def.id = text("id");
-                const bool decor = def.kind == abi::SettingKind::Label || def.kind == abi::SettingKind::Header;
+                const bool decor =
+                    def.kind == abi::SettingKind::Label || def.kind == abi::SettingKind::Header;
                 if (def.id.empty() && decor)
                     def.id = "_" + type + std::to_string(anonymous++);
                 if (!ValidSettingId(def.id))
@@ -1429,9 +1522,12 @@ namespace perlin::mods {
                     continue;
                 std::string fallback;
                 if (const ui::Json* d = item.Find("default")) {
-                    if (d->IsBool()) fallback = d->boolean ? "true" : "false";
-                    else if (d->IsNumber()) fallback = FormatNumber(d->number);
-                    else if (d->IsString()) fallback = d->string;
+                    if (d->IsBool())
+                        fallback = d->boolean ? "true" : "false";
+                    else if (d->IsNumber())
+                        fallback = FormatNumber(d->number);
+                    else if (d->IsString())
+                        fallback = d->string;
                 }
                 if (def.kind == abi::SettingKind::Choice && fallback.empty())
                     fallback = def.choices.front();
@@ -1463,7 +1559,9 @@ namespace perlin::mods {
         }
     }
 
-    std::string ModManager::SettingsFile(const Plugin& mod) const { return (fs::path(directory) / (mod.name + ".settings.json")).string(); }
+    std::string ModManager::SettingsFile(const Plugin& mod) const {
+        return (fs::path(directory) / (mod.name + ".settings.json")).string();
+    }
 
     void ModManager::LoadSettings(Plugin& mod) {
         mod.savedSettings.clear();
@@ -1513,7 +1611,8 @@ namespace perlin::mods {
         return {};
     }
 
-    bool ModManager::ChangeSetting(const std::string& plugin, const std::string& id, const std::string& value) {
+    bool ModManager::ChangeSetting(const std::string& plugin, const std::string& id,
+                                   const std::string& value) {
         Plugin* mod = Find(plugin);
         if (!mod)
             return false;
@@ -1553,7 +1652,8 @@ namespace perlin::mods {
 
     void ModManager::ResetSettings(const std::string& plugin) {
         for (const abi::SettingDef& def : Settings(plugin))
-            if (def.kind != abi::SettingKind::Button && def.kind != abi::SettingKind::Label && def.kind != abi::SettingKind::Header)
+            if (def.kind != abi::SettingKind::Button && def.kind != abi::SettingKind::Label &&
+                def.kind != abi::SettingKind::Header)
                 ChangeSetting(plugin, def.id, def.fallback);
     }
 
@@ -1612,7 +1712,8 @@ namespace perlin::mods {
             std::lock_guard lock(mutex);
             std::vector<abi::SettingEntry> out;
             for (const auto& d : mod->settings)
-                if (d.kind != abi::SettingKind::Button && d.kind != abi::SettingKind::Label && d.kind != abi::SettingKind::Header)
+                if (d.kind != abi::SettingKind::Button && d.kind != abi::SettingKind::Label &&
+                    d.kind != abi::SettingKind::Header)
                     out.push_back({d.id, d.value});
             w.write(out);
             return abi::Status::Ok;
@@ -1637,11 +1738,11 @@ namespace perlin::mods {
                 e.priority = info.priority;
                 for (const std::string& p : info.permissions)
                     e.permissions |= p == "network"   ? abi::Permission::Network
-                                   : p == "packets"   ? abi::Permission::Packets
-                                   : p == "control"   ? abi::Permission::Control
-                                   : p == "files"     ? abi::Permission::Files
-                                   : p == "native"    ? abi::Permission::Native
-                                   : p == "storage"   ? abi::Permission::Storage
+                                     : p == "packets" ? abi::Permission::Packets
+                                     : p == "control" ? abi::Permission::Control
+                                     : p == "files"   ? abi::Permission::Files
+                                     : p == "native"  ? abi::Permission::Native
+                                     : p == "storage" ? abi::Permission::Storage
                                                       : abi::Permission::None;
                 out.push_back(std::move(e));
             }
@@ -1696,7 +1797,8 @@ namespace perlin::mods {
             if (!r.Ok())
                 return abi::Status::BadArguments;
             static const char* const names[] = {"debug", "info", "warn", "error"};
-            std::cout << "[mod:" << ctx.plugin << ":" << names[std::clamp(level, 0, 3)] << "] " << text.substr(0, 2000) << std::endl;
+            std::cout << "[mod:" << ctx.plugin << ":" << names[std::clamp(level, 0, 3)] << "] "
+                      << text.substr(0, 2000) << std::endl;
             return abi::Status::Ok;
         });
 
@@ -1719,9 +1821,8 @@ namespace perlin::mods {
             w.write(meta);
             return abi::Status::Ok;
         });
-
-        const uint32_t storage = static_cast<uint32_t>(abi::Permission::Storage);
-        const auto resolve = [](CallContext& ctx, const std::string& rel, fs::path& out, bool allowEmpty = false) {
+        const auto resolve = [](CallContext& ctx, const std::string& rel, fs::path& out,
+                                bool allowEmpty = false) {
             fs::path relative;
             if (rel.empty() && allowEmpty)
                 relative = "";
@@ -1745,7 +1846,7 @@ namespace perlin::mods {
             bytes.assign(std::istreambuf_iterator<char>(in), {});
             w.raw(bytes.data(), bytes.size());
             return abi::Status::Ok;
-        }, storage);
+        });
 
         Register(abi::Op::StorageWrite, [resolve](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             fs::path path;
@@ -1759,9 +1860,10 @@ namespace perlin::mods {
             std::ofstream out(path, std::ios::binary | std::ios::trunc);
             if (!out)
                 return abi::Status::Failed;
-            out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            out.write(reinterpret_cast<const char*>(bytes.data()),
+                      static_cast<std::streamsize>(bytes.size()));
             return out ? abi::Status::Ok : abi::Status::Failed;
-        }, storage);
+        });
 
         Register(abi::Op::StorageExists, [resolve](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
             fs::path path;
@@ -1770,7 +1872,7 @@ namespace perlin::mods {
             std::error_code ec;
             w.boolean(fs::exists(path, ec));
             return abi::Status::Ok;
-        }, storage);
+        });
 
         Register(abi::Op::StorageRemove, [resolve](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             fs::path path;
@@ -1781,7 +1883,7 @@ namespace perlin::mods {
                 return abi::Status::NotFound;
             fs::remove_all(path, ec);
             return ec ? abi::Status::Failed : abi::Status::Ok;
-        }, storage);
+        });
 
         Register(abi::Op::StorageMakeDir, [resolve](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             fs::path path;
@@ -1790,7 +1892,7 @@ namespace perlin::mods {
             std::error_code ec;
             fs::create_directories(path, ec);
             return ec ? abi::Status::Failed : abi::Status::Ok;
-        }, storage);
+        });
 
         Register(abi::Op::StorageList, [resolve](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
             fs::path path;
@@ -1812,7 +1914,7 @@ namespace perlin::mods {
             for (const auto& name : names)
                 w.str(name);
             return abi::Status::Ok;
-        }, storage);
+        });
 
         Register(abi::Op::CommandRegister, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             PluginCommand cmd;
@@ -1820,7 +1922,8 @@ namespace perlin::mods {
             cmd.name = r.str();
             cmd.usage = r.str();
             cmd.description = r.str();
-            if (!r.Ok() || cmd.name.empty() || cmd.name.size() > 64 || cmd.name.find_first_of(" \t/") != std::string::npos)
+            if (!r.Ok() || cmd.name.empty() || cmd.name.size() > 64 ||
+                cmd.name.find_first_of(" \t/") != std::string::npos)
                 return abi::Status::BadArguments;
             std::lock_guard lock(mutex);
             auto* mod = static_cast<Plugin*>(ctx.user);
@@ -1911,7 +2014,8 @@ namespace perlin::mods {
                 {
                     std::lock_guard lock(mutex);
                     for (const auto& mod : mods)
-                        if (mod->loaded && mod->name != e.from && (mod->subs.load() & (1ull << static_cast<uint32_t>(abi::Event::ModMessage))))
+                        if (mod->loaded && mod->name != e.from &&
+                            (mod->subs.load() & (1ull << static_cast<uint32_t>(abi::Event::ModMessage))))
                             names.push_back(mod->name);
                 }
                 for (const std::string& name : names)
@@ -1929,7 +2033,7 @@ namespace perlin::mods {
             {
                 std::lock_guard lock(mutex);
                 auto* mod = static_cast<Plugin*>(ctx.user);
-                if (mod->layers.size() >= 16 && !mod->layers.count(name))
+                if (mod->layers.size() >= 16 && !mod->layers.contains(name))
                     return abi::Status::Failed;
                 UiLayer& layer = mod->layers[name];
                 layer.plugin = ctx.plugin;
@@ -1963,18 +2067,22 @@ namespace perlin::mods {
             abi::GfxHeader h;
             std::memcpy(&h, blob.data(), sizeof(h));
             const bool wide = (h.flags & abi::kGfxIndex32) != 0;
-            if (h.vertexCount > abi::kGfxMaxVertices || h.indexCount > 4u * abi::kGfxMaxVertices || h.commandCount > 65536)
+            if (h.vertexCount > abi::kGfxMaxVertices || h.indexCount > 4u * abi::kGfxMaxVertices ||
+                h.commandCount > 65536)
                 return false;
             const uint64_t need = sizeof(h) + static_cast<uint64_t>(h.vertexCount) * sizeof(abi::GfxVertex) +
-                                  static_cast<uint64_t>(h.indexCount) * (wide ? 4 : 2) + static_cast<uint64_t>(h.commandCount) * sizeof(abi::GfxCmd);
+                                  static_cast<uint64_t>(h.indexCount) * (wide ? 4 : 2) +
+                                  static_cast<uint64_t>(h.commandCount) * sizeof(abi::GfxCmd);
             if (need != blob.size())
                 return false;
-            const uint8_t* idx = blob.data() + sizeof(h) + static_cast<size_t>(h.vertexCount) * sizeof(abi::GfxVertex);
+            const uint8_t* idx =
+                blob.data() + sizeof(h) + static_cast<size_t>(h.vertexCount) * sizeof(abi::GfxVertex);
             const uint8_t* cmds = idx + static_cast<size_t>(h.indexCount) * (wide ? 4 : 2);
             for (uint32_t i = 0; i < h.commandCount; i++) {
                 abi::GfxCmd c;
                 std::memcpy(&c, cmds + static_cast<size_t>(i) * sizeof(c), sizeof(c));
-                if (c.indexCount % 3 != 0 || static_cast<uint64_t>(c.indexOffset) + c.indexCount > h.indexCount ||
+                if (c.indexCount % 3 != 0 ||
+                    static_cast<uint64_t>(c.indexOffset) + c.indexCount > h.indexCount ||
                     static_cast<uint64_t>(c.vertexOffset) > h.vertexCount)
                     return false;
                 for (float v : c.clip)
@@ -2002,12 +2110,15 @@ namespace perlin::mods {
             const int32_t width = r.get<int32_t>(), height = r.get<int32_t>();
             const bool linear = r.boolean();
             std::vector<uint8_t> rgba = r.bytes();
-            if (!r.Ok() || width <= 0 || height <= 0 || width > static_cast<int32_t>(abi::kGfxMaxTextureSide) ||
-                height > static_cast<int32_t>(abi::kGfxMaxTextureSide) || rgba.size() != static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
+            if (!r.Ok() || width <= 0 || height <= 0 ||
+                width > static_cast<int32_t>(abi::kGfxMaxTextureSide) ||
+                height > static_cast<int32_t>(abi::kGfxMaxTextureSide) ||
+                rgba.size() != static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
                 return abi::Status::BadArguments;
             std::lock_guard lock(mutex);
             auto* mod = static_cast<Plugin*>(ctx.user);
-            if (mod->textures.size() >= abi::kGfxMaxTextures || mod->textureBytes + rgba.size() > abi::kGfxMaxTextureBytes)
+            if (mod->textures.size() >= abi::kGfxMaxTextures ||
+                mod->textureBytes + rgba.size() > abi::kGfxMaxTextureBytes)
                 return abi::Status::Failed;
             const uint32_t id = mod->nextTexture++;
             Plugin::Tex tex;
@@ -2024,9 +2135,11 @@ namespace perlin::mods {
 
         Register(abi::Op::GfxTextureUpdate, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             const uint32_t id = r.get<uint32_t>();
-            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), width = r.get<int32_t>(), height = r.get<int32_t>();
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), width = r.get<int32_t>(),
+                          height = r.get<int32_t>();
             std::vector<uint8_t> rgba = r.bytes();
-            if (!r.Ok() || width <= 0 || height <= 0 || x < 0 || y < 0 || rgba.size() != static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
+            if (!r.Ok() || width <= 0 || height <= 0 || x < 0 || y < 0 ||
+                rgba.size() != static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
                 return abi::Status::BadArguments;
             std::lock_guard lock(mutex);
             auto* mod = static_cast<Plugin*>(ctx.user);
@@ -2038,8 +2151,11 @@ namespace perlin::mods {
                 return abi::Status::BadArguments;
             auto copy = std::make_shared<std::vector<uint8_t>>(*tex.rgba);
             for (int32_t row = 0; row < height; row++)
-                std::memcpy(copy->data() + (static_cast<size_t>(y + row) * static_cast<size_t>(tex.w) + static_cast<size_t>(x)) * 4,
-                            rgba.data() + static_cast<size_t>(row) * static_cast<size_t>(width) * 4, static_cast<size_t>(width) * 4);
+                std::memcpy(copy->data() + (static_cast<size_t>(y + row) * static_cast<size_t>(tex.w) +
+                                            static_cast<size_t>(x)) *
+                                               4,
+                            rgba.data() + static_cast<size_t>(row) * static_cast<size_t>(width) * 4,
+                            static_cast<size_t>(width) * 4);
             tex.rgba = std::move(copy);
             tex.version++;
             return abi::Status::Ok;
@@ -2054,7 +2170,8 @@ namespace perlin::mods {
             const auto it = mod->textures.find(id);
             if (it == mod->textures.end())
                 return abi::Status::NotFound;
-            mod->textureBytes -= std::min<uint64_t>(mod->textureBytes, it->second.rgba ? it->second.rgba->size() : 0);
+            mod->textureBytes -=
+                std::min<uint64_t>(mod->textureBytes, it->second.rgba ? it->second.rgba->size() : 0);
             mod->textures.erase(it);
             return abi::Status::Ok;
         });
@@ -2067,7 +2184,7 @@ namespace perlin::mods {
                 return abi::Status::BadArguments;
             std::lock_guard lock(mutex);
             auto* mod = static_cast<Plugin*>(ctx.user);
-            if (mod->gfxLayers.size() >= abi::kGfxMaxLayers && !mod->gfxLayers.count(name))
+            if (mod->gfxLayers.size() >= abi::kGfxMaxLayers && !mod->gfxLayers.contains(name))
                 return abi::Status::Failed;
             GfxLayer& layer = mod->gfxLayers[name];
             layer.plugin = ctx.plugin;
@@ -2095,6 +2212,6 @@ namespace perlin::mods {
             static_cast<Plugin*>(ctx.user)->grab = static_cast<uint8_t>((mouse ? 1 : 0) | (keyboard ? 2 : 0));
             RefreshGrabs();
             return abi::Status::Ok;
-        }, static_cast<uint32_t>(abi::Permission::Control));
+        });
     }
 }

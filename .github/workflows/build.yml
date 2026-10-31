@@ -400,9 +400,96 @@ jobs:
           path: dist/Perlin.apk
           if-no-files-found: error
 
+  ios:
+    name: ios
+    runs-on: macos-15
+    # new platform: a failure shows up red on the job but does not hold back the nightly release of the others
+    continue-on-error: true
+    env:
+      IOS_DEPLOYMENT_TARGET: "15.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-ios-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.4"
+      - name: Install tools
+        run: |
+          brew install ninja
+          brew uninstall --ignore-dependencies fmt || true
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ios
+          max-size: 600M
+      - name: Cache OpenSSL for iOS
+        id: openssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ossl-ios
+          key: openssl-ios-${{ env.OPENSSL_VERSION }}-${{ env.IOS_DEPLOYMENT_TARGET }}-arm64-v1
+      - name: Build OpenSSL for iOS
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 -b "$OPENSSL_VERSION" https://github.com/openssl/openssl openssl-src
+          cd openssl-src
+          ./Configure ios64-xcrun no-shared no-tests no-ui-console no-engine no-dso "-mios-version-min=$IOS_DEPLOYMENT_TARGET" \
+            --prefix="$GITHUB_WORKSPACE/ossl-ios" --openssldir="$GITHUB_WORKSPACE/ossl-ios/ssl"
+          make -j"$(sysctl -n hw.ncpu)" build_libs
+          make install_dev
+      - name: Generate asset manifest
+        run: |
+          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/Mojang/bedrock-samples bedrock-samples-index
+          python3 tools/web/gen_manifest.py --repo bedrock-samples-index --out assets-manifest.json
+      - name: Configure
+        run: >
+          cmake -B build-ios -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ env.IOS_DEPLOYMENT_TARGET }}
+          -DPERLIN_IOS_DEPLOYMENT_TARGET=${{ env.IOS_DEPLOYMENT_TARGET }}
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON
+          -DOPENSSL_ROOT_DIR="$GITHUB_WORKSPACE/ossl-ios"
+          -DOPENSSL_INCLUDE_DIR="$GITHUB_WORKSPACE/ossl-ios/include"
+          -DOPENSSL_CRYPTO_LIBRARY="$GITHUB_WORKSPACE/ossl-ios/lib/libcrypto.a"
+          -DOPENSSL_SSL_LIBRARY="$GITHUB_WORKSPACE/ossl-ios/lib/libssl.a"
+          -DPERLIN_ASSET_MANIFEST="$GITHUB_WORKSPACE/assets-manifest.json"
+      - name: Build
+        run: cmake --build build-ios --target Perlin --parallel
+      - name: Check app bundle
+        run: |
+          app=build-ios/Perlin.app
+          test -x "$app/Perlin"
+          plutil -lint "$app/Info.plist"
+          test -s "$app/cacert.pem"
+          test -s "$app/assets-manifest.json"
+          test -s "$app/AppIcon60x60@2x.png"
+          otool -l "$app/Perlin" | grep -A4 LC_BUILD_VERSION | grep -q 'platform 2'
+          otool -L "$app/Perlin"
+          if otool -L "$app/Perlin" | tail -n +2 | grep -Ev '^\s+(/usr/lib/|/System/Library/)'; then echo "::error::links a non-system dylib"; exit 1; fi
+      - name: Package IPA
+        # ad-hoc signed only: sideload with AltStore / Sideloadly (they re-sign with your Apple ID) or install with TrollStore
+        run: |
+          mkdir -p Payload dist
+          cp -R build-ios/Perlin.app Payload/
+          codesign --force --sign - --timestamp=none Payload/Perlin.app
+          zip -qry dist/Perlin.ipa Payload
+          du -h dist/Perlin.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Perlin-ios
+          path: dist/Perlin.ipa
+          if-no-files-found: error
+
   release:
     if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
-    needs: [native, web, android]
+    needs: [native, web, android, ios]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -421,7 +508,7 @@ jobs:
           for dir in */; do
             name="${dir%/}"
             case "$name" in
-              Perlin-android) cp "$name"/* ../release/ ;;
+              Perlin-android | Perlin-ios) cp "$name"/* ../release/ ;;
               *) (cd "$name" && zip -qr "../../release/$name.zip" .) ;;
             esac
           done

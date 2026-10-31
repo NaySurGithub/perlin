@@ -49,20 +49,27 @@ namespace perlin::jshader {
             {"final", ""},
         };
 
-
         struct NumParser {
             const std::string& s;
             size_t i = 0;
             bool ok = true;
             explicit NumParser(const std::string& s) : s(s) {}
-            void Skip() { while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) i++; }
+            void Skip() {
+                while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i])))
+                    i++;
+            }
             double Expr() {
                 double v = Term();
                 for (;;) {
                     Skip();
-                    if (i < s.size() && s[i] == '+') { i++; v += Term(); }
-                    else if (i < s.size() && s[i] == '-') { i++; v -= Term(); }
-                    else break;
+                    if (i < s.size() && s[i] == '+') {
+                        i++;
+                        v += Term();
+                    } else if (i < s.size() && s[i] == '-') {
+                        i++;
+                        v -= Term();
+                    } else
+                        break;
                 }
                 return v;
             }
@@ -70,28 +77,45 @@ namespace perlin::jshader {
                 double v = Unary();
                 for (;;) {
                     Skip();
-                    if (i < s.size() && s[i] == '*') { i++; v *= Unary(); }
-                    else if (i < s.size() && s[i] == '/') { i++; const double d = Unary(); v = d != 0 ? v / d : 0; }
-                    else break;
+                    if (i < s.size() && s[i] == '*') {
+                        i++;
+                        v *= Unary();
+                    } else if (i < s.size() && s[i] == '/') {
+                        i++;
+                        const double d = Unary();
+                        v = d != 0 ? v / d : 0;
+                    } else
+                        break;
                 }
                 return v;
             }
             double Unary() {
                 Skip();
-                if (i < s.size() && s[i] == '-') { i++; return -Unary(); }
-                if (i < s.size() && s[i] == '+') { i++; return Unary(); }
+                if (i < s.size() && s[i] == '-') {
+                    i++;
+                    return -Unary();
+                }
+                if (i < s.size() && s[i] == '+') {
+                    i++;
+                    return Unary();
+                }
                 if (i < s.size() && s[i] == '(') {
                     i++;
                     double v = Expr();
                     Skip();
-                    if (i < s.size() && s[i] == ')') i++;
+                    if (i < s.size() && s[i] == ')')
+                        i++;
                     return v;
                 }
                 char* end = nullptr;
                 const double v = std::strtod(s.c_str() + i, &end);
-                if (end == s.c_str() + i) { ok = false; return 0; }
+                if (end == s.c_str() + i) {
+                    ok = false;
+                    return 0;
+                }
                 i = static_cast<size_t>(end - s.c_str());
-                if (i < s.size() && (s[i] == 'f' || s[i] == 'F')) i++;
+                if (i < s.size() && (s[i] == 'f' || s[i] == 'F'))
+                    i++;
                 return v;
             }
         };
@@ -103,7 +127,9 @@ namespace perlin::jshader {
                 for (size_t i = 0; i < text.size();) {
                     if (std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_') {
                         size_t j = i;
-                        while (j < text.size() && (std::isalnum(static_cast<unsigned char>(text[j])) || text[j] == '_')) j++;
+                        while (j < text.size() &&
+                               (std::isalnum(static_cast<unsigned char>(text[j])) || text[j] == '_'))
+                            j++;
                         const std::string word = text.substr(i, j - i);
                         const auto it = macros.find(word);
                         if (it != macros.end() && !it->second.empty()) {
@@ -125,20 +151,71 @@ namespace perlin::jshader {
         }
 
         bool IsDirectiveName(const std::string& n) {
-            static const char* const kNames[] = {
-                "shadowMapResolution", "shadowDistance", "shadowDistanceRenderMul", "shadowIntervalSize", "sunPathRotation",
-                "noiseTextureResolution", "wetnessHalflife", "drynessHalflife", "eyeBrightnessHalflife", "centerDepthHalflife",
-                "ambientOcclusionLevel", "generateShadowMipmap", "generateShadowColorMipmap", "shadowHardwareFiltering",
-                "shadowHardwareFiltering0", "shadowHardwareFiltering1", "shadowtex0Mipmap", "shadowtex1Mipmap",
-                "shadowtex0Nearest", "shadowtex1Nearest", "shadowcolor0Mipmap", "shadowcolor1Mipmap", "shadowcolor0Nearest",
-                "shadowcolor1Nearest", "shadowcolor0Format", "shadowcolor1Format", "shadowcolor0Clear", "shadowcolor1Clear",
-                "shadowcolor0ClearColor", "shadowcolor1ClearColor", "superSamplingLevel", "gaux1Format", "gaux2Format",
-                "gaux3Format", "gaux4Format", "gcolorFormat", "gdepthFormat", "gnormalFormat", "compositeFormat",
-                "gcolorMipmapEnabled", "gdepthMipmapEnabled", "gnormalMipmapEnabled", "compositeMipmapEnabled",
-                "gaux1MipmapEnabled", "gaux2MipmapEnabled", "gaux3MipmapEnabled", "gaux4MipmapEnabled", "gcolorClear",
-                "gdepthClear", "gnormalClear", "compositeClear", "gaux1Clear", "gaux2Clear", "gaux3Clear", "gaux4Clear",
-                "gcolorClearColor", "gdepthClearColor", "gnormalClearColor", "compositeClearColor", "gaux1ClearColor",
-                "gaux2ClearColor", "gaux3ClearColor", "gaux4ClearColor", "shadowtex0Format", "voxelDistance"};
+            static const char* const kNames[] = {"shadowMapResolution",
+                                                 "shadowDistance",
+                                                 "shadowDistanceRenderMul",
+                                                 "shadowIntervalSize",
+                                                 "sunPathRotation",
+                                                 "noiseTextureResolution",
+                                                 "wetnessHalflife",
+                                                 "drynessHalflife",
+                                                 "eyeBrightnessHalflife",
+                                                 "centerDepthHalflife",
+                                                 "ambientOcclusionLevel",
+                                                 "generateShadowMipmap",
+                                                 "generateShadowColorMipmap",
+                                                 "shadowHardwareFiltering",
+                                                 "shadowHardwareFiltering0",
+                                                 "shadowHardwareFiltering1",
+                                                 "shadowtex0Mipmap",
+                                                 "shadowtex1Mipmap",
+                                                 "shadowtex0Nearest",
+                                                 "shadowtex1Nearest",
+                                                 "shadowcolor0Mipmap",
+                                                 "shadowcolor1Mipmap",
+                                                 "shadowcolor0Nearest",
+                                                 "shadowcolor1Nearest",
+                                                 "shadowcolor0Format",
+                                                 "shadowcolor1Format",
+                                                 "shadowcolor0Clear",
+                                                 "shadowcolor1Clear",
+                                                 "shadowcolor0ClearColor",
+                                                 "shadowcolor1ClearColor",
+                                                 "superSamplingLevel",
+                                                 "gaux1Format",
+                                                 "gaux2Format",
+                                                 "gaux3Format",
+                                                 "gaux4Format",
+                                                 "gcolorFormat",
+                                                 "gdepthFormat",
+                                                 "gnormalFormat",
+                                                 "compositeFormat",
+                                                 "gcolorMipmapEnabled",
+                                                 "gdepthMipmapEnabled",
+                                                 "gnormalMipmapEnabled",
+                                                 "compositeMipmapEnabled",
+                                                 "gaux1MipmapEnabled",
+                                                 "gaux2MipmapEnabled",
+                                                 "gaux3MipmapEnabled",
+                                                 "gaux4MipmapEnabled",
+                                                 "gcolorClear",
+                                                 "gdepthClear",
+                                                 "gnormalClear",
+                                                 "compositeClear",
+                                                 "gaux1Clear",
+                                                 "gaux2Clear",
+                                                 "gaux3Clear",
+                                                 "gaux4Clear",
+                                                 "gcolorClearColor",
+                                                 "gdepthClearColor",
+                                                 "gnormalClearColor",
+                                                 "compositeClearColor",
+                                                 "gaux1ClearColor",
+                                                 "gaux2ClearColor",
+                                                 "gaux3ClearColor",
+                                                 "gaux4ClearColor",
+                                                 "shadowtex0Format",
+                                                 "voxelDistance"};
             for (const char* k : kNames)
                 if (n == k)
                     return true;
@@ -181,7 +258,9 @@ namespace perlin::jshader {
         return v;
     }
 
-    const std::vector<ProgramInfo>& StandardPrograms() { return kPrograms; }
+    const std::vector<ProgramInfo>& StandardPrograms() {
+        return kPrograms;
+    }
 
     std::string FallbackFor(const std::string& name) {
         for (const ProgramInfo& p : kPrograms)
@@ -190,7 +269,8 @@ namespace perlin::jshader {
         return {};
     }
 
-    ShaderPackInstance::ShaderPackInstance(std::shared_ptr<PackSource> source, OptionValues values, MacroMap engine)
+    ShaderPackInstance::ShaderPackInstance(std::shared_ptr<PackSource> source, OptionValues values,
+                                           MacroMap engine)
         : pack(std::move(source)), overrides(std::move(values)), engineMacros(std::move(engine)) {
         packName = pack->Name();
         Reload(overrides);
@@ -226,8 +306,8 @@ namespace perlin::jshader {
             if (dot == std::string::npos)
                 continue;
             const std::string ext = file.substr(dot);
-            if (ext != ".fsh" && ext != ".vsh" && ext != ".gsh" && ext != ".csh" && ext != ".glsl" && ext != ".settings" &&
-                ext != ".h" && ext != ".inc" && ext != ".sh")
+            if (ext != ".fsh" && ext != ".vsh" && ext != ".gsh" && ext != ".csh" && ext != ".glsl" &&
+                ext != ".settings" && ext != ".h" && ext != ".inc" && ext != ".sh")
                 continue;
             std::string text;
             if (pack->Read(file, text))
@@ -257,8 +337,7 @@ namespace perlin::jshader {
         props = {};
         if (pack->Read("shaders.properties", text))
             props = ParseProperties(text, macros);
-        if (dimension.empty()) {
-        }
+        if (dimension.empty()) {}
     }
 
     void ShaderPackInstance::LoadIdTables() {
@@ -326,7 +405,8 @@ namespace perlin::jshader {
     }
 
     bool ShaderPackInstance::ProgramExists(const std::string& name) const {
-        return !FindFile(name, ".fsh").empty() || !FindFile(name, ".vsh").empty() || !FindFile(name, ".csh").empty();
+        return !FindFile(name, ".fsh").empty() || !FindFile(name, ".vsh").empty() ||
+               !FindFile(name, ".csh").empty();
     }
 
     bool ShaderPackInstance::ProgramEnabled(const std::string& name) const {
@@ -464,6 +544,7 @@ namespace perlin::jshader {
         directivesLoaded = true;
         directives = {};
         std::vector<std::string> names;
+        names.reserve(kPrograms.size());
         for (const ProgramInfo& p : kPrograms)
             names.push_back(p.name);
         for (const char* base : {"setup", "begin", "prepare", "deferred", "composite", "shadowcomp"})
@@ -499,7 +580,8 @@ namespace perlin::jshader {
                     const std::string var = str::Trim(left.substr(sp + 1));
                     if (!IsDirectiveName(var))
                         continue;
-                    directives.constants[var] = SubstituteMacros(str::Trim(t.substr(eq + 1, semi - eq - 1)), local);
+                    directives.constants[var] =
+                        SubstituteMacros(str::Trim(t.substr(eq + 1, semi - eq - 1)), local);
                 }
             }
         }

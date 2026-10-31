@@ -98,7 +98,8 @@ namespace perlin {
             player.ObserveTicks([this](auto tick, const auto& state, const auto& movement) {
                 TraceControlTick(tick, state, movement);
             });
-            Log("control", "http://127.0.0.1:{}/?token={} (send X-Perlin-Token: {} with API requests)", args.controlPort, control->Token(), control->Token());
+            Log("control", "http://127.0.0.1:{}/?token={} (send X-Perlin-Token: {} with API requests)",
+                args.controlPort, control->Token(), control->Token());
         }
 
         workers = std::make_unique<ThreadPool>(4);
@@ -116,6 +117,7 @@ namespace perlin {
         if (PERLIN_ENV("PERLIN_PREVIEW_TITLE"))
             titleScreen.active = true;
 
+        RegisterScreens();
         renderRunning = true;
 #ifdef __EMSCRIPTEN__
         RenderThreadMain();
@@ -240,7 +242,10 @@ namespace perlin {
             skinConfig.capePath.clear();
             LoadSkinConfig(skinConfig, loadedSkin, skinError);
         } else if (loadedSkin.hasSkin() || loadedSkin.hasCape()) {
-            Log("perlin", "skin {}{}{}", (loadedSkin.hasSkin() ? skinConfig.skinPath : std::string("(default)")), (loadedSkin.hasCape() ? ", cape " + skinConfig.capePath : std::string()), (loadedSkin.slimArms ? ", slim arms" : ""));
+            Log("perlin", "skin {}{}{}",
+                (loadedSkin.hasSkin() ? skinConfig.skinPath : std::string("(default)")),
+                (loadedSkin.hasCape() ? ", cape " + skinConfig.capePath : std::string()),
+                (loadedSkin.slimArms ? ", slim arms" : ""));
         }
         session->SetSkin(std::move(loadedSkin));
         session->SetPackDirectory(paths::DataDir() + "/server_packs");

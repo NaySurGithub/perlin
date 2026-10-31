@@ -61,11 +61,11 @@ namespace perlin {
     using KeyBindings = std::array<Binding, kActionCount>;
 
     namespace Pad {
-        constexpr int A = 0, B = 1, X = 2, Y = 3, Back = 4, Guide = 5, Start = 6, LeftStick = 7, RightStick = 8,
-                      LeftShoulder = 9, RightShoulder = 10, DpadUp = 11, DpadDown = 12, DpadLeft = 13, DpadRight = 14,
-                      LeftTrigger = 20, RightTrigger = 21,
-                      LeftStickUp = 30, LeftStickDown = 31, LeftStickLeft = 32, LeftStickRight = 33,
-                      RightStickUp = 34, RightStickDown = 35, RightStickLeft = 36, RightStickRight = 37;
+        constexpr int A = 0, B = 1, X = 2, Y = 3, Back = 4, Guide = 5, Start = 6, LeftStick = 7,
+                      RightStick = 8, LeftShoulder = 9, RightShoulder = 10, DpadUp = 11, DpadDown = 12,
+                      DpadLeft = 13, DpadRight = 14, LeftTrigger = 20, RightTrigger = 21, LeftStickUp = 30,
+                      LeftStickDown = 31, LeftStickLeft = 32, LeftStickRight = 33, RightStickUp = 34,
+                      RightStickDown = 35, RightStickLeft = 36, RightStickRight = 37;
         constexpr int kCount = 64;
         const char* Name(int code);
         int FromName(const std::string& name);

@@ -119,9 +119,11 @@ namespace perlin::ui {
     EditorBuilt BuildEditorRml(const EditorModel& m, int guiW, int guiH);
     std::string FormatReplayTimeMs(double ms);
     inline double EditorTimeAtX(const EditorLayout& l, const EditorModel& m, float x) {
-        return m.viewStartMs + static_cast<double>((x - l.tlX0) / std::max(1.0f, l.tlX1 - l.tlX0)) * m.viewSpanMs;
+        return m.viewStartMs +
+               static_cast<double>((x - l.tlX0) / std::max(1.0f, l.tlX1 - l.tlX0)) * m.viewSpanMs;
     }
     inline float EditorXAtTime(const EditorLayout& l, const EditorModel& m, double t) {
-        return l.tlX0 + static_cast<float>((t - m.viewStartMs) / std::max(1.0, m.viewSpanMs)) * (l.tlX1 - l.tlX0);
+        return l.tlX0 +
+               static_cast<float>((t - m.viewStartMs) / std::max(1.0, m.viewSpanMs)) * (l.tlX1 - l.tlX0);
     }
 }

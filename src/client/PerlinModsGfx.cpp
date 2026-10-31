@@ -31,7 +31,7 @@ namespace perlin {
                 }
             }
             for (auto it = modGfxTextures.begin(); it != modGfxTextures.end();) {
-                if (seen.count(it->first)) {
+                if (seen.contains(it->first)) {
                     ++it;
                     continue;
                 }

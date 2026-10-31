@@ -10,8 +10,12 @@ namespace perlin::render {
     // face = axis * 2 + (positive ? 1 : 0)
     enum Face : uint8_t { NegX, PosX, NegY, PosY, NegZ, PosZ, FaceCount };
 
-    constexpr int AxisOf(int face) { return face >> 1; }
-    constexpr bool Positive(int face) { return (face & 1) != 0; }
+    constexpr int AxisOf(int face) {
+        return face >> 1;
+    }
+    constexpr bool Positive(int face) {
+        return (face & 1) != 0;
+    }
 
     // per block id facts the mesher needs; ids past the table behave like air
     struct BlockTable {

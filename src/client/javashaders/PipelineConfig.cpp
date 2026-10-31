@@ -16,11 +16,17 @@ namespace perlin::jshader {
             static const char* const prefixes[] = {"colortex", "gaux", "composite"};
             if (name.compare(0, 8, "colortex") == 0) {
                 const std::string n = name.substr(8);
-                if (!n.empty() && std::all_of(n.begin(), n.end(), [](unsigned char c) { return std::isdigit(c); })) return std::atoi(n.c_str());
+                if (!n.empty() &&
+                    std::all_of(n.begin(), n.end(), [](unsigned char c) { return std::isdigit(c); }))
+                    return std::atoi(n.c_str());
             }
-            if (name.compare(0, 4, "gaux") == 0 && name.size() == 5 && std::isdigit(static_cast<unsigned char>(name[4]))) return 3 + (name[4] - '0');
-            if (name == "gcolor") return 0;
-            if (name == "gdepth") return 1;
+            if (name.compare(0, 4, "gaux") == 0 && name.size() == 5 &&
+                std::isdigit(static_cast<unsigned char>(name[4])))
+                return 3 + (name[4] - '0');
+            if (name == "gcolor")
+                return 0;
+            if (name == "gdepth")
+                return 1;
             (void)prefixes;
             return -1;
         }
@@ -28,7 +34,10 @@ namespace perlin::jshader {
         void ParseBlend(const std::string& value, BlendFactors& out) {
             const std::vector<std::string> w = SplitWords(value);
             out.set = true;
-            if (w.empty() || str::Lower(w[0]) == "off") { out.off = true; return; }
+            if (w.empty() || str::Lower(w[0]) == "off") {
+                out.off = true;
+                return;
+            }
             if (w.size() >= 2) {
                 out.src = GlEnumFromName(w[0]);
                 out.dst = GlEnumFromName(w[1]);
@@ -39,17 +48,33 @@ namespace perlin::jshader {
     }
 
     int GlEnumFromName(const std::string& n) {
-        static const std::map<std::string, int> table = {
-            {"ZERO", 0}, {"ONE", 1}, {"SRC_COLOR", 0x300}, {"ONE_MINUS_SRC_COLOR", 0x301}, {"SRC_ALPHA", 0x302},
-            {"ONE_MINUS_SRC_ALPHA", 0x303}, {"DST_ALPHA", 0x304}, {"ONE_MINUS_DST_ALPHA", 0x305}, {"DST_COLOR", 0x306},
-            {"ONE_MINUS_DST_COLOR", 0x307}, {"SRC_ALPHA_SATURATE", 0x308},
-            {"NEVER", 0x200}, {"LESS", 0x201}, {"EQUAL", 0x202}, {"LEQUAL", 0x203}, {"GREATER", 0x204}, {"NOTEQUAL", 0x205},
-            {"GEQUAL", 0x206}, {"ALWAYS", 0x207}};
+        static const std::map<std::string, int> table = {{"ZERO", 0},
+                                                         {"ONE", 1},
+                                                         {"SRC_COLOR", 0x300},
+                                                         {"ONE_MINUS_SRC_COLOR", 0x301},
+                                                         {"SRC_ALPHA", 0x302},
+                                                         {"ONE_MINUS_SRC_ALPHA", 0x303},
+                                                         {"DST_ALPHA", 0x304},
+                                                         {"ONE_MINUS_DST_ALPHA", 0x305},
+                                                         {"DST_COLOR", 0x306},
+                                                         {"ONE_MINUS_DST_COLOR", 0x307},
+                                                         {"SRC_ALPHA_SATURATE", 0x308},
+                                                         {"NEVER", 0x200},
+                                                         {"LESS", 0x201},
+                                                         {"EQUAL", 0x202},
+                                                         {"LEQUAL", 0x203},
+                                                         {"GREATER", 0x204},
+                                                         {"NOTEQUAL", 0x205},
+                                                         {"GEQUAL", 0x206},
+                                                         {"ALWAYS", 0x207}};
         std::string key = n;
-        if (key.compare(0, 3, "GL_") == 0) key = key.substr(3);
-        for (char& c : key) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (key.compare(0, 3, "GL_") == 0)
+            key = key.substr(3);
+        for (char& c : key)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         const auto it = table.find(key);
-        if (it != table.end()) return it->second;
+        if (it != table.end())
+            return it->second;
         char* end = nullptr;
         const long v = std::strtol(n.c_str(), &end, 0);
         return end && *end == 0 ? static_cast<int>(v) : 1;
@@ -57,14 +82,29 @@ namespace perlin::jshader {
 
     BufferFormat ParseBufferFormat(const std::string& text, BufferFormat fallback) {
         static const std::map<std::string, BufferFormat> table = {
-            {"RGBA8", BufferFormat::RGBA8}, {"RGBA16", BufferFormat::RGBA16}, {"RGBA16F", BufferFormat::RGBA16F},
-            {"RGBA32F", BufferFormat::RGBA32F}, {"R8", BufferFormat::R8}, {"RG8", BufferFormat::RG8}, {"R16F", BufferFormat::R16F},
-            {"RG16F", BufferFormat::RG16F}, {"R32F", BufferFormat::R32F}, {"RGB8", BufferFormat::RGB8}, {"RGB16F", BufferFormat::RGB16F},
-            {"R11F_G11F_B10F", BufferFormat::R11F_G11F_B10F}, {"RGB10_A2", BufferFormat::RGB10_A2}, {"RG16", BufferFormat::RG16},
-            {"R16", BufferFormat::R16}, {"RGBA8_SNORM", BufferFormat::RGBA8_SNORM}, {"RGB16", BufferFormat::RGB16},
-            {"RGBA32I", BufferFormat::RGBA32I}, {"RG32F", BufferFormat::RG32F}, {"RGB32F", BufferFormat::RGBA32F}};
+            {"RGBA8", BufferFormat::RGBA8},
+            {"RGBA16", BufferFormat::RGBA16},
+            {"RGBA16F", BufferFormat::RGBA16F},
+            {"RGBA32F", BufferFormat::RGBA32F},
+            {"R8", BufferFormat::R8},
+            {"RG8", BufferFormat::RG8},
+            {"R16F", BufferFormat::R16F},
+            {"RG16F", BufferFormat::RG16F},
+            {"R32F", BufferFormat::R32F},
+            {"RGB8", BufferFormat::RGB8},
+            {"RGB16F", BufferFormat::RGB16F},
+            {"R11F_G11F_B10F", BufferFormat::R11F_G11F_B10F},
+            {"RGB10_A2", BufferFormat::RGB10_A2},
+            {"RG16", BufferFormat::RG16},
+            {"R16", BufferFormat::R16},
+            {"RGBA8_SNORM", BufferFormat::RGBA8_SNORM},
+            {"RGB16", BufferFormat::RGB16},
+            {"RGBA32I", BufferFormat::RGBA32I},
+            {"RG32F", BufferFormat::RG32F},
+            {"RGB32F", BufferFormat::RGBA32F}};
         std::string k = text;
-        for (char& c : k) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        for (char& c : k)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         const auto it = table.find(k);
         return it == table.end() ? fallback : it->second;
     }
@@ -77,19 +117,22 @@ namespace perlin::jshader {
         for (int i = 0; i < kMaxColorTex; i++) {
             const std::string n = "colortex" + std::to_string(i);
             BufferSetup& b = cfg.color[static_cast<size_t>(i)];
-            if (i == 0) b.format = BufferFormat::RGBA8;
+            if (i == 0)
+                b.format = BufferFormat::RGBA8;
             b.format = ParseBufferFormat(d.Text(n + "Format"), b.format);
             b.clear = d.Bool(n + "Clear", true);
             const std::string cc = d.Text(n + "ClearColor");
             if (!cc.empty()) {
                 std::string s = cc;
                 const size_t o = s.find('(');
-                if (o != std::string::npos) s = s.substr(o + 1);
+                if (o != std::string::npos)
+                    s = s.substr(o + 1);
                 size_t k = 0;
                 for (int c = 0; c < 4 && k < s.size(); c++) {
                     b.clearColor[c] = static_cast<float>(std::atof(s.c_str() + k));
                     const size_t comma = s.find(',', k);
-                    if (comma == std::string::npos) break;
+                    if (comma == std::string::npos)
+                        break;
                     k = comma + 1;
                 }
             }
@@ -102,7 +145,9 @@ namespace perlin::jshader {
             cfg.shadowColorClear[i] = d.Bool(n + "Clear", true);
             cfg.shadowColorLinear[i] = !d.Bool(n + "Nearest", false);
             const std::string t = "shadowtex" + std::to_string(i);
-            cfg.shadowHardwareFiltering[i] = d.Bool(t + "HardwareFiltering", false) || d.Bool("shadowHardwareFiltering", false) || d.Bool("shadowHardwareFiltering" + std::to_string(i), false);
+            cfg.shadowHardwareFiltering[i] = d.Bool(t + "HardwareFiltering", false) ||
+                                             d.Bool("shadowHardwareFiltering", false) ||
+                                             d.Bool("shadowHardwareFiltering" + std::to_string(i), false);
             cfg.shadowFilterLinear[i] = !d.Bool(t + "Nearest", false);
             cfg.shadowMipmap[i] = d.Bool(t + "Mipmap", false);
         }
@@ -131,7 +176,8 @@ namespace perlin::jshader {
         cfg.frustumCulling = p.Bool("frustum.culling", true);
         cfg.shadowTranslucent = p.Bool("shadowTranslucent", true);
         cfg.clouds = str::Lower(p.Get("clouds", "default"));
-        if (p.Has("texture.noise")) cfg.noiseTexture = p.Get("texture.noise");
+        if (p.Has("texture.noise"))
+            cfg.noiseTexture = p.Get("texture.noise");
 
         for (const auto& kv : p.entries) {
             const std::string& key = kv.first;
@@ -143,19 +189,23 @@ namespace perlin::jshader {
             if (key.compare(0, 6, "blend.") == 0) {
                 const std::string rest = key.substr(6);
                 const size_t dot = rest.find('.');
-                if (dot == std::string::npos) ParseBlend(val, cfg.programs[rest].blend);
+                if (dot == std::string::npos)
+                    ParseBlend(val, cfg.programs[rest].blend);
                 else {
                     const int idx = BufferIndex(rest.substr(dot + 1));
-                    if (idx >= 0) ParseBlend(val, cfg.programs[rest.substr(0, dot)].blendPerBuffer[idx]);
+                    if (idx >= 0)
+                        ParseBlend(val, cfg.programs[rest.substr(0, dot)].blendPerBuffer[idx]);
                 }
             } else if (key.compare(0, 10, "alphaTest.") == 0) {
                 AlphaTest& a = cfg.programs[key.substr(10)].alpha;
                 a.set = true;
                 const auto w = SplitWords(val);
-                if (w.empty() || str::Lower(w[0]) == "off") a.off = true;
+                if (w.empty() || str::Lower(w[0]) == "off")
+                    a.off = true;
                 else {
                     a.func = GlEnumFromName(w[0]);
-                    if (w.size() > 1) a.ref = static_cast<float>(std::atof(w[1].c_str()));
+                    if (w.size() > 1)
+                        a.ref = static_cast<float>(std::atof(w[1].c_str()));
                 }
             } else if (key.compare(0, 6, "scale.") == 0) {
                 const std::string rest = key.substr(6);
@@ -164,15 +214,22 @@ namespace perlin::jshader {
                 ProgramConfig& pc = cfg.programs[prog];
                 const auto w = SplitWords(val);
                 if (dot == std::string::npos) {
-                    if (!w.empty()) { pc.scale = static_cast<float>(std::atof(w[0].c_str())); pc.hasScale = true; }
-                    if (w.size() >= 3) { pc.offsetX = static_cast<float>(std::atof(w[1].c_str())); pc.offsetY = static_cast<float>(std::atof(w[2].c_str())); }
+                    if (!w.empty()) {
+                        pc.scale = static_cast<float>(std::atof(w[0].c_str()));
+                        pc.hasScale = true;
+                    }
+                    if (w.size() >= 3) {
+                        pc.offsetX = static_cast<float>(std::atof(w[1].c_str()));
+                        pc.offsetY = static_cast<float>(std::atof(w[2].c_str()));
+                    }
                 }
             } else if (key.compare(0, 5, "flip.") == 0) {
                 const std::string rest = key.substr(5);
                 const size_t dot = rest.find('.');
                 if (dot != std::string::npos) {
                     const int idx = BufferIndex(rest.substr(dot + 1));
-                    if (idx >= 0) cfg.programs[rest.substr(0, dot)].flip[idx] = IsTrue(val);
+                    if (idx >= 0)
+                        cfg.programs[rest.substr(0, dot)].flip[idx] = IsTrue(val);
                 }
             } else if (key.compare(0, 12, "size.buffer.") == 0) {
                 const int idx = BufferIndex(key.substr(12));
@@ -185,19 +242,23 @@ namespace perlin::jshader {
             } else if (key.compare(0, 8, "texture.") == 0 && key != "texture.noise") {
                 const std::string rest = key.substr(8);
                 const size_t d1 = rest.find('.');
-                if (d1 == std::string::npos) continue;
+                if (d1 == std::string::npos)
+                    continue;
                 CustomTexture t;
                 t.stage = rest.substr(0, d1);
                 t.sampler = rest.substr(d1 + 1);
                 const auto w = SplitWords(val);
-                if (w.empty()) continue;
+                if (w.empty())
+                    continue;
                 t.path = w[0];
-                if (w.size() > 1) t.type = w[1];
+                if (w.size() > 1)
+                    t.type = w[1];
                 cfg.textures.push_back(std::move(t));
             }
         }
         for (const char* s : {"shadow"})
-            if (pack.ProgramExists(s)) cfg.shadowEnabled = true;
+            if (pack.ProgramExists(s))
+                cfg.shadowEnabled = true;
         return cfg;
     }
 }

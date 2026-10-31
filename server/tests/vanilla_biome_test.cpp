@@ -39,7 +39,8 @@ static void TestLookup(const char* path) {
         checked++;
         if (want != got) {
             if (wrong++ < 5)
-                std::printf("target (%d %d %d %d %d %d): java %s, ours %s\n", t[0], t[1], t[2], t[3], t[4], t[5], name.c_str(), kBiomes[got].java);
+                std::printf("target (%d %d %d %d %d %d): java %s, ours %s\n", t[0], t[1], t[2], t[3], t[4],
+                            t[5], name.c_str(), kBiomes[got].java);
         }
     }
     std::printf("biome lookup: %d samples, %d differ from Java's brute force\n", checked, wrong);
@@ -59,10 +60,12 @@ static void TestTable() {
     }
     // a few materials straight from bedrock-samples
     CHECK(std::string(kBiomes[IndexOf("desert")].top) == "minecraft:sand");
-    CHECK(std::string(kBiomes[IndexOf("badlands")].top) == "minecraft:red_sand" && std::string(kBiomes[IndexOf("badlands")].mid) == "minecraft:hardened_clay");
+    CHECK(std::string(kBiomes[IndexOf("badlands")].top) == "minecraft:red_sand" &&
+          std::string(kBiomes[IndexOf("badlands")].mid) == "minecraft:hardened_clay");
     CHECK(std::string(kBiomes[IndexOf("plains")].top) == "minecraft:grass_block");
     CHECK(std::string(kBiomes[IndexOf("mangrove_swamp")].top) == "minecraft:mud");
-    CHECK(std::string(kBiomes[IndexOf("warm_ocean")].seaFloor) == "minecraft:sand" && kBiomes[IndexOf("warm_ocean")].seaFloorDepth == 3);
+    CHECK(std::string(kBiomes[IndexOf("warm_ocean")].seaFloor) == "minecraft:sand" &&
+          kBiomes[IndexOf("warm_ocean")].seaFloorDepth == 3);
 }
 
 static void TestLayers() {
@@ -112,7 +115,8 @@ static void TestWorld() {
             for (int x = 0; x < 16; x++)
                 for (int z = 0; z < 16; z++)
                     for (int y = 0; y < kHeight; y++)
-                        density[static_cast<size_t>((x * 16 + z) * kHeight + y)] = backend->Density(cx * 16 + x, kMinY + y, cz * 16 + z);
+                        density[static_cast<size_t>((x * 16 + z) * kHeight + y)] =
+                            backend->Density(cx * 16 + x, kMinY + y, cz * 16 + z);
             std::array<uint8_t, 256> biomes;
             backend->BiomesOf(density.data(), cx, cz, biomes.data());
             for (int i = 0; i < 256; i++) {
@@ -143,13 +147,15 @@ static void TestLocate() {
     CHECK(backend->HasBiomes());
     // biomes that are common should turn up close by, and the biome of the column found must really be the one asked for
     int found = 0;
-    for (const char* name : {"ocean", "plains", "forest", "desert", "taiga", "swamp", "savanna", "river", "beach"}) {
+    for (const char* name :
+         {"ocean", "plains", "forest", "desert", "taiga", "swamp", "savanna", "river", "beach"}) {
         const int biome = IndexOf(name);
         CHECK(biome >= 0);
         int x = 0, y = 0, z = 0;
         const auto began = std::chrono::steady_clock::now();
         const bool ok = backend->LocateBiome(biome, 100, -200, 3200, never, x, y, z);
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
+        const double ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
         if (!ok) {
             std::printf("locate %s: none within 3200 blocks (%.0f ms)\n", name, ms);
             continue;
@@ -157,7 +163,8 @@ static void TestLocate() {
         found++;
         const int actual = backend->ColumnBiome(x, z);
         std::printf("locate %s: [%d, %d, %d], %.0f blocks away, column biome %s (%.0f ms)\n", name, x, y, z,
-                    std::hypot(static_cast<double>(x - 100), static_cast<double>(z + 200)), kBiomes[actual].java, ms);
+                    std::hypot(static_cast<double>(x - 100), static_cast<double>(z + 200)),
+                    kBiomes[actual].java, ms);
         CHECK(actual == biome);
     }
     CHECK(found >= 5);

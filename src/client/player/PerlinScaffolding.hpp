@@ -13,7 +13,7 @@ namespace perlin::physics::bds {
         bool overPowderSnow = false;
     };
 
-    template<class Read>
+    template <class Read>
     ScaffoldingContacts SenseScaffolding(const CollisionBox& body, Read&& read, bool canStandOnSnow = false) {
         ScaffoldingContacts result;
         const int32_t minX = FloorBlockCoordinate(std::min(body[0], body[3]));
@@ -35,24 +35,26 @@ namespace perlin::physics::bds {
                     if (eligible && !ascendable && selectedPowder)
                         *selectedPowder = cell == ScaffoldingCell::PowderSnow;
                     ascendable |= eligible;
-                    if (z == maxZ) break;
+                    if (z == maxZ)
+                        break;
                 }
-                if (x == maxX) break;
+                if (x == maxX)
+                    break;
             }
         };
         sample(FloorBlockCoordinate(body[1]), result.inside, result.ascendable);
-        sample(FloorBlockCoordinate(detail::Round(body[1] - 1.0f)), result.over, result.descendable, &result.overPowderSnow);
+        sample(FloorBlockCoordinate(detail::Round(body[1] - 1.0f)), result.over, result.descendable,
+               &result.overPowderSnow);
         return result;
     }
 
-    inline bool ScaffoldingSupports(const CollisionBox& actor, const BlockPosition& block,
-                                    int stability, bool fallThrough) {
+    inline bool ScaffoldingSupports(const CollisionBox& actor, const BlockPosition& block, int stability,
+                                    bool fallThrough) {
         const auto next = [](int32_t value) {
             return std::bit_cast<int32_t>(static_cast<uint32_t>(value) + 1u);
         };
-        return stability != 7 && !fallThrough &&
-            actor[1] >= static_cast<float>(next(block[1])) - 0.000001f &&
-            actor[3] > static_cast<float>(block[0]) && actor[0] < static_cast<float>(next(block[0])) &&
-            actor[5] > static_cast<float>(block[2]) && actor[2] < static_cast<float>(next(block[2]));
+        return stability != 7 && !fallThrough && actor[1] >= static_cast<float>(next(block[1])) - 0.000001f &&
+               actor[3] > static_cast<float>(block[0]) && actor[0] < static_cast<float>(next(block[0])) &&
+               actor[5] > static_cast<float>(block[2]) && actor[2] < static_cast<float>(next(block[2]));
     }
 }

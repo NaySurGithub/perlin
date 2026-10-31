@@ -57,12 +57,15 @@ namespace waila {
             return *this;
         }
         Row& text(std::string value, Rgba color = Rgba::white) { return add(Text{std::move(value), color}); }
-        template <class... Args>
-        Row& text(Rgba color, std::format_string<Args...> fmt, Args&&... args) {
+        template <class... Args> Row& text(Rgba color, std::format_string<Args...> fmt, Args&&... args) {
             return add(Text{std::format(fmt, std::forward<Args>(args)...), color});
         }
-        Row& item(std::string id, float size = 8.0f, int count = 0) { return add(ItemIcon{std::move(id), size, count}); }
-        Row& texture(std::string path, float width = 9.0f, float height = 9.0f) { return add(Texture{std::move(path), width, height}); }
+        Row& item(std::string id, float size = 8.0f, int count = 0) {
+            return add(ItemIcon{std::move(id), size, count});
+        }
+        Row& texture(std::string path, float width = 9.0f, float height = 9.0f) {
+            return add(Texture{std::move(path), width, height});
+        }
         Row& bar(float fraction, Rgba fill, std::string label = {}, float width = 80.0f) {
             return add(Bar{fraction, fill, width, 9.0f, std::move(label)});
         }
@@ -92,8 +95,7 @@ namespace waila {
             row().text(std::move(value), color);
             return *this;
         }
-        template <class... Args>
-        Tooltip& line(Rgba color, std::format_string<Args...> fmt, Args&&... args) {
+        template <class... Args> Tooltip& line(Rgba color, std::format_string<Args...> fmt, Args&&... args) {
             row().text(std::format(fmt, std::forward<Args>(args)...), color);
             return *this;
         }
@@ -153,9 +155,13 @@ namespace waila {
         const perlin::Item& held() const {
             static const perlin::Item none;
             const int slot = inventory.selected;
-            return slot >= 0 && slot < static_cast<int>(inventory.slots.size()) ? inventory.slots[static_cast<size_t>(slot)] : none;
+            return slot >= 0 && slot < static_cast<int>(inventory.slots.size())
+                       ? inventory.slots[static_cast<size_t>(slot)]
+                       : none;
         }
-        bool creative() const { return player.gameMode == GameMode::Creative || player.gameMode == GameMode::Spectator; }
+        bool creative() const {
+            return player.gameMode == GameMode::Creative || player.gameMode == GameMode::Spectator;
+        }
     };
 
     struct BlockContext : Context {
@@ -164,7 +170,8 @@ namespace waila {
     };
 
     struct EntityContext : Context {
-        EntityContext(const game::EntityTarget& t, const Context& base) : Context(base), target(t), entity(t.entity) {}
+        EntityContext(const game::EntityTarget& t, const Context& base)
+            : Context(base), target(t), entity(t.entity) {}
         const game::EntityTarget& target;
         const Entity& entity;
 
@@ -218,8 +225,7 @@ namespace waila {
         return p == pattern.size();
     }
 
-    template <class Ctx>
-    struct Provider {
+    template <class Ctx> struct Provider {
         Stage stage = Stage::Body;
         int priority = 0;
         Gate gate;
@@ -232,28 +238,36 @@ namespace waila {
         using BlockFn = std::function<void(Tooltip&, const BlockContext&)>;
         using EntityFn = std::function<void(Tooltip&, const EntityContext&)>;
 
-        Registry& block(Stage stage, Gate gate, BlockFn fn, std::string_view pattern = "*", int priority = 0) {
+        Registry& block(Stage stage, Gate gate, BlockFn fn, std::string_view pattern = "*",
+                        int priority = 0) {
             blocks.push_back({stage, priority, gate, std::string(pattern), std::move(fn)});
             return *this;
         }
-        Registry& entity(Stage stage, Gate gate, EntityFn fn, std::string_view pattern = "*", int priority = 0) {
+        Registry& entity(Stage stage, Gate gate, EntityFn fn, std::string_view pattern = "*",
+                         int priority = 0) {
             entities.push_back({stage, priority, gate, std::string(pattern), std::move(fn)});
             return *this;
         }
 
-        void run(Tooltip& tip, const BlockContext& ctx) const { run_all(blocks, tip, ctx, ctx.block.block.name); }
-        void run(Tooltip& tip, const EntityContext& ctx) const { run_all(entities, tip, ctx, ctx.entity.type); }
+        void run(Tooltip& tip, const BlockContext& ctx) const {
+            run_all(blocks, tip, ctx, ctx.block.block.name);
+        }
+        void run(Tooltip& tip, const EntityContext& ctx) const {
+            run_all(entities, tip, ctx, ctx.entity.type);
+        }
 
     private:
         template <class Ctx>
-        static void run_all(const std::vector<Provider<Ctx>>& list, Tooltip& tip, const Ctx& ctx, std::string_view id) {
+        static void run_all(const std::vector<Provider<Ctx>>& list, Tooltip& tip, const Ctx& ctx,
+                            std::string_view id) {
             for (const Stage stage : {Stage::Head, Stage::Body, Stage::Tail}) {
                 tip.stage = stage;
                 std::vector<const Provider<Ctx>*> ordered;
                 for (const Provider<Ctx>& p : list)
                     if (p.stage == stage && glob(p.pattern, id))
                         ordered.push_back(&p);
-                std::stable_sort(ordered.begin(), ordered.end(), [](const auto* a, const auto* b) { return a->priority < b->priority; });
+                std::stable_sort(ordered.begin(), ordered.end(),
+                                 [](const auto* a, const auto* b) { return a->priority < b->priority; });
                 for (const Provider<Ctx>* p : ordered)
                     if (p->gate.open())
                         p->run(tip, ctx);

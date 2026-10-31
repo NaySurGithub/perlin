@@ -8,8 +8,12 @@ namespace perlin::ui {
             float x, y, z;
         };
 
-        V3 Mix(const V3& a, const V3& b, float t) { return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t}; }
-        float Dot(const V3& a, const V3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+        V3 Mix(const V3& a, const V3& b, float t) {
+            return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
+        }
+        float Dot(const V3& a, const V3& b) {
+            return a.x * b.x + a.y * b.y + a.z * b.z;
+        }
 
         constexpr V3 kFace[6][4] = {
             {{-1, 1, -1}, {1, 1, -1}, {1, -1, -1}, {-1, -1, -1}},
@@ -58,19 +62,26 @@ namespace perlin::ui {
                     if (!ok[k])
                         continue;
                     const float nx = Dot(p, right) / (depth * tx), ny = Dot(p, up) / (depth * ty);
-                    pts[k] = {(nx + 1.0f) * 0.5f * static_cast<float>(width), (1.0f - ny) * 0.5f * static_cast<float>(height), u, v};
+                    pts[k] = {(nx + 1.0f) * 0.5f * static_cast<float>(width),
+                              (1.0f - ny) * 0.5f * static_cast<float>(height), u, v};
                 }
             }
             for (int j = 0; j < n; j++)
                 for (int i = 0; i < n; i++) {
-                    const size_t a = static_cast<size_t>(j * (n + 1) + i), b = a + 1, d = a + static_cast<size_t>(n + 1), e = d + 1;
+                    const size_t a = static_cast<size_t>(j * (n + 1) + i), b = a + 1,
+                                 d = a + static_cast<size_t>(n + 1), e = d + 1;
                     if (!ok[a] || !ok[b] || !ok[d] || !ok[e])
                         continue;
-                    const float minX = std::fmin(std::fmin(pts[a].x, pts[b].x), std::fmin(pts[d].x, pts[e].x));
-                    const float maxX = std::fmax(std::fmax(pts[a].x, pts[b].x), std::fmax(pts[d].x, pts[e].x));
-                    const float minY = std::fmin(std::fmin(pts[a].y, pts[b].y), std::fmin(pts[d].y, pts[e].y));
-                    const float maxY = std::fmax(std::fmax(pts[a].y, pts[b].y), std::fmax(pts[d].y, pts[e].y));
-                    if (maxX < 0 || maxY < 0 || minX > static_cast<float>(width) || minY > static_cast<float>(height))
+                    const float minX =
+                        std::fmin(std::fmin(pts[a].x, pts[b].x), std::fmin(pts[d].x, pts[e].x));
+                    const float maxX =
+                        std::fmax(std::fmax(pts[a].x, pts[b].x), std::fmax(pts[d].x, pts[e].x));
+                    const float minY =
+                        std::fmin(std::fmin(pts[a].y, pts[b].y), std::fmin(pts[d].y, pts[e].y));
+                    const float maxY =
+                        std::fmax(std::fmax(pts[a].y, pts[b].y), std::fmax(pts[d].y, pts[e].y));
+                    if (maxX < 0 || maxY < 0 || minX > static_cast<float>(width) ||
+                        minY > static_cast<float>(height))
                         continue;
                     const uint32_t base = static_cast<uint32_t>(out.vertices.size());
                     out.vertices.push_back(pts[a]);

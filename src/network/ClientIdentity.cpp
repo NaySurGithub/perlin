@@ -49,8 +49,9 @@ namespace perlin {
         while (s.size() % 4)
             s += '=';
         std::string out(s.size() / 4 * 3, '\0');
-        const int n = EVP_DecodeBlock(reinterpret_cast<unsigned char*>(out.data()),
-                                      reinterpret_cast<const unsigned char*>(s.data()), static_cast<int>(s.size()));
+        const int n =
+            EVP_DecodeBlock(reinterpret_cast<unsigned char*>(out.data()),
+                            reinterpret_cast<const unsigned char*>(s.data()), static_cast<int>(s.size()));
         if (n < 0)
             return {};
         size_t pad = 0;
@@ -157,7 +158,8 @@ namespace perlin {
         return mpToken;
     }
 
-    std::string ClientIdentity::AssertOffer(const std::string& sdp, const std::string& identityProvider) const {
+    std::string ClientIdentity::AssertOffer(const std::string& sdp,
+                                            const std::string& identityProvider) const {
         if (!key || mpToken.empty())
             return {};
         claims::Fingerprints entries;
@@ -182,7 +184,8 @@ namespace perlin {
         std::string fps = headerB64 + ".." + B64Url(raw.data(), raw.size());
 
         const std::string assertion = json::Write(claims::Assertion{fps, mpToken});
-        const std::string outer = json::Write(claims::Envelope{assertion, claims::IdentityProvider{identityProvider, "default"}});
+        const std::string outer =
+            json::Write(claims::Envelope{assertion, claims::IdentityProvider{identityProvider, "default"}});
         std::string env = B64Standard(outer);
 
         size_t mpos = sdp.find("m=");

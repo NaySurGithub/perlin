@@ -19,8 +19,8 @@ int main() {
         }
     font.AddGlyphPage(0xe0, detailed, 1024, 1024);
     const auto icon = font.Get(0xe000);
-    if (icon.width != 64 || icon.height != 64 || icon.top != -28 || icon.left != 0 ||
-        icon.advance != 62 || !icon.colored) {
+    if (icon.width != 64 || icon.height != 64 || icon.top != -28 || icon.left != 0 || icon.advance != 62 ||
+        !icon.colored) {
         std::cerr << "private-use icon metrics differ from native scan and build rules\n";
         return 1;
     }
@@ -32,7 +32,8 @@ int main() {
         for (int x = 0; x < 64 && exactPixels; x++)
             for (int c = 0; c < 4; c++)
                 if (font.Atlas()[((static_cast<size_t>(ay + y) * font.AtlasWidth()) + ax + x) * 4 + c] !=
-                    detailed[(static_cast<size_t>(y) * 1024 + x) * 4 + c]) exactPixels = false;
+                    detailed[(static_cast<size_t>(y) * 1024 + x) * 4 + c])
+                    exactPixels = false;
     if (!exactPixels) {
         std::cerr << "resource-pack icon pixels were resampled or lost\n";
         return 1;
@@ -52,14 +53,15 @@ int main() {
     std::vector<uint8_t> page(256 * 256 * 4, 255);
     font.AddGlyphPage(0xe0, page, 256, 256);
     const bool customGlyph = font.Get(0xe000).width == 16;
-    const auto file = std::filesystem::temp_directory_path() / ("perlin-font-cache-" +
-        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".hex");
+    const auto file = std::filesystem::temp_directory_path() /
+                      ("perlin-font-cache-" +
+                       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".hex");
     std::ofstream(file) << "4E00:" << std::string(32, 'F') << '\n';
     const bool loaded = font.LoadUnihexFile(file.string()) && font.HasUnihex();
     font.UnloadLevelResources();
     font.UnloadLevelResources();
-    const bool cleared = font.Builtin() && !font.HasUnihex() && !font.HasVanillaSheets()
-        && font.TtfCount() == 0 && font.Get(0xe000).width == fallbackWidth;
+    const bool cleared = font.Builtin() && !font.HasUnihex() && !font.HasVanillaSheets() &&
+                         font.TtfCount() == 0 && font.Get(0xe000).width == fallbackWidth;
     const bool reload = font.LoadUnihexFile(file.string()) && font.HasUnihex();
     std::filesystem::remove(file);
     if (!customGlyph || !loaded || !cleared || !reload)

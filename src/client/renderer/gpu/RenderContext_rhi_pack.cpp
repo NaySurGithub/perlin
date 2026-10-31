@@ -12,16 +12,19 @@ namespace perlin {
         if (!jpack)
             return false;
         // the pack's vertex stream is built next to the normal one whenever a chunk mesh uploads
-        meshes.SetExtension(gpu::kPackVertexBytes, [this](const Tessellator& tess, std::vector<uint8_t>& out) {
-            if (jpack)
-                jpack->Convert(tess, out);
-        });
+        meshes.SetExtension(gpu::kPackVertexBytes,
+                            [this](const Tessellator& tess, std::vector<uint8_t>& out) {
+                                if (jpack)
+                                    jpack->Convert(tess, out);
+                            });
         Tessellator::SetCaptureQuadInfo(true);
         jpackReady = false;
         return true;
     }
 
-    bool RenderContext_rhi::SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) {
+    bool RenderContext_rhi::SetJavaShaderPack(const std::string& path,
+                                              const std::map<std::string, std::string>& options,
+                                              std::string& error) {
         ClearJavaShaderPack();
         if (!PERLIN_ENV("PERLIN_JAVA_RUNTIME") && options.empty() &&
             path.contains("ComplementaryReimagined_r5.9.3"))
@@ -93,7 +96,8 @@ namespace perlin {
         const jshader::ShaderPackInstance& inst = *jpack->Instance();
         std::map<std::string, const jshader::ShaderOption*> byName;
         for (const jshader::ShaderOption& o : inst.Options())
-            if (o.kind != jshader::ShaderOption::Kind::Const && (o.kind == jshader::ShaderOption::Kind::Toggle || !o.values.empty()))
+            if (o.kind != jshader::ShaderOption::Kind::Const &&
+                (o.kind == jshader::ShaderOption::Kind::Toggle || !o.values.empty()))
                 byName[o.name] = &o;
         std::set<std::string> done;
         auto emit = [&](const std::string& name, const std::string& group) {
@@ -124,7 +128,8 @@ namespace perlin {
         };
         // screen layout from shaders.properties: "screen" lists options and [sub screens]
         std::set<std::string> visiting;
-        std::function<void(const std::string&, const std::string&)> walk = [&](const std::string& key, const std::string& title) {
+        std::function<void(const std::string&, const std::string&)> walk = [&](const std::string& key,
+                                                                               const std::string& title) {
             if (!visiting.insert(key).second)
                 return;
             for (const std::string& w : jshader::SplitWords(inst.Props().Get(key))) {
@@ -132,7 +137,8 @@ namespace perlin {
                     const std::string sub = w.substr(1, w.size() - 2);
                     const std::string t = inst.Lang("screen." + sub);
                     walk("screen." + sub, t.empty() ? sub : t);
-                } else if (w != "<empty>" && w != "<profile>" && w != "*" && w.compare(0, 8, "<profile") != 0) {
+                } else if (w != "<empty>" && w != "<profile>" && w != "*" &&
+                           w.compare(0, 8, "<profile") != 0) {
                     emit(w, title);
                 }
             }

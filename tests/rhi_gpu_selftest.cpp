@@ -11,12 +11,12 @@
 using namespace rhi;
 
 static int g_failed = 0;
-#define CHECK(cond)                                                                  \
-    do {                                                                             \
-        if (!(cond)) {                                                               \
-            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);     \
-            g_failed++;                                                              \
-        }                                                                            \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                             \
+            g_failed++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 static std::string g_shaderDir;
@@ -40,7 +40,8 @@ static void ExpectNoErrors(Device& dev, const char* where) {
     }
 }
 
-static BufferHandle MakeBuffer(Device& dev, uint64_t size, BufferUsage usage, MemoryClass mem, const char* name) {
+static BufferHandle MakeBuffer(Device& dev, uint64_t size, BufferUsage usage, MemoryClass mem,
+                               const char* name) {
     BufferDesc d;
     d.size = size;
     d.usage = usage;
@@ -67,7 +68,8 @@ static ShaderHandle MakeShader(Device& dev, const char* file, ShaderStage stage)
 
 static void TestBufferRoundTrip(Device& dev) {
     BufferHandle up = MakeBuffer(dev, 1024, BufferUsage::CopySrc, MemoryClass::Upload, "up");
-    BufferHandle mid = MakeBuffer(dev, 1024, BufferUsage::CopySrc | BufferUsage::CopyDst, MemoryClass::GpuOnly, "mid");
+    BufferHandle mid =
+        MakeBuffer(dev, 1024, BufferUsage::CopySrc | BufferUsage::CopyDst, MemoryClass::GpuOnly, "mid");
     BufferHandle rb = MakeBuffer(dev, 1024, BufferUsage::CopyDst, MemoryClass::Readback, "rb");
     uint8_t* p = dev.Map(up);
     CHECK(p != nullptr);
@@ -92,7 +94,8 @@ static void TestBufferRoundTrip(Device& dev) {
 }
 
 static void TestFillAndFences(Device& dev) {
-    BufferHandle gpu = MakeBuffer(dev, 256, BufferUsage::CopySrc | BufferUsage::CopyDst, MemoryClass::GpuOnly, "fill");
+    BufferHandle gpu =
+        MakeBuffer(dev, 256, BufferUsage::CopySrc | BufferUsage::CopyDst, MemoryClass::GpuOnly, "fill");
     BufferHandle rb = MakeBuffer(dev, 256, BufferUsage::CopyDst, MemoryClass::Readback, "fill-rb");
     FenceHandle fence = dev.CreateFence(0);
 
@@ -183,15 +186,19 @@ static Scene BuildScene(Device& dev) {
     // second dynamic slot (256 apart) doubles the scale
     const float frame2[] = {2.0f, 2.0f, 0, 0};
     std::memcpy(st + 1280, frame2, sizeof(frame2));
-    const uint8_t white[16] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+    const uint8_t white[16] = {255, 255, 255, 255, 255, 255, 255, 255,
+                               255, 255, 255, 255, 255, 255, 255, 255};
     std::memset(st + 2048, 0, 512);
     std::memcpy(st + 2048, white, 8);
     std::memcpy(st + 2048 + 256, white, 8);
     dev.Flush(staging, 0, 4096);
 
-    s.vertices = MakeBuffer(dev, sizeof(verts), BufferUsage::Vertex | BufferUsage::CopyDst, MemoryClass::GpuOnly, "vertices");
-    s.instances = MakeBuffer(dev, sizeof(inst), BufferUsage::Vertex | BufferUsage::CopyDst, MemoryClass::GpuOnly, "instances");
-    s.indices = MakeBuffer(dev, 16, BufferUsage::Index | BufferUsage::CopyDst, MemoryClass::GpuOnly, "indices");
+    s.vertices = MakeBuffer(dev, sizeof(verts), BufferUsage::Vertex | BufferUsage::CopyDst,
+                            MemoryClass::GpuOnly, "vertices");
+    s.instances = MakeBuffer(dev, sizeof(inst), BufferUsage::Vertex | BufferUsage::CopyDst,
+                             MemoryClass::GpuOnly, "instances");
+    s.indices =
+        MakeBuffer(dev, 16, BufferUsage::Index | BufferUsage::CopyDst, MemoryClass::GpuOnly, "indices");
     s.ubo = MakeBuffer(dev, 512, BufferUsage::Uniform | BufferUsage::CopyDst, MemoryClass::GpuOnly, "ubo");
 
     TextureDesc td;
@@ -259,7 +266,9 @@ static void ReadTarget(Device& dev, Scene& s, std::vector<uint8_t>& out) {
     dev.Destroy(rb);
 }
 
-static const uint8_t* Pixel(const std::vector<uint8_t>& img, int x, int y) { return &img[static_cast<size_t>(y) * 256 + x * 4]; }
+static const uint8_t* Pixel(const std::vector<uint8_t>& img, int x, int y) {
+    return &img[static_cast<size_t>(y) * 256 + x * 4];
+}
 
 // pixel at the middle of instance i's triangle
 static const uint8_t* InstancePixel(const std::vector<uint8_t>& img, int i) {
@@ -284,7 +293,8 @@ static void TestRaster(Device& dev) {
 
     for (int variant = 0; variant < 2; variant++) {
         CommandList* cl = dev.AcquireCommandList(QueueType::Graphics);
-        cl->Barrier(TextureBarrier{s.target, variant == 0 ? State::Undefined : State::ColorTarget, State::ColorTarget});
+        cl->Barrier(TextureBarrier{s.target, variant == 0 ? State::Undefined : State::ColorTarget,
+                                   State::ColorTarget});
         BeginPass(cl, s);
         cl->SetPipeline(variant == 0 ? s.pipeFront : s.pipeBack);
         cl->SetBindGroup(0, s.group, offsets);
@@ -357,7 +367,8 @@ static void TestRaster(Device& dev) {
 static void TestComputeIndirect(Device& dev) {
     Scene s = BuildScene(dev);
     ShaderHandle cs = MakeShader(dev, "cull.cs.spv", ShaderStage::Compute);
-    const BindLayoutEntry entries[] = {{0, BindingType::StorageBufferRW, ShaderStage::Compute}, {1, BindingType::StorageBufferRW, ShaderStage::Compute}};
+    const BindLayoutEntry entries[] = {{0, BindingType::StorageBufferRW, ShaderStage::Compute},
+                                       {1, BindingType::StorageBufferRW, ShaderStage::Compute}};
     BindLayoutHandle cl_layout = dev.CreateBindLayout({entries});
     PipelineLayoutDesc pl;
     pl.sets[0] = cl_layout;
@@ -369,8 +380,12 @@ static void TestComputeIndirect(Device& dev) {
     CHECK(cpipe);
 
     const uint64_t argBytes = sizeof(DrawIndexedIndirectCommand) * 8;
-    BufferHandle args = MakeBuffer(dev, argBytes, BufferUsage::Storage | BufferUsage::Indirect | BufferUsage::CopyDst, MemoryClass::GpuOnly, "args");
-    BufferHandle counter = MakeBuffer(dev, 16, BufferUsage::Storage | BufferUsage::Indirect | BufferUsage::CopyDst, MemoryClass::GpuOnly, "counter");
+    BufferHandle args =
+        MakeBuffer(dev, argBytes, BufferUsage::Storage | BufferUsage::Indirect | BufferUsage::CopyDst,
+                   MemoryClass::GpuOnly, "args");
+    BufferHandle counter =
+        MakeBuffer(dev, 16, BufferUsage::Storage | BufferUsage::Indirect | BufferUsage::CopyDst,
+                   MemoryClass::GpuOnly, "counter");
     const BindGroupEntry ge[] = {{0, 0, {args, 0, argBytes}, {}, {}}, {1, 0, {}, {}, {}}};
     BindGroupEntry group[2] = {ge[0], ge[1]};
     group[1].buffer = {counter, 0, 16};
@@ -383,16 +398,19 @@ static void TestComputeIndirect(Device& dev) {
     const uint32_t offsets[] = {0};
     CommandList* cl = dev.AcquireCommandList(QueueType::Graphics);
     cl->Barrier(TextureBarrier{s.target, State::Undefined, State::ColorTarget});
-    const BufferBarrier zero[] = {{args, State::Undefined, State::CopyDst}, {counter, State::Undefined, State::CopyDst}};
+    const BufferBarrier zero[] = {{args, State::Undefined, State::CopyDst},
+                                  {counter, State::Undefined, State::CopyDst}};
     cl->Barrier({}, zero);
     cl->FillBuffer(args, 0, argBytes, 0);
     cl->FillBuffer(counter, 0, 16, 0);
-    const BufferBarrier toShader[] = {{args, State::CopyDst, State::ShaderWrite}, {counter, State::CopyDst, State::ShaderWrite}};
+    const BufferBarrier toShader[] = {{args, State::CopyDst, State::ShaderWrite},
+                                      {counter, State::CopyDst, State::ShaderWrite}};
     cl->Barrier({}, toShader);
     cl->SetPipeline(cpipe);
     cl->SetBindGroup(0, cg, {});
     cl->Dispatch(1, 1, 1);
-    const BufferBarrier toDraw[] = {{args, State::ShaderWrite, State::IndirectArgument}, {counter, State::ShaderWrite, State::IndirectArgument}};
+    const BufferBarrier toDraw[] = {{args, State::ShaderWrite, State::IndirectArgument},
+                                    {counter, State::ShaderWrite, State::IndirectArgument}};
     cl->Barrier({}, toDraw);
     BeginPass(cl, s);
     cl->SetPipeline(s.pipeFront);
@@ -415,7 +433,8 @@ static void TestComputeIndirect(Device& dev) {
         CHECK((InstancePixel(img, i)[3] == 255) == drawn);
     }
     ExpectNoErrors(dev, "compute indirect");
-    std::printf("  indirect path: %s\n", dev.Caps().features.drawIndirectCount ? "draw-indirect-count" : "multi-draw-indirect");
+    std::printf("  indirect path: %s\n",
+                dev.Caps().features.drawIndirectCount ? "draw-indirect-count" : "multi-draw-indirect");
 
     dev.Destroy(cg);
     dev.Destroy(args);
@@ -511,7 +530,8 @@ static void TestThreadedRecording(Device& dev) {
 }
 
 static void TestValidatorCatchesMistakes(Device& dev) {
-    BufferHandle b = MakeBuffer(dev, 64, BufferUsage::CopyDst | BufferUsage::CopySrc, MemoryClass::GpuOnly, "v");
+    BufferHandle b =
+        MakeBuffer(dev, 64, BufferUsage::CopyDst | BufferUsage::CopySrc, MemoryClass::GpuOnly, "v");
     CommandList* cl = dev.AcquireCommandList(QueueType::Graphics);
     cl->Barrier(BufferBarrier{b, State::Undefined, State::CopyDst});
     // claims it was a vertex buffer: the state tracker must say so
@@ -562,7 +582,8 @@ int main(int argc, char** argv) {
     }
     uint32_t pick = 0;
     for (const auto& a : instance->Adapters()) {
-        std::printf("adapter %u: %s (%s) usable=%d %s\n", a.index, a.name.c_str(), VendorName(a.vendorId), a.usable, a.unusableReason.c_str());
+        std::printf("adapter %u: %s (%s) usable=%d %s\n", a.index, a.name.c_str(), VendorName(a.vendorId),
+                    a.usable, a.unusableReason.c_str());
         if (a.usable)
             pick = a.index;
     }

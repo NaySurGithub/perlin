@@ -174,17 +174,22 @@ namespace rhi {
 
         virtual QueueType Queue() const = 0;
 
-        virtual void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) = 0;
+        virtual void Barrier(std::span<const TextureBarrier> textures,
+                             std::span<const BufferBarrier> buffers) = 0;
         void Barrier(const TextureBarrier& t) { Barrier(std::span<const TextureBarrier>(&t, 1), {}); }
         void Barrier(const BufferBarrier& b) { Barrier({}, std::span<const BufferBarrier>(&b, 1)); }
         // make writes visible to later uses of the same resource in the same state (uav / storage hazards)
         virtual void UavBarrier(BufferHandle buffer) = 0;
         virtual void UavBarrier(TextureHandle texture) = 0;
 
-        virtual void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) = 0;
-        virtual void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) = 0;
-        virtual void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) = 0;
-        virtual void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) = 0;
+        virtual void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                                uint64_t size) = 0;
+        virtual void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                         std::span<const BufferTextureCopy> regions) = 0;
+        virtual void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                         std::span<const BufferTextureCopy> regions) = 0;
+        virtual void CopyTexture(TextureHandle dst, TextureHandle src,
+                                 std::span<const TextureCopy> regions) = 0;
         virtual void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) = 0;
         virtual void ResolveTexture(TextureHandle dst, TextureHandle src) = 0;
 
@@ -192,7 +197,8 @@ namespace rhi {
         virtual void EndRendering() = 0;
 
         virtual void SetPipeline(PipelineHandle pipeline) = 0;
-        virtual void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets = {}) = 0;
+        virtual void SetBindGroup(uint32_t set, BindGroupHandle group,
+                                  std::span<const uint32_t> dynamicOffsets = {}) = 0;
         virtual void PushConstants(const void* data, uint32_t bytes, uint32_t offset = 0) = 0;
         virtual void SetViewport(const Viewport& viewport) = 0;
         virtual void SetScissor(const Rect& rect) = 0;
@@ -200,11 +206,13 @@ namespace rhi {
         virtual void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset = 0) = 0;
         virtual void SetStencilReference(uint32_t value) = 0;
 
-        virtual void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) = 0;
-        virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset,
-                                 uint32_t firstInstance) = 0;
+        virtual void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                          uint32_t firstInstance) = 0;
+        virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                                 int32_t vertexOffset, uint32_t firstInstance) = 0;
         // maxDraws commands of DrawIndexedIndirectCommand at stride bytes apart
-        virtual void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) = 0;
+        virtual void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                         uint32_t stride) = 0;
         // draw count read from countBuffer at countOffset, clamped to maxDraws
         virtual void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
                                               uint64_t countOffset, uint32_t maxDraws, uint32_t stride) = 0;
@@ -213,7 +221,8 @@ namespace rhi {
         virtual void DispatchIndirect(BufferHandle args, uint64_t offset) = 0;
 
         virtual void WriteTimestamp(QuerySetHandle set, uint32_t index) = 0;
-        virtual void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) = 0;
+        virtual void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                                    uint64_t dstOffset) = 0;
 
         virtual void BeginDebugLabel(const char* name, uint32_t rgba = 0xFFFFFFFFu) = 0;
         virtual void EndDebugLabel() = 0;
@@ -243,7 +252,11 @@ namespace rhi {
         virtual const DeviceCaps& Caps() const = 0;
         virtual NativeHandles Native() const = 0;
         // native object of a texture plus its api state when it is in `state`; empty for a stale handle or a backend without one
-        virtual NativeTexture NativeOf(TextureHandle texture, State state) { (void)texture; (void)state; return {}; }
+        virtual NativeTexture NativeOf(TextureHandle texture, State state) {
+            (void)texture;
+            (void)state;
+            return {};
+        }
 
         virtual BufferHandle CreateBuffer(const BufferDesc& desc) = 0;
         virtual TextureHandle CreateTexture(const TextureDesc& desc) = 0;
@@ -285,7 +298,9 @@ namespace rhi {
         // pooled: valid until passed to Submit, then recycled when the work completes
         virtual CommandList* AcquireCommandList(QueueType queue) = 0;
         virtual void Submit(QueueType queue, const SubmitDesc& desc) = 0;
-        void Submit(QueueType queue, CommandList* list) { Submit(queue, SubmitDesc{std::span<CommandList* const>(&list, 1), {}, {}}); }
+        void Submit(QueueType queue, CommandList* list) {
+            Submit(queue, SubmitDesc{std::span<CommandList* const>(&list, 1), {}, {}});
+        }
 
         virtual std::unique_ptr<Swapchain> CreateSwapchain(const SwapchainDesc& desc) = 0;
 

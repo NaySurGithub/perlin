@@ -27,7 +27,8 @@ namespace perlin::server {
             for (int i = 0; i < kCells; i++) {
                 auto it = lookup.find(values[static_cast<size_t>(i)]);
                 if (it == lookup.end()) {
-                    it = lookup.emplace(values[static_cast<size_t>(i)], static_cast<uint32_t>(palette.size())).first;
+                    it = lookup.emplace(values[static_cast<size_t>(i)], static_cast<uint32_t>(palette.size()))
+                             .first;
                     palette.push_back(values[static_cast<size_t>(i)]);
                 }
                 idx[static_cast<size_t>(i)] = static_cast<uint16_t>(it->second);
@@ -36,7 +37,15 @@ namespace perlin::server {
             while ((1u << need) < palette.size())
                 need++;
             // the wire only allows these widths
-            const unsigned bits = need == 0 ? 0 : need <= 1 ? 1 : need <= 2 ? 2 : need <= 3 ? 3 : need <= 4 ? 4 : need <= 5 ? 5 : need <= 6 ? 6 : need <= 8 ? 8 : 16;
+            const unsigned bits = need == 0   ? 0
+                                  : need <= 1 ? 1
+                                  : need <= 2 ? 2
+                                  : need <= 3 ? 3
+                                  : need <= 4 ? 4
+                                  : need <= 5 ? 5
+                                  : need <= 6 ? 6
+                                  : need <= 8 ? 8
+                                              : 16;
             out.push_back(static_cast<uint8_t>((bits << 1) | 1));
             if (bits == 0) {
                 PutZigzag(out, palette[0]);

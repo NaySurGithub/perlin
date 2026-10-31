@@ -12,5 +12,6 @@ namespace perlin::ui {
     bool LooksLikeBan(const std::string& text);
 
     std::string DefaultDisconnectScreenTemplate();
-    std::string BuildDisconnectScreenRml(const std::string& templateText, const DisconnectScreenText& text, int guiW, int guiH);
+    std::string BuildDisconnectScreenRml(const std::string& templateText, const DisconnectScreenText& text,
+                                         int guiW, int guiH);
 }

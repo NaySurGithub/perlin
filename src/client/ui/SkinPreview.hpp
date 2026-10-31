@@ -13,7 +13,8 @@ namespace perlin::ui {
         // head rotation vs body, degrees (positive yaw same way as `yaw`)
         float headYaw = 0.0f, headPitch = 0.0f;
         bool showBody = true;
-        bool jacket = true, leftSleeve = true, rightSleeve = true, leftPants = true, rightPants = true, hat = true;
+        bool jacket = true, leftSleeve = true, rightSleeve = true, leftPants = true, rightPants = true,
+             hat = true;
     };
     Texture RenderSkin3D(const SkinView& view, int outW, int outH);
     bool GuessSlimSkin(const std::vector<unsigned char>& skin, int skinW, int skinH);

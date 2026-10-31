@@ -17,24 +17,30 @@ namespace perlin::ui {
         }
 
         std::string Color(uint32_t packed) {
-            const int r = static_cast<int>(packed >> 24) & 255, g = static_cast<int>(packed >> 16) & 255, b = static_cast<int>(packed >> 8) & 255,
-                      a = static_cast<int>(packed) & 255;
-            return "rgba(" + std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b) + "," + std::to_string(a) + ")";
+            const int r = static_cast<int>(packed >> 24) & 255, g = static_cast<int>(packed >> 16) & 255,
+                      b = static_cast<int>(packed >> 8) & 255, a = static_cast<int>(packed) & 255;
+            return "rgba(" + std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b) + "," +
+                   std::to_string(a) + ")";
         }
 
         std::string Box(float x, float y, float w, float h, const std::string& style) {
-            return "<div style=\"left:" + F(x) + "px;top:" + F(y) + "px;width:" + F(w) + "px;height:" + F(h) + "px;" + style + "\"></div>\n";
+            return "<div style=\"left:" + F(x) + "px;top:" + F(y) + "px;width:" + F(w) + "px;height:" + F(h) +
+                   "px;" + style + "\"></div>\n";
         }
 
-        bool Valid(float v) { return std::isfinite(v) && std::fabs(v) < 100000.0f; }
+        bool Valid(float v) {
+            return std::isfinite(v) && std::fabs(v) < 100000.0f;
+        }
 
         void Emit(const mods::UiLayer& layer, std::string& out) {
             abi::Reader r(layer.commands.data(), layer.commands.size());
             int budget = 4000;
             while (r.Remaining() > 0 && r.Ok() && budget-- > 0) {
                 const auto kind = static_cast<abi::Draw>(r.get<uint8_t>());
-                if (kind == abi::Draw::Rect || kind == abi::Draw::Gradient || kind == abi::Draw::Border || kind == abi::Draw::Image) {
-                    const float x = r.get<float>(), y = r.get<float>(), w = r.get<float>(), h = r.get<float>();
+                if (kind == abi::Draw::Rect || kind == abi::Draw::Gradient || kind == abi::Draw::Border ||
+                    kind == abi::Draw::Image) {
+                    const float x = r.get<float>(), y = r.get<float>(), w = r.get<float>(),
+                                h = r.get<float>();
                     if (kind == abi::Draw::Rect) {
                         const uint32_t c = r.get<uint32_t>();
                         if (r.Ok() && Valid(x) && Valid(y) && Valid(w) && Valid(h) && (c & 255))
@@ -42,7 +48,9 @@ namespace perlin::ui {
                     } else if (kind == abi::Draw::Gradient) {
                         const uint32_t top = r.get<uint32_t>(), bottom = r.get<uint32_t>();
                         if (r.Ok() && Valid(x) && Valid(y) && Valid(w) && Valid(h))
-                            out += Box(x, y, w, h, "decorator:vertical-gradient(" + Color(top) + " " + Color(bottom) + ");");
+                            out +=
+                                Box(x, y, w, h,
+                                    "decorator:vertical-gradient(" + Color(top) + " " + Color(bottom) + ");");
                     } else if (kind == abi::Draw::Border) {
                         const uint32_t c = r.get<uint32_t>();
                         const float t = std::max(1.0f, r.get<float>());
@@ -57,13 +65,15 @@ namespace perlin::ui {
                         const uint32_t tint = r.get<uint32_t>();
                         const std::string path = r.str();
                         (void)tint;
-                        if (r.Ok() && Valid(x) && Valid(y) && Valid(w) && Valid(h) && !path.empty() && path.size() < 256 &&
-                            !path.contains("..") && !path.contains("://"))
-                            out += "<mcimg src=\"" + EscapeRml(path) + "\" style=\"left:" + F(x) + "px;top:" + F(y) + "px;width:" + F(w) +
-                                   "px;height:" + F(h) + "px;\"></mcimg>\n";
+                        if (r.Ok() && Valid(x) && Valid(y) && Valid(w) && Valid(h) && !path.empty() &&
+                            path.size() < 256 && !path.contains("..") && !path.contains("://"))
+                            out += "<mcimg src=\"" + EscapeRml(path) + "\" style=\"left:" + F(x) +
+                                   "px;top:" + F(y) + "px;width:" + F(w) + "px;height:" + F(h) +
+                                   "px;\"></mcimg>\n";
                     }
                 } else if (kind == abi::Draw::Line) {
-                    const float x0 = r.get<float>(), y0 = r.get<float>(), x1 = r.get<float>(), y1 = r.get<float>();
+                    const float x0 = r.get<float>(), y0 = r.get<float>(), x1 = r.get<float>(),
+                                y1 = r.get<float>();
                     const uint32_t c = r.get<uint32_t>();
                     const float t = std::max(1.0f, r.get<float>());
                     if (!r.Ok() || !Valid(x0) || !Valid(y0) || !Valid(x1) || !Valid(y1) || !(c & 255))
@@ -93,17 +103,21 @@ namespace perlin::ui {
                     const float boxW = 2000.0f;
                     const float left = align == 1 ? x - boxW / 2 : align == 2 ? x - boxW : x;
                     const char* alignName = align == 1 ? "center" : align == 2 ? "right" : "left";
-                    out += "<div style=\"left:" + F(left) + "px;top:" + F(y) + "px;width:" + F(boxW) + "px;height:" + F(9 * scale) +
-                           "px;font-family:" + (shadow ? "minecraft-shadow" : "minecraft") + ";font-size:" + F(8 * scale) + "px;line-height:" +
-                           F(9 * scale) + "px;text-align:" + alignName + ";white-space:nowrap;color:" + Color(c) + ";\">" + FormatCodesToRml(text) +
-                           "</div>\n";
+                    out += "<div style=\"left:" + F(left) + "px;top:" + F(y) + "px;width:" + F(boxW) +
+                           "px;height:" + F(9 * scale) +
+                           "px;font-family:" + (shadow ? "minecraft-shadow" : "minecraft") +
+                           ";font-size:" + F(8 * scale) + "px;line-height:" + F(9 * scale) +
+                           "px;text-align:" + alignName + ";white-space:nowrap;color:" + Color(c) + ";\">" +
+                           FormatCodesToRml(text) + "</div>\n";
                 } else if (kind == abi::Draw::Item) {
-                    const float x = r.get<float>(), y = r.get<float>(), size = std::clamp(r.get<float>(), 1.0f, 512.0f);
+                    const float x = r.get<float>(), y = r.get<float>(),
+                                size = std::clamp(r.get<float>(), 1.0f, 512.0f);
                     const std::string name = r.str();
                     if (!r.Ok() || !Valid(x) || !Valid(y) || name.empty() || name.size() > 128)
                         continue;
-                    out += "<mcitem key=\"" + EscapeRml(name + ";0") + "\" style=\"left:" + F(x) + "px;top:" + F(y) + "px;width:" + F(size) +
-                           "px;height:" + F(size) + "px;\"></mcitem>\n";
+                    out += "<mcitem key=\"" + EscapeRml(name + ";0") + "\" style=\"left:" + F(x) +
+                           "px;top:" + F(y) + "px;width:" + F(size) + "px;height:" + F(size) +
+                           "px;\"></mcitem>\n";
                 } else {
                     break;
                 }
@@ -114,7 +128,8 @@ namespace perlin::ui {
     namespace {
         const char* kPluginLayerHead =
             "<rml>\n<head>\n<title>plugins</title>\n<style>\n"
-            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; overflow: hidden; }\n"
+            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; "
+            "padding: 0; background: transparent; overflow: hidden; }\n"
             "div, mcimg, mcitem { display: block; position: absolute; }\n</style>\n</head>\n<body>\n";
         const ScreenTemplateDefault kPluginLayerDefault("plugin_layer.rml", kPluginLayerHead);
     }

@@ -141,38 +141,51 @@ namespace rhi::metal {
         // ends the open encoder and hands the command buffer over
         id<MTLCommandBuffer> Finish();
 
-        void Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) override;
+        void Barrier(std::span<const TextureBarrier> textures,
+                     std::span<const BufferBarrier> buffers) override;
         void UavBarrier(BufferHandle) override;
         void UavBarrier(TextureHandle) override;
-        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) override;
-        void CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) override;
-        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) override;
+        void CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                        uint64_t size) override;
+        void CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
+        void CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                 std::span<const BufferTextureCopy> regions) override;
         void CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) override;
         void FillBuffer(BufferHandle dst, uint64_t offset, uint64_t size, uint32_t value) override;
         void ResolveTexture(TextureHandle dst, TextureHandle src) override;
         void BeginRendering(const RenderingDesc& desc) override;
         void EndRendering() override;
         void SetPipeline(PipelineHandle pipeline) override;
-        void SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) override;
+        void SetBindGroup(uint32_t set, BindGroupHandle group,
+                          std::span<const uint32_t> dynamicOffsets) override;
         void PushConstants(const void* data, uint32_t bytes, uint32_t offset) override;
         void SetViewport(const Viewport& viewport) override;
         void SetScissor(const Rect& rect) override;
         void SetVertexBuffer(uint32_t slot, BufferHandle buffer, uint64_t offset) override;
         void SetIndexBuffer(BufferHandle buffer, IndexType type, uint64_t offset) override;
         void SetStencilReference(uint32_t value) override;
-        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) override;
-        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) override;
-        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) override;
-        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer, uint64_t countOffset, uint32_t maxDraws,
-                                      uint32_t stride) override;
+        void Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                  uint32_t firstInstance) override;
+        void DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                         int32_t vertexOffset, uint32_t firstInstance) override;
+        void DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                 uint32_t stride) override;
+        void DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle countBuffer,
+                                      uint64_t countOffset, uint32_t maxDraws, uint32_t stride) override;
         void Dispatch(uint32_t x, uint32_t y, uint32_t z) override;
         void DispatchIndirect(BufferHandle args, uint64_t offset) override;
         void WriteTimestamp(QuerySetHandle set, uint32_t index) override;
-        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst, uint64_t dstOffset) override;
+        void ResolveQueries(QuerySetHandle set, uint32_t first, uint32_t count, BufferHandle dst,
+                            uint64_t dstOffset) override;
         void BeginDebugLabel(const char* name, uint32_t rgba) override;
         void EndDebugLabel() override;
         void* NativeHandle() override { return (__bridge void*)commandBuffer; }
-        void InvalidateBoundState() override { dirtySets = 0xF; pipelineDirty = true; vertexDirty = 0xFF; }
+        void InvalidateBoundState() override {
+            dirtySets = 0xF;
+            pipelineDirty = true;
+            vertexDirty = 0xFF;
+        }
 
     private:
         void EndEncoder();
@@ -267,7 +280,9 @@ namespace rhi::metal {
         void BeginFrame() override;
         void EndFrame() override;
         uint64_t FrameNumber() const override { return frame; }
-        uint32_t FrameSlot() const override { return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight)); }
+        uint32_t FrameSlot() const override {
+            return static_cast<uint32_t>(frame % (std::max)(1u, options.framesInFlight));
+        }
         void WaitIdle() override;
 
         MemoryBudget QueryMemoryBudget() override;
@@ -279,7 +294,8 @@ namespace rhi::metal {
         const DeviceOptions& Options() const { return options; }
         DeviceStats& MutableStats() { return stats; }
         void ReportError(const std::string& message);
-        id<MTLTexture> ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format, bool stencil);
+        id<MTLTexture> ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format,
+                              bool stencil);
         // swapchain images: a handle that points at a different drawable every frame
         TextureHandle CreateSurfaceTexture(Format format, uint32_t width, uint32_t height, bool sampled);
         void SetSurfaceTexture(TextureHandle handle, id<MTLTexture> texture);
@@ -303,7 +319,8 @@ namespace rhi::metal {
 
     private:
         void FillCaps();
-        id<MTLFunction> CompileStage(const Shader& shader, const PipelineLayoutDesc& layout, std::vector<StageSlot>& slots, std::string& error);
+        id<MTLFunction> CompileStage(const Shader& shader, const PipelineLayoutDesc& layout,
+                                     std::vector<StageSlot>& slots, std::string& error);
 
         id<MTLDevice> device = nil;
         id<MTLCommandQueue> queue = nil;

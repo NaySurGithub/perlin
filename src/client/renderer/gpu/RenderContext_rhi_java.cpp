@@ -19,7 +19,9 @@ namespace perlin {
     namespace {
         constexpr float kTau = 6.28318530717958647692f;
 
-        glm::mat4 ToFloat(const glm::dmat4& m) { return glm::mat4(m); }
+        glm::mat4 ToFloat(const glm::dmat4& m) {
+            return glm::mat4(m);
+        }
 
         // combined world->shadowUV split so the pack applies its own projection
         void SplitShadow(const float* s, float* mv, float* proj) {
@@ -54,8 +56,9 @@ namespace perlin {
         }
     } // namespace
 
-    bool RenderContext_rhi::SetBakedJavaShaderPack(const std::string& path, const std::map<std::string, std::string>&,
-                                              std::string& error) {
+    bool RenderContext_rhi::SetBakedJavaShaderPack(const std::string& path,
+                                                   const std::map<std::string, std::string>&,
+                                                   std::string& error) {
         if (!jshader::LooksLikeJavaPack(path)) {
             error = "not a java shader pack: " + path;
             return false;
@@ -75,7 +78,11 @@ namespace perlin {
                 const auto properties = jshader::ParseProperties(text, {{"MC_VERSION", "12100"}});
                 for (const auto& [key, value] : properties.WithPrefix("block.")) {
                     int id = 0;
-                    try { id = std::stoi(key); } catch (...) { continue; }
+                    try {
+                        id = std::stoi(key);
+                    } catch (...) {
+                        continue;
+                    }
                     for (std::string word : jshader::SplitWords(value)) {
                         if (word.starts_with("minecraft:"))
                             word.erase(0, 10);
@@ -133,10 +140,12 @@ namespace perlin {
             gpu.WriteTexture(rec.handle, 0, 0, 0, 1, 1, px);
             return true;
         };
-        if (!flat(javaBlack, 0, 0, 0, 255, "java black") || !flat(javaNormalDef, 128, 128, 255, 255, "java flat normal") ||
+        if (!flat(javaBlack, 0, 0, 0, 255, "java black") ||
+            !flat(javaNormalDef, 128, 128, 255, 255, "java flat normal") ||
             !flat(javaSpecDef, 0, 0, 0, 255, "java rough specular"))
             return false;
-        if (!MakeTexture(javaNoise, 128, 128, 1, 1, rhi::Format::RGBA8Unorm, gpu::SamplerKind::LinearRepeat, "java noise"))
+        if (!MakeTexture(javaNoise, 128, 128, 1, 1, rhi::Format::RGBA8Unorm, gpu::SamplerKind::LinearRepeat,
+                         "java noise"))
             return false;
         std::vector<uint8_t> noise(128 * 128 * 4);
         std::mt19937 rng(0xC0FFEEu);
@@ -147,7 +156,9 @@ namespace perlin {
             const auto load = [&](const char* path, TexRec& rec) {
                 std::string bytes;
                 Texture image;
-                if (source->Read(path, bytes) && LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), image) &&
+                if (source->Read(path, bytes) &&
+                    LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(),
+                                      image) &&
                     MakeTexture(rec, image.width, image.height, 1, 1, rhi::Format::RGBA8Unorm,
                                 gpu::SamplerKind::LinearRepeat, path))
                     gpu.WriteTexture(rec.handle, 0, 0, 0, image.width, image.height, image.pixels.data());
@@ -165,12 +176,13 @@ namespace perlin {
         if (javaMaterials.used && count == javaMaterialCount)
             return true;
         if (!javaMaterials.used && !MakeTexture(javaMaterials, 256, 256, 1, 1, rhi::Format::R32Float,
-                                               gpu::SamplerKind::PointClamp, "java material ids"))
+                                                gpu::SamplerKind::PointClamp, "java material ids"))
             return false;
         std::vector<float> ids(65536, 0.0f);
         for (size_t local = 0; local < std::min(count, ids.size()); ++local) {
             std::string name = palette.Name(static_cast<uint16_t>(local));
-            if (name == "minecraft:grass") name = "minecraft:grass_block";
+            if (name == "minecraft:grass")
+                name = "minecraft:grass_block";
             const auto found = javaMaterialRules.find(name);
             if (found == javaMaterialRules.end())
                 continue;
@@ -192,7 +204,8 @@ namespace perlin {
                         else
                             actual = std::to_string(value.i);
                     }
-                    if (actual != expected) matches = false;
+                    if (actual != expected)
+                        matches = false;
                 }
                 if (matches) {
                     ids[local] = static_cast<float>(rule.id);
@@ -213,11 +226,13 @@ namespace perlin {
         BindTexture("s_specular", javaSpecDef.handle, gpu::SamplerKind::LinearClamp);
         const rhi::TextureHandle white = gpu.White2D();
         BindTexture("s_gaux2", white, gpu::SamplerKind::LinearClamp);
-        BindTexture("s_gaux4", javaCloudWater.used ? javaCloudWater.handle : white, gpu::SamplerKind::LinearRepeat);
+        BindTexture("s_gaux4", javaCloudWater.used ? javaCloudWater.handle : white,
+                    gpu::SamplerKind::LinearRepeat);
         if (EnsureJavaMaterials())
             BindTexture("s_javaMaterials", javaMaterials.handle, gpu::SamplerKind::PointClamp);
         for (int i = 0; i < 16; i++)
-            BindTexture(("s_colortex" + std::to_string(i)).c_str(), javaBlack.handle, gpu::SamplerKind::LinearClamp);
+            BindTexture(("s_colortex" + std::to_string(i)).c_str(), javaBlack.handle,
+                        gpu::SamplerKind::LinearClamp);
     }
 
     void RenderContext_rhi::JavaChainBinds() {
@@ -234,7 +249,8 @@ namespace perlin {
         BindTexture("s_colortex6", post.javaAux, gpu::SamplerKind::LinearClamp);
         BindTexture("s_colortex7", post.javaC7, gpu::SamplerKind::LinearClamp);
         BindTexture("s_sceneDepth", post.worldDepth, gpu::SamplerKind::PointClamp);
-        BindTexture("s_depth", post.sceneDepth ? post.sceneDepth : post.worldDepth, gpu::SamplerKind::PointClamp);
+        BindTexture("s_depth", post.sceneDepth ? post.sceneDepth : post.worldDepth,
+                    gpu::SamplerKind::PointClamp);
         BindShadowSampling();
         BindTexture("s_lightmap", lightmap.handle, gpu::SamplerKind::LinearClamp);
         BindTexture("s_atlas", atlas.used ? atlas.handle : gpu.WhiteArray(), gpu::SamplerKind::PointMipClamp);
@@ -262,7 +278,6 @@ namespace perlin {
         pass(View::JavaComposite7, Program::JavaComposite7, 1);
         JavaChainBinds();
         FullscreenPass(View::JavaFinal, Program::JavaFinal, gpu.TargetFormat(), w, h, false);
-
     }
 
     void RenderContext_rhi::FeedJavaUniforms(const FrameParams& params) {
@@ -298,7 +313,9 @@ namespace perlin {
             const float* s = shadow.maps[shadow.front].sample;
             float mv[16], pr[16];
             glm::mat4 clip = glm::make_mat4(s);
-            clip = clip * glm::translate(glm::mat4(1), glm::vec3(params.cameraPosition[0], params.cameraPosition[1], params.cameraPosition[2]));
+            clip = clip *
+                   glm::translate(glm::mat4(1), glm::vec3(params.cameraPosition[0], params.cameraPosition[1],
+                                                          params.cameraPosition[2]));
             for (int c = 0; c < 4; ++c)
                 for (int row = 0; row < 3; ++row)
                     clip[c][row] = 2.0f * clip[c][row] - clip[c][3];
@@ -319,12 +336,14 @@ namespace perlin {
         const float eyeY[1] = {params.cameraPosition[1]};
         uni.Set("u_jeyeAltitude", eyeY, 1);
         uni.Set("u_jeyePosition", params.cameraPosition, 3);
-        const float prevEye[3] = {static_cast<float>(cam.havePrev ? cam.prevEye.x : params.cameraPosition[0]),
-                                  static_cast<float>(cam.havePrev ? cam.prevEye.y : params.cameraPosition[1]),
-                                  static_cast<float>(cam.havePrev ? cam.prevEye.z : params.cameraPosition[2])};
+        const float prevEye[3] = {
+            static_cast<float>(cam.havePrev ? cam.prevEye.x : params.cameraPosition[0]),
+            static_cast<float>(cam.havePrev ? cam.prevEye.y : params.cameraPosition[1]),
+            static_cast<float>(cam.havePrev ? cam.prevEye.z : params.cameraPosition[2])};
         uni.Set("u_jpreviousCameraPosition", prevEye, 3);
         const auto splitPos = [&](const char* iname, const char* fname, const float* p) {
-            const int32_t ip[3] = {static_cast<int32_t>(std::floor(p[0])), static_cast<int32_t>(std::floor(p[1])),
+            const int32_t ip[3] = {static_cast<int32_t>(std::floor(p[0])),
+                                   static_cast<int32_t>(std::floor(p[1])),
                                    static_cast<int32_t>(std::floor(p[2]))};
             uni.SetI(iname, ip, 3);
             const float fp[3] = {p[0] - static_cast<float>(ip[0]), p[1] - static_cast<float>(ip[1]),
@@ -335,7 +354,8 @@ namespace perlin {
         splitPos("u_jpreviousCameraPositionInt", "u_jpreviousCameraPositionFract", prevEye);
 
         uni.SetI("u_jframeCounter", static_cast<int32_t>(params.frameIndex));
-        const float dt = cam.havePrev ? static_cast<float>(std::clamp(cam.time - cam.prevTime, 0.0, 0.1)) : 0.016f;
+        const float dt =
+            cam.havePrev ? static_cast<float>(std::clamp(cam.time - cam.prevTime, 0.0, 0.1)) : 0.016f;
         uni.Set("u_jframeTime", &dt, 1);
         uni.Set("u_jframeTimeCounter", &params.timeSeconds, 1);
         uni.Set("u_jframeTimeSmooth", &dt, 1);
@@ -346,8 +366,10 @@ namespace perlin {
         uni.Set("u_jframemod4", &fm4, 1);
         uni.Set("u_jframemod8", &fm8, 1);
         uni.Set("u_jframemod600", &fm600, 1);
-        const int worldTick = params.worldTick >= 0 ? params.worldTick : static_cast<int>(params.timeSeconds * 20.0f) % 24000;
-        const int worldDay = params.worldDay >= 0 ? params.worldDay : static_cast<int>(params.timeSeconds / 1200.0f);
+        const int worldTick =
+            params.worldTick >= 0 ? params.worldTick : static_cast<int>(params.timeSeconds * 20.0f) % 24000;
+        const int worldDay =
+            params.worldDay >= 0 ? params.worldDay : static_cast<int>(params.timeSeconds / 1200.0f);
         uni.SetI("u_jworldTime", static_cast<int32_t>(worldTick));
         uni.SetI("u_jworldDay", static_cast<int32_t>(worldDay));
 
@@ -365,7 +387,8 @@ namespace perlin {
         uni.SetI("u_jheavyFog", 0);
         uni.SetI("u_jisElytraFlying", 0);
         const float dayF = std::clamp((std::cos(params.sky.sunAngle) + 0.1f) / 0.35f, 0.0f, 1.0f);
-        const int32_t eyeB[2] = {static_cast<int32_t>(params.heldLight * 16.0f), static_cast<int32_t>(240.0f * dayF)};
+        const int32_t eyeB[2] = {static_cast<int32_t>(params.heldLight * 16.0f),
+                                 static_cast<int32_t>(240.0f * dayF)};
         uni.SetI("u_jeyeBrightness", eyeB, 2);
         const float eyeM[1] = {static_cast<float>(eyeB[0])};
         const float eyeM2[1] = {static_cast<float>(eyeB[1])};

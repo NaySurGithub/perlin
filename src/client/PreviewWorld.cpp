@@ -34,7 +34,8 @@ namespace perlin {
                     valueText = stateFragment.substr(comma + 1, stateFragment.rfind(']') - comma - 1);
                     valueText.erase(std::remove(valueText.begin(), valueText.end(), '"'), valueText.end());
                 }
-                const uint16_t id = BlockPalette::Instance().Intern(BlockPalette::Instance().FindHash("minecraft:" + name, stateKey, valueText));
+                const uint16_t id = BlockPalette::Instance().Intern(
+                    BlockPalette::Instance().FindHash("minecraft:" + name, stateKey, valueText));
                 cache[key] = id;
                 return id;
             }
@@ -53,7 +54,8 @@ namespace perlin {
             const int xi = static_cast<int>(std::floor(x)), zi = static_cast<int>(std::floor(z));
             const float fx = x - xi, fz = z - zi;
             const float ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
-            const float a = Hash(xi, zi), b = Hash(xi + 1, zi), c = Hash(xi, zi + 1), d = Hash(xi + 1, zi + 1);
+            const float a = Hash(xi, zi), b = Hash(xi + 1, zi), c = Hash(xi, zi + 1),
+                        d = Hash(xi + 1, zi + 1);
             return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uz;
         }
 
@@ -91,7 +93,9 @@ namespace perlin {
                         item = item.substr(0, bar);
                     }
                     if (const size_t br = item.find('['); br != std::string::npos) {
-                        overrides = item.substr(br + 1, item.find(']', br) == std::string::npos ? std::string::npos : item.find(']', br) - br - 1);
+                        overrides = item.substr(br + 1, item.find(']', br) == std::string::npos
+                                                            ? std::string::npos
+                                                            : item.find(']', br) - br - 1);
                         item = item.substr(0, br);
                     }
                     for (const auto& b : blocks)
@@ -116,7 +120,8 @@ namespace perlin {
                                             }
                                     at = semi + 1;
                                 }
-                                std::sort(states.begin(), states.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+                                std::sort(states.begin(), states.end(),
+                                          [](const auto& x, const auto& y) { return x.first < y.first; });
                                 chosen.first = BlockPalette::HashState(b.second, states);
                             }
                             picked.push_back(chosen);
@@ -153,14 +158,17 @@ namespace perlin {
                     for (const auto& b : blocks)
                         (void)b;
                 if (index < partners.size() && !partners[index].empty()) {
-                    const int32_t partner = partners[index] == "same" ? blocks[index].first
-                                                                      : BlockPalette::Instance().FindHash("minecraft:" + partners[index], "", "");
+                    const int32_t partner =
+                        partners[index] == "same"
+                            ? blocks[index].first
+                            : BlockPalette::Instance().FindHash("minecraft:" + partners[index], "", "");
                     level.SetBlock(x + 1, 61, z, BlockPalette::Instance().Intern(partner));
                 }
                 names += std::to_string(row) + "," + std::to_string(col) + " " + blocks[index].second + "\n";
             }
-            std::cout << "[gallery] page " << page << " of " << (blocks.size() + perPage - 1) / perPage << " (" << blocks.size()
-                      << " blocks)\n" << names << std::flush;
+            std::cout << "[gallery] page " << page << " of " << (blocks.size() + perPage - 1) / perPage
+                      << " (" << blocks.size() << " blocks)\n"
+                      << names << std::flush;
             return true;
         }
     }
@@ -196,15 +204,21 @@ namespace perlin {
                 const auto* name = box.Find("block");
                 const auto* from = box.Find("from");
                 const auto* to = box.Find("to");
-                if (!name || !name->IsString() || !from || !to || from->array.size() != 3 || to->array.size() != 3)
+                if (!name || !name->IsString() || !from || !to || from->array.size() != 3 ||
+                    to->array.size() != 3)
                     return false;
                 const uint16_t id = name->string == "air" ? 0 : ids.Get(name->string);
-                for (int cz = static_cast<int>(std::floor(from->array[2].number / 16)); cz <= static_cast<int>(std::floor(to->array[2].number / 16)); ++cz)
-                    for (int cx = static_cast<int>(std::floor(from->array[0].number / 16)); cx <= static_cast<int>(std::floor(to->array[0].number / 16)); ++cx)
+                for (int cz = static_cast<int>(std::floor(from->array[2].number / 16));
+                     cz <= static_cast<int>(std::floor(to->array[2].number / 16)); ++cz)
+                    for (int cx = static_cast<int>(std::floor(from->array[0].number / 16));
+                         cx <= static_cast<int>(std::floor(to->array[0].number / 16)); ++cx)
                         level.EnsureChunk(cx, cz);
-                for (int y = static_cast<int>(from->array[1].number); y <= static_cast<int>(to->array[1].number); ++y)
-                    for (int z = static_cast<int>(from->array[2].number); z <= static_cast<int>(to->array[2].number); ++z)
-                        for (int x = static_cast<int>(from->array[0].number); x <= static_cast<int>(to->array[0].number); ++x)
+                for (int y = static_cast<int>(from->array[1].number);
+                     y <= static_cast<int>(to->array[1].number); ++y)
+                    for (int z = static_cast<int>(from->array[2].number);
+                         z <= static_cast<int>(to->array[2].number); ++z)
+                        for (int x = static_cast<int>(from->array[0].number);
+                             x <= static_cast<int>(to->array[0].number); ++x)
                             level.SetBlock(x, y, z, id);
             }
             return true;
@@ -214,8 +228,9 @@ namespace perlin {
         Ids ids;
         const uint16_t stone = ids.Get("stone"), dirt = ids.Get("dirt"), grass = ids.Get("grass_block"),
                        sand = ids.Get("sand"), water = ids.Get("water", "\"liquid_depth\":[\"i\",0]"),
-                       log = ids.Get("oak_log", "\"pillar_axis\":[\"s\",\"y\"]"), leaves = ids.Get("oak_leaves"),
-                       planks = ids.Get("oak_planks"), glow = ids.Get("glowstone"), bedrock = ids.Get("bedrock"),
+                       log = ids.Get("oak_log", "\"pillar_axis\":[\"s\",\"y\"]"),
+                       leaves = ids.Get("oak_leaves"), planks = ids.Get("oak_planks"),
+                       glow = ids.Get("glowstone"), bedrock = ids.Get("bedrock"),
                        cobble = ids.Get("cobblestone"), snow = ids.Get("snow"), glass = ids.Get("glass"),
                        torch = ids.Get("torch", "\"torch_facing_direction\":[\"s\",\"top\"]"),
                        lava = ids.Get("lava", "\"liquid_depth\":[\"i\",0]");
@@ -262,9 +277,11 @@ namespace perlin {
 
         for (int x = -span + 4; x < span - 4; x += 3)
             for (int z = -span + 4; z < span - 4; z += 3) {
-                const int tx = x + static_cast<int>(Hash(x, z) * 3), tz = z + static_cast<int>(Hash(z, x) * 3);
+                const int tx = x + static_cast<int>(Hash(x, z) * 3),
+                          tz = z + static_cast<int>(Hash(z, x) * 3);
                 const int h = Height(tx, tz);
-                if (h <= kSea + 2 || Hash(tx * 7, tz * 13) > 0.16f || (std::abs(tx) < 12 && std::abs(tz) < 12))
+                if (h <= kSea + 2 || Hash(tx * 7, tz * 13) > 0.16f ||
+                    (std::abs(tx) < 12 && std::abs(tz) < 12))
                     continue;
                 const int trunk = 4 + static_cast<int>(Hash(tx, tz + 5) * 3);
                 for (int y = h + 1; y <= h + trunk; y++)
@@ -292,7 +309,10 @@ namespace perlin {
                 const bool wall = std::abs(x) == 4 || std::abs(z) == 4;
                 for (int y = padY + 1; y <= padY + 3; y++)
                     if (wall)
-                        set(x, y, z, (x == 4 && z == 0 && y <= padY + 2) ? 0 : (y == padY + 2 && z == -4 && std::abs(x) < 2) ? glass : cobble);
+                        set(x, y, z,
+                            (x == 4 && z == 0 && y <= padY + 2)             ? 0
+                            : (y == padY + 2 && z == -4 && std::abs(x) < 2) ? glass
+                                                                            : cobble);
                 set(x, padY + 4, z, planks);
             }
         set(0, padY + 3, 0, glow);

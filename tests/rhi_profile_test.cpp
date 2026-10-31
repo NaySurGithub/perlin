@@ -6,16 +6,16 @@
 using namespace rhi;
 
 static int g_failed = 0;
-#define CHECK(cond)                                                              \
-    do {                                                                         \
-        if (!(cond)) {                                                           \
-            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-            g_failed++;                                                          \
-        }                                                                        \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                             \
+            g_failed++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
-static Candidate Make(Api api, uint32_t index, const char* name, uint32_t vendor, AdapterType type, uint64_t vramGiB,
-                      uint64_t sharedGiB = 0) {
+static Candidate Make(Api api, uint32_t index, const char* name, uint32_t vendor, AdapterType type,
+                      uint64_t vramGiB, uint64_t sharedGiB = 0) {
     Candidate c;
     c.adapter.api = api;
     c.adapter.index = index;
@@ -157,7 +157,8 @@ static void TestNvidiaKeepsD3D12() {
 }
 
 static void TestTranslationLayerLoses() {
-    Candidate vk = Make(Api::Vulkan, 0, "Microsoft Direct3D12 (AMD Radeon RX 580)", vendor_id::kAmd, AdapterType::Discrete, 8);
+    Candidate vk = Make(Api::Vulkan, 0, "Microsoft Direct3D12 (AMD Radeon RX 580)", vendor_id::kAmd,
+                        AdapterType::Discrete, 8);
     Candidate dx = Make(Api::D3D12, 0, "AMD Radeon RX 580", vendor_id::kAmd, AdapterType::Discrete, 8);
     vk.adapter.apiVersion = kVk13;
     vk.adapter.driverName = "Dozen";
@@ -207,7 +208,8 @@ static void TestRealProbe() {
     o.readCaps = true;
     const Probe probe = ProbeSystem(o);
     for (const Candidate& c : probe.candidates)
-        std::printf("candidate %s %s score %.0f caps=%d\n", ApiName(c.adapter.api), c.adapter.name.c_str(), c.score, c.haveCaps);
+        std::printf("candidate %s %s score %.0f caps=%d\n", ApiName(c.adapter.api), c.adapter.name.c_str(),
+                    c.score, c.haveCaps);
     const RenderProfile p = ChooseProfile(probe, {}, {}, false, false);
     std::printf("profile: %s tier %s\n", ApiName(p.api), TierName(p.tier));
     for (const std::string& r : p.reasons)

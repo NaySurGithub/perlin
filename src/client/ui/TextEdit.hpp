@@ -18,10 +18,12 @@ namespace perlin::ui {
     class TextEdit {
     public:
         static TextEdit& Focused();
-        static void SetClipboard(std::function<std::string()> get, std::function<void(const std::string&)> set);
+        static void SetClipboard(std::function<std::string()> get,
+                                 std::function<void(const std::string&)> set);
 
         bool Apply(const InputManager::Typed& t, std::string& text, const TextLimits& limits = {});
-        bool Apply(const InputManager::Typed& t, std::string& text, size_t& caret, const TextLimits& limits = {});
+        bool Apply(const InputManager::Typed& t, std::string& text, size_t& caret,
+                   const TextLimits& limits = {});
 
         void State(const std::string& text, size_t& caret, size_t& selStart, size_t& selEnd) const;
         void Reset() { target = nullptr; }

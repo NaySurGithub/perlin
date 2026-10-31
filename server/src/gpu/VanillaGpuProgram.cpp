@@ -7,7 +7,11 @@
 
 namespace perlin::server::vanilla {
     namespace {
-        uint32_t Bits(float f) { uint32_t u; std::memcpy(&u, &f, 4); return u; }
+        uint32_t Bits(float f) {
+            uint32_t u;
+            std::memcpy(&u, &f, 4);
+            return u;
+        }
         void Bits(double d, uint32_t& lo, uint32_t& hi) {
             uint64_t u;
             std::memcpy(&u, &d, 8);
@@ -20,9 +24,10 @@ namespace perlin::server::vanilla {
             std::string error;
             std::map<const DfNode*, uint32_t> index;
             std::map<const NormalNoise*, uint32_t> noiseIndex;
-            std::vector<std::vector<uint32_t>> children;  // per node, for reachability
+            std::vector<std::vector<uint32_t>> children; // per node, for reachability
 
-            uint32_t Layers(const std::vector<std::pair<const PerlinNoise*, std::pair<double, float>>>& list, const std::vector<double>& fudge) {
+            uint32_t Layers(const std::vector<std::pair<const PerlinNoise*, std::pair<double, float>>>& list,
+                            const std::vector<double>& fudge) {
                 const uint32_t start = static_cast<uint32_t>(p.layers.size() / GpuProgram::kLayerStride);
                 for (size_t i = 0; i < list.size(); i++) {
                     const PerlinNoise& n = *list[i].first;
@@ -101,29 +106,55 @@ namespace perlin::server::vanilla {
                 rec[1] = rec[2] = rec[3] = 0xFFFFFFFFu;
                 using O = DfNode::Op;
                 switch (n.op) {
-                case O::Constant: rec[4] = Bits(n.value); break;
-                case O::Add: case O::Sub: case O::Mul: case O::Div: case O::Min: case O::Max:
-                    rec[1] = Visit(*n.in[0]); rec[2] = Visit(*n.in[1]); deps = {rec[1], rec[2]};
+                case O::Constant:
+                    rec[4] = Bits(n.value);
                     break;
-                case O::Abs: case O::Square: case O::Cube: case O::HalfNegative: case O::QuarterNegative: case O::Squeeze: case O::Negate: case O::Pass:
-                    rec[1] = Visit(*n.in[0]); deps = {rec[1]};
+                case O::Add:
+                case O::Sub:
+                case O::Mul:
+                case O::Div:
+                case O::Min:
+                case O::Max:
+                    rec[1] = Visit(*n.in[0]);
+                    rec[2] = Visit(*n.in[1]);
+                    deps = {rec[1], rec[2]};
+                    break;
+                case O::Abs:
+                case O::Square:
+                case O::Cube:
+                case O::HalfNegative:
+                case O::QuarterNegative:
+                case O::Squeeze:
+                case O::Negate:
+                case O::Pass:
+                    rec[1] = Visit(*n.in[0]);
+                    deps = {rec[1]};
                     break;
                 case O::Clamp:
-                    rec[1] = Visit(*n.in[0]); deps = {rec[1]};
-                    rec[4] = Bits(n.lo); rec[5] = Bits(n.hi);
+                    rec[1] = Visit(*n.in[0]);
+                    deps = {rec[1]};
+                    rec[4] = Bits(n.lo);
+                    rec[5] = Bits(n.hi);
                     break;
                 case O::Noise:
                     rec[6] = Noise(n.noise);
                     if (!n.in.empty()) {
                         rec[7] = 1;
-                        rec[1] = Visit(*n.in[0]); deps.push_back(rec[1]);
-                        if (n.in[1]) { rec[2] = Visit(*n.in[1]); deps.push_back(rec[2]); }
-                        rec[3] = Visit(*n.in[2]); deps.push_back(rec[3]);
+                        rec[1] = Visit(*n.in[0]);
+                        deps.push_back(rec[1]);
+                        if (n.in[1]) {
+                            rec[2] = Visit(*n.in[1]);
+                            deps.push_back(rec[2]);
+                        }
+                        rec[3] = Visit(*n.in[2]);
+                        deps.push_back(rec[3]);
                     }
                     Bits(n.xzScale, rec[8], rec[9]);
                     Bits(n.yScale, rec[10], rec[11]);
                     break;
-                case O::ShiftA: case O::ShiftB: case O::Shift:
+                case O::ShiftA:
+                case O::ShiftB:
+                case O::Shift:
                     rec[6] = Noise(n.noise);
                     break;
                 case O::Gradient:
@@ -135,31 +166,49 @@ namespace perlin::server::vanilla {
                     rec[5] = Bits(n.coordinateFactor);
                     break;
                 case O::Lerp:
-                    rec[1] = Visit(*n.in[0]); rec[2] = Visit(*n.in[1]); rec[3] = Visit(*n.in[2]); deps = {rec[1], rec[2], rec[3]};
+                    rec[1] = Visit(*n.in[0]);
+                    rec[2] = Visit(*n.in[1]);
+                    rec[3] = Visit(*n.in[2]);
+                    deps = {rec[1], rec[2], rec[3]};
                     break;
                 case O::RangeChoice:
-                    rec[1] = Visit(*n.in[0]); rec[2] = Visit(*n.in[1]); rec[3] = Visit(*n.in[2]); deps = {rec[1], rec[2], rec[3]};
-                    rec[4] = Bits(n.lo); rec[5] = Bits(n.hi);
+                    rec[1] = Visit(*n.in[0]);
+                    rec[2] = Visit(*n.in[1]);
+                    rec[3] = Visit(*n.in[2]);
+                    deps = {rec[1], rec[2], rec[3]};
+                    rec[4] = Bits(n.lo);
+                    rec[5] = Bits(n.hi);
                     break;
                 case O::IntervalSelect: {
-                    rec[1] = Visit(*n.in[0]); deps.push_back(rec[1]);
+                    rec[1] = Visit(*n.in[0]);
+                    deps.push_back(rec[1]);
                     std::vector<uint32_t> fns;
-                    for (size_t i = 1; i < n.in.size(); i++) { fns.push_back(Visit(*n.in[i])); deps.push_back(fns.back()); }
+                    for (size_t i = 1; i < n.in.size(); i++) {
+                        fns.push_back(Visit(*n.in[i]));
+                        deps.push_back(fns.back());
+                    }
                     rec[6] = static_cast<uint32_t>(p.aux.size());
                     p.aux.push_back(static_cast<uint32_t>(n.thresholds.size()));
-                    for (float t : n.thresholds) p.aux.push_back(Bits(t));
-                    for (uint32_t f : fns) p.aux.push_back(f);
+                    for (float t : n.thresholds)
+                        p.aux.push_back(Bits(t));
+                    for (uint32_t f : fns)
+                        p.aux.push_back(f);
                     break;
                 }
                 case O::Spline:
                     if (Depth(*n.spline) >= GpuProgram::kMaxSplineDepth)
-                        error = "spline nested " + std::to_string(Depth(*n.spline)) + " deep: the kernel has " + std::to_string(GpuProgram::kMaxSplineDepth) + " levels";
+                        error = "spline nested " + std::to_string(Depth(*n.spline)) +
+                                " deep: the kernel has " + std::to_string(GpuProgram::kMaxSplineDepth) +
+                                " levels";
                     rec[6] = Spline(*n.spline, deps);
                     break;
                 case O::Interpolated:
-                    if (n.cellXz != static_cast<int>(GpuProgram::kCellXz) || n.cellY != static_cast<int>(GpuProgram::kCellY))
-                        error = "interpolated node with cell size " + std::to_string(n.cellXz) + "x" + std::to_string(n.cellY) + ": the kernel's corner grid is 4x8";
-                    rec[1] = Visit(*n.in[0]); deps = {rec[1]};
+                    if (n.cellXz != static_cast<int>(GpuProgram::kCellXz) ||
+                        n.cellY != static_cast<int>(GpuProgram::kCellY))
+                        error = "interpolated node with cell size " + std::to_string(n.cellXz) + "x" +
+                                std::to_string(n.cellY) + ": the kernel's corner grid is 4x8";
+                    rec[1] = Visit(*n.in[0]);
+                    deps = {rec[1]};
                     rec[6] = static_cast<uint32_t>(p.interpolatedInputs.size());
                     p.interpolatedInputs.push_back(rec[1]);
                     break;
@@ -171,9 +220,12 @@ namespace perlin::server::vanilla {
                     Bits(b.XzMultiplier() / b.XzFactor(), blend[4], blend[5]);
                     Bits(b.YMultiplier() / b.YFactor(), blend[6], blend[7]);
                     uint32_t c;
-                    blend[8] = Stack(b.MinLimit(), c); blend[9] = c;
-                    blend[10] = Stack(b.MaxLimit(), c); blend[11] = c;
-                    blend[12] = Stack(b.Main(), c); blend[13] = c;
+                    blend[8] = Stack(b.MinLimit(), c);
+                    blend[9] = c;
+                    blend[10] = Stack(b.MaxLimit(), c);
+                    blend[11] = c;
+                    blend[12] = Stack(b.Main(), c);
+                    blend[13] = c;
                     rec[6] = static_cast<uint32_t>(p.blends.size() / GpuProgram::kBlendStride);
                     p.blends.insert(p.blends.end(), blend, blend + GpuProgram::kBlendStride);
                     break;
@@ -192,7 +244,8 @@ namespace perlin::server::vanilla {
         };
     }
 
-    std::unique_ptr<GpuProgram> GpuProgram::Build(const DfPtr& rootNode, const std::array<DfPtr, 6>& climate, std::string& error) {
+    std::unique_ptr<GpuProgram> GpuProgram::Build(const DfPtr& rootNode, const std::array<DfPtr, 6>& climate,
+                                                  std::string& error) {
         auto p = std::make_unique<GpuProgram>();
         Builder b{*p, {}, {}, {}, {}};
         p->root = b.Visit(*rootNode);
@@ -205,19 +258,23 @@ namespace perlin::server::vanilla {
             p->climateRoots[i] = b.Visit(*climate[i]);
         }
         if (p->interpolatedInputs.size() != interpolatedBefore && b.error.empty())
-            b.error = "the climate functions contain an interpolated node (they are sampled at single points)";
+            b.error =
+                "the climate functions contain an interpolated node (they are sampled at single points)";
         if (!b.error.empty()) {
             error = b.error;
             return nullptr;
         }
         p->nodeCount = static_cast<uint32_t>(p->nodes.size() / kNodeStride);
         if (p->nodeCount > kMaxNodes) {
-            error = "density graph has " + std::to_string(p->nodeCount) + " nodes, more than the kernel's register file holds";
+            error = "density graph has " + std::to_string(p->nodeCount) +
+                    " nodes, more than the kernel's register file holds";
             return nullptr;
         }
         // outer set: reachable from the root without looking inside an interpolated node; inner set: what the interpolated nodes sample at the corners
         std::set<uint32_t> outer, inner;
-        const auto isInterp = [&](uint32_t n) { return p->nodes[n * kNodeStride] == static_cast<uint32_t>(DfNode::Op::Interpolated); };
+        const auto isInterp = [&](uint32_t n) {
+            return p->nodes[n * kNodeStride] == static_cast<uint32_t>(DfNode::Op::Interpolated);
+        };
         std::vector<uint32_t> stack = {p->root};
         while (!stack.empty()) {
             const uint32_t n = stack.back();
@@ -293,16 +350,20 @@ namespace perlin::server::vanilla {
         out.push_back(static_cast<uint32_t>(kBiomePointCount));
         for (int i = 0; i < kBiomePointCount; i++) {
             for (int k = 0; k < kBiomePointStride; k++)
-                out.push_back(static_cast<uint32_t>(static_cast<int32_t>(kBiomePointData[static_cast<size_t>(i) * kBiomePointStride + static_cast<size_t>(k)])));
+                out.push_back(static_cast<uint32_t>(static_cast<int32_t>(
+                    kBiomePointData[static_cast<size_t>(i) * kBiomePointStride + static_cast<size_t>(k)])));
             out.push_back(kBiomePointBiome[i]);
         }
         out[GpuProgram::HMaterials] = static_cast<uint32_t>(out.size());
-        for (uint32_t id : {uint32_t(surface.Stone()), uint32_t(surface.Deepslate()), uint32_t(surface.Bedrock()), uint32_t(surface.Dirt()), uint32_t(surface.GrassBlock()), 0xFFFFu,
-                            0xFFFFu, 0xFFFFu})
+        for (uint32_t id :
+             {uint32_t(surface.Stone()), uint32_t(surface.Deepslate()), uint32_t(surface.Bedrock()),
+              uint32_t(surface.Dirt()), uint32_t(surface.GrassBlock()), 0xFFFFu, 0xFFFFu, 0xFFFFu})
             out.push_back(id);
         for (const SurfaceMaterial& m : surface.Materials()) {
-            for (uint32_t w : {static_cast<uint32_t>(m.top), static_cast<uint32_t>(m.mid), static_cast<uint32_t>(m.foundation), static_cast<uint32_t>(m.seaFloor),
-                               static_cast<uint32_t>(m.sea), static_cast<uint32_t>(m.seaFloorDepth), static_cast<uint32_t>(m.builder), 0u})
+            for (uint32_t w : {static_cast<uint32_t>(m.top), static_cast<uint32_t>(m.mid),
+                               static_cast<uint32_t>(m.foundation), static_cast<uint32_t>(m.seaFloor),
+                               static_cast<uint32_t>(m.sea), static_cast<uint32_t>(m.seaFloorDepth),
+                               static_cast<uint32_t>(m.builder), 0u})
                 out.push_back(w);
         }
         return out;

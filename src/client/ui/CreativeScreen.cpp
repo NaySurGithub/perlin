@@ -96,20 +96,23 @@ mcimg { display: block; position: absolute; }
     }
 
     namespace {
-        std::string Cell(const std::string& id, int px, int py, bool survival, const HudItem& item, int iconIndex) {
+        std::string Cell(const std::string& id, int px, int py, bool survival, const HudItem& item,
+                         int iconIndex) {
             int x, y;
             CreativeSlotPos(id, survival, x, y);
-            std::string s = "  <div id=\"" + id + "\" class=\"slot\" style=\"left:" + std::to_string(px + x) + "px;top:" + std::to_string(py + y) +
-                            "px;\">";
+            std::string s = "  <div id=\"" + id + "\" class=\"slot\" style=\"left:" + std::to_string(px + x) +
+                            "px;top:" + std::to_string(py + y) + "px;\">";
             if (item.Empty() && iconIndex >= 0)
                 s += SpriteRml("ui_slot_icons.png", iconIndex * 16, 0, 16, 16, 1, 1);
             if (!item.Empty()) {
-                s += "<mcitem key=\"" + EscapeRml(item.Key()) + "\" style=\"left:1px;top:1px;width:16px;height:16px;\"";
+                s += "<mcitem key=\"" + EscapeRml(item.Key()) +
+                     "\" style=\"left:1px;top:1px;width:16px;height:16px;\"";
                 if (item.enchanted)
                     s += " glint=\"1\"";
                 s += "/>";
                 if (item.count > 1)
-                    s += "<div class=\"cnt\" style=\"left:-1px;top:10px;width:19px;height:9px;\">" + std::to_string(item.count) + "</div>";
+                    s += "<div class=\"cnt\" style=\"left:-1px;top:10px;width:19px;height:9px;\">" +
+                         std::to_string(item.count) + "</div>";
             }
             s += "<div class=\"hl\"></div></div>\n";
             return s;
@@ -124,7 +127,8 @@ mcimg { display: block; position: absolute; }
         }
     }
 
-    std::string BuildCreativeScreenRml(const std::string& templateText, const CreativeView& v, int guiW, int guiH) {
+    std::string BuildCreativeScreenRml(const std::string& templateText, const CreativeView& v, int guiW,
+                                       int guiH) {
         const int px = (guiW - kCreativeW) / 2, py = (guiH - kCreativeH) / 2;
         const bool survival = v.tab == kCreativeSurvivalTab;
         std::string tabs;
@@ -137,8 +141,10 @@ mcimg { display: block; position: absolute; }
             const bool selected = t == v.tab;
             const int row = (top ? 0 : 2) + (selected ? 1 : 0);
             const int col = t == kCreativeSearchTab || t == kCreativeSurvivalTab ? 6 : t;
-            tabs += "  <div id=\"t" + std::to_string(t) + "\" class=\"tab " + (selected ? "on" : "off") + "\" style=\"left:" + std::to_string(px + x) +
-                    "px;top:" + std::to_string(py + y) + "px;\">" + SpriteRml("ui_creative_tabs.png", col * 26, row * 32, 26, 32, 0, 0) + "</div>\n";
+            tabs += "  <div id=\"t" + std::to_string(t) + "\" class=\"tab " + (selected ? "on" : "off") +
+                    "\" style=\"left:" + std::to_string(px + x) + "px;top:" + std::to_string(py + y) +
+                    "px;\">" + SpriteRml("ui_creative_tabs.png", col * 26, row * 32, 26, 32, 0, 0) +
+                    "</div>\n";
             HudItem icon = v.tabIcons[static_cast<size_t>(t)];
             if (t == kCreativeSearchTab) {
                 icon = HudItem{};
@@ -150,8 +156,9 @@ mcimg { display: block; position: absolute; }
             const int iy = py + y + (top ? 9 : 7);
             if (icon.Empty())
                 continue;
-            tabs += "  <mcitem key=\"" + EscapeRml(icon.Key()) + "\" class=\"ticon\" style=\"left:" + std::to_string(px + x + 5) + "px;top:" +
-                    std::to_string(iy) + "px;width:16px;height:16px;\"/>\n";
+            tabs += "  <mcitem key=\"" + EscapeRml(icon.Key()) +
+                    "\" class=\"ticon\" style=\"left:" + std::to_string(px + x + 5) +
+                    "px;top:" + std::to_string(iy) + "px;width:16px;height:16px;\"/>\n";
         }
 
         std::string slots;
@@ -168,23 +175,28 @@ mcimg { display: block; position: absolute; }
             for (int i = 0; i < 45; i++)
                 slots += Cell("g" + std::to_string(i), px, py, false, v.grid[static_cast<size_t>(i)], -1);
             const int thumb = 18 + static_cast<int>(97.0f * std::clamp(v.scroll, 0.0f, 1.0f));
-            scrollbar = "  <div id=\"scroll\" style=\"left:" + std::to_string(px + 175) + "px;top:" + std::to_string(py + thumb) + "px;\">" +
-                        SpriteRml("ui_creative_misc.png", v.scrollable ? 0 : 12, 0, 12, 15, 0, 0) + "</div>\n" +
-                        "  <div id=\"sbar\" style=\"left:" + std::to_string(px + 174) + "px;top:" + std::to_string(py + 18) + "px;width:14px;height:112px;\"></div>\n";
+            scrollbar = "  <div id=\"scroll\" style=\"left:" + std::to_string(px + 175) +
+                        "px;top:" + std::to_string(py + thumb) + "px;\">" +
+                        SpriteRml("ui_creative_misc.png", v.scrollable ? 0 : 12, 0, 12, 15, 0, 0) +
+                        "</div>\n" + "  <div id=\"sbar\" style=\"left:" + std::to_string(px + 174) +
+                        "px;top:" + std::to_string(py + 18) + "px;width:14px;height:112px;\"></div>\n";
             if (v.tab == kCreativeSearchTab)
-                search = "  <div class=\"search\" style=\"left:" + std::to_string(px + 84) + "px;top:" + std::to_string(py + 6) + "px;\">" +
-                         TextFieldRml(v.search, true) + "</div>\n";
+                search = "  <div class=\"search\" style=\"left:" + std::to_string(px + 84) +
+                         "px;top:" + std::to_string(py + 6) + "px;\">" + TextFieldRml(v.search, true) +
+                         "</div>\n";
         }
         for (int i = 0; i < 9; i++)
             slots += Cell("s" + std::to_string(i), px, py, survival, v.slots[static_cast<size_t>(i)], -1);
 
         std::string cursor;
         if (!v.cursor.Empty()) {
-            cursor = "  <div id=\"cursor\" style=\"left:" + std::to_string(static_cast<int>(v.mouseX) - 8) + "px;top:" +
-                     std::to_string(static_cast<int>(v.mouseY) - 8) + "px;\"><mcitem key=\"" + EscapeRml(v.cursor.Key()) +
-                     "\" style=\"left:0px;top:0px;width:16px;height:16px;\"" + (v.cursor.enchanted ? " glint=\"1\"" : "") + "/>";
+            cursor = "  <div id=\"cursor\" style=\"left:" + std::to_string(static_cast<int>(v.mouseX) - 8) +
+                     "px;top:" + std::to_string(static_cast<int>(v.mouseY) - 8) + "px;\"><mcitem key=\"" +
+                     EscapeRml(v.cursor.Key()) + "\" style=\"left:0px;top:0px;width:16px;height:16px;\"" +
+                     (v.cursor.enchanted ? " glint=\"1\"" : "") + "/>";
             if (v.cursor.count > 1)
-                cursor += "<div class=\"cnt\" style=\"left:-3px;top:9px;width:19px;height:9px;\">" + std::to_string(v.cursor.count) + "</div>";
+                cursor += "<div class=\"cnt\" style=\"left:-3px;top:9px;width:19px;height:9px;\">" +
+                          std::to_string(v.cursor.count) + "</div>";
             cursor += "</div>\n";
         }
 

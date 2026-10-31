@@ -31,7 +31,8 @@ namespace perlin::lan {
         std::vector<Host> Hosts() const;
         bool WaitFor(uint64_t networkId, int timeoutMs);
 
-        bool Send(const std::string& toNetworkId, const std::string& text, bool waitDelivery, std::string& error) override;
+        bool Send(const std::string& toNetworkId, const std::string& text, bool waitDelivery,
+                  std::string& error) override;
         void SetHandler(std::function<void(const std::string&, const std::string&)> handler) override;
         bool Credentials(std::vector<friendworld::IceServerInfo>& servers, std::string& error) override;
         bool Alive() const override;

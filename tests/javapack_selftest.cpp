@@ -12,12 +12,12 @@ using namespace perlin;
 namespace fs = std::filesystem;
 
 static int failures = 0;
-#define CHECK(c)                                                                    \
-    do {                                                                            \
-        if (!(c)) {                                                                 \
-            std::cout << "FAIL line " << __LINE__ << ": " #c << std::endl;          \
-            failures++;                                                             \
-        }                                                                           \
+#define CHECK(c)                                                                                             \
+    do {                                                                                                     \
+        if (!(c)) {                                                                                          \
+            std::cout << "FAIL line " << __LINE__ << ": " #c << std::endl;                                   \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 namespace {
@@ -29,7 +29,8 @@ namespace {
             for (int j = y; j < y + rh; j++)
                 for (int i = x; i < x + rw; i++) {
                     unsigned char* p = &px[(static_cast<size_t>(j) * w + i) * 4];
-                    p[0] = static_cast<unsigned char>(r), p[1] = static_cast<unsigned char>(g), p[2] = static_cast<unsigned char>(b), p[3] = 255;
+                    p[0] = static_cast<unsigned char>(r), p[1] = static_cast<unsigned char>(g),
+                    p[2] = static_cast<unsigned char>(b), p[3] = 255;
                 }
         }
         std::string png() const {
@@ -64,10 +65,14 @@ int main() {
         }
         CHECK(legacy && modern);
         bool wool = false, dye = false, gold = false, sheet = false;
-        for (const auto& s : javapack::Sources("textures/blocks/wool_colored_silver")) wool |= s.path == "textures/block/light_gray_wool.png";
-        for (const auto& s : javapack::Sources("textures/items/dye_powder_blue")) dye |= s.path == "textures/item/blue_dye.png";
-        for (const auto& s : javapack::Sources("textures/items/gold_pickaxe")) gold |= s.path == "textures/item/golden_pickaxe.png";
-        for (const auto& s : javapack::Sources("textures/ui/heart")) sheet |= s.path == "textures/gui/icons.png" && !s.Whole();
+        for (const auto& s : javapack::Sources("textures/blocks/wool_colored_silver"))
+            wool |= s.path == "textures/block/light_gray_wool.png";
+        for (const auto& s : javapack::Sources("textures/items/dye_powder_blue"))
+            dye |= s.path == "textures/item/blue_dye.png";
+        for (const auto& s : javapack::Sources("textures/items/gold_pickaxe"))
+            gold |= s.path == "textures/item/golden_pickaxe.png";
+        for (const auto& s : javapack::Sources("textures/ui/heart"))
+            sheet |= s.path == "textures/gui/icons.png" && !s.Whole();
         CHECK(wool && dye && gold && sheet);
         CHECK(javapack::Sources("textures/entity/unknown_thing").empty());
     }
@@ -101,7 +106,8 @@ int main() {
         fs::create_directories(tmp / "packs");
         CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
         for (const auto& f : files)
-            CHECK(mz_zip_writer_add_mem(&zip, ("My Pack/" + f[0]).c_str(), f[1].data(), f[1].size(), MZ_DEFAULT_LEVEL));
+            CHECK(mz_zip_writer_add_mem(&zip, ("My Pack/" + f[0]).c_str(), f[1].data(), f[1].size(),
+                                        MZ_DEFAULT_LEVEL));
         mz_zip_writer_finalize_archive(&zip);
         mz_zip_writer_end(&zip);
     }
@@ -113,13 +119,19 @@ int main() {
         std::string error;
         CHECK(pack.Open((tmp / "packs").string(), name, error));
         Texture t;
-        CHECK(pack.Load("textures/blocks/planks_oak.png", t) && t.width == 16 && Pixel(t, 3, 3, 150, 100, 50));
+        CHECK(pack.Load("textures/blocks/planks_oak.png", t) && t.width == 16 &&
+              Pixel(t, 3, 3, 150, 100, 50));
         CHECK(pack.Load("textures/blocks/stone.png", t) && t.width == 32);
-        CHECK(pack.Load("textures/ui/hotbar_0.png", t) && t.width == 20 && t.height == 22 && Pixel(t, 5, 5, 0, 200, 0));
-        CHECK(pack.Load("textures/ui/hotbar_3.png", t) && t.width == 20 && t.height == 22 && Pixel(t, 5, 5, 200, 0, 0));
-        CHECK(pack.Load("textures/ui/selected_hotbar_slot.png", t) && t.width == 24 && t.height == 24 && Pixel(t, 10, 10, 0, 0, 200));
-        CHECK(pack.Load("textures/ui/heart.png", t) && t.width == 9 && t.height == 9 && Pixel(t, 4, 4, 250, 10, 10));
-        CHECK(pack.Load("textures/ui/hunger_background.png", t) && t.width == 9 && Pixel(t, 0, 0, 250, 250, 10));
+        CHECK(pack.Load("textures/ui/hotbar_0.png", t) && t.width == 20 && t.height == 22 &&
+              Pixel(t, 5, 5, 0, 200, 0));
+        CHECK(pack.Load("textures/ui/hotbar_3.png", t) && t.width == 20 && t.height == 22 &&
+              Pixel(t, 5, 5, 200, 0, 0));
+        CHECK(pack.Load("textures/ui/selected_hotbar_slot.png", t) && t.width == 24 && t.height == 24 &&
+              Pixel(t, 10, 10, 0, 0, 200));
+        CHECK(pack.Load("textures/ui/heart.png", t) && t.width == 9 && t.height == 9 &&
+              Pixel(t, 4, 4, 250, 10, 10));
+        CHECK(pack.Load("textures/ui/hunger_background.png", t) && t.width == 9 &&
+              Pixel(t, 0, 0, 250, 250, 10));
         CHECK(pack.Load("textures/ui/experience_bar_full.png", t) && t.width == 182 && t.height == 5);
         CHECK(!pack.Load("textures/ui/armor_full.png", t) || t.width == 9);
         CHECK(pack.Has("textures/ui/heart.png"));
@@ -131,11 +143,14 @@ int main() {
         mz_zip_archive zip{};
         const std::string path = (tmp / "packs/Realms.zip").string();
         CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
-        const std::string wrapper = "\xC2\xA7" "9midnight [16x]/";
+        const std::string wrapper = "\xC2\xA7"
+                                    "9midnight [16x]/";
         const std::string other = oak.png();
-        CHECK(mz_zip_writer_add_mem(&zip, (wrapper + "assets/realms/textures/gui/x.png").c_str(), other.data(), other.size(), MZ_DEFAULT_LEVEL));
+        CHECK(mz_zip_writer_add_mem(&zip, (wrapper + "assets/realms/textures/gui/x.png").c_str(),
+                                    other.data(), other.size(), MZ_DEFAULT_LEVEL));
         for (const auto& f : files)
-            CHECK(mz_zip_writer_add_mem(&zip, (wrapper + f[0]).c_str(), f[1].data(), f[1].size(), MZ_DEFAULT_LEVEL));
+            CHECK(mz_zip_writer_add_mem(&zip, (wrapper + f[0]).c_str(), f[1].data(), f[1].size(),
+                                        MZ_DEFAULT_LEVEL));
         mz_zip_writer_finalize_archive(&zip);
         mz_zip_writer_end(&zip);
         std::string error;
@@ -153,7 +168,8 @@ int main() {
         std::string error;
         CHECK(pack.Open((tmp / "packs").string(), "Big", error));
         Texture t;
-        CHECK(pack.Load("textures/ui/hotbar_3.png", t) && t.width == 40 && t.height == 44 && Pixel(t, 20, 20, 7, 8, 9));
+        CHECK(pack.Load("textures/ui/hotbar_3.png", t) && t.width == 40 && t.height == 44 &&
+              Pixel(t, 20, 20, 7, 8, 9));
     }
 
     fs::remove_all(tmp);

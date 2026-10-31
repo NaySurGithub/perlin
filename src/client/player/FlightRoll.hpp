@@ -17,7 +17,8 @@ namespace perlin {
 
         void Begin(float yaw, float pitch);
         void End();
-        Result Step(float dt, float mouseRight, float mouseUp, float yawKeys, float rollKeys, float pitchKeys);
+        Result Step(float dt, float mouseRight, float mouseUp, float yawKeys, float rollKeys,
+                    float pitchKeys);
         void Settle(float dt, float yaw, float pitch);
 
     private:

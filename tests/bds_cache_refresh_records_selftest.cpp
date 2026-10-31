@@ -92,10 +92,12 @@ int main(int argc, char** argv) {
             visited.push_back(query);
             std::vector<CollisionRecord> records;
             for (uint32_t i = 0; i < (pattern / 8 + pattern + ordinal) % 4; ++i) {
-                const uint64_t block = (pattern + i) % 3 ? 0x12300000000ULL + ((ordinal + 1) << 8) + i + 1 : 0;
+                const uint64_t block =
+                    (pattern + i) % 3 ? 0x12300000000ULL + ((ordinal + 1) << 8) + i + 1 : 0;
                 records.push_back({box,
-                                   {block, {static_cast<int32_t>(ordinal) - 3, static_cast<int32_t>(i) * 5 - 7,
-                                            static_cast<int32_t>(pattern) - 128}},
+                                   {block,
+                                    {static_cast<int32_t>(ordinal) - 3, static_cast<int32_t>(i) * 5 - 7,
+                                     static_cast<int32_t>(pattern) - 128}},
                                    (pattern + ordinal + i) % 3 == 0});
             }
             return records;
@@ -120,15 +122,17 @@ int main(int argc, char** argv) {
                 for (size_t q = 0; q < std::min(visited.size(), expectedQueries.size()); ++q)
                     for (int axis = 0; axis < 6; ++axis)
                         if (visited[q][axis] != expectedQueries[q][axis])
-                            std::fprintf(stderr, "query %zu lane %d: %08x/%08x\n", q, axis,
-                                         visited[q][axis], expectedQueries[q][axis]);
+                            std::fprintf(stderr, "query %zu lane %d: %08x/%08x\n", q, axis, visited[q][axis],
+                                         expectedQueries[q][axis]);
                 for (int axis = 0; axis < 6; ++axis)
                     if (std::bit_cast<uint32_t>(cache.region[axis]) != result[axis + 3])
                         std::fprintf(stderr, "region lane %d: %08x/%08x\n", axis,
                                      std::bit_cast<uint32_t>(cache.region[axis]), result[axis + 3]);
             }
             if (failures < 20)
-                std::fprintf(stderr, "Nonempty cache refresh case %d differs from BDS (queries %zu/%zu, shapes %zu/%u, flag %d/%u)\n",
+                std::fprintf(stderr,
+                             "Nonempty cache refresh case %d differs from BDS (queries %zu/%zu, shapes "
+                             "%zu/%u, flag %d/%u)\n",
                              cases, visited.size(), expectedQueries.size(), cache.shapes.size(), outputCount,
                              cache.preserveHorizontalMotion, result[9]);
             ++failures;
@@ -137,6 +141,7 @@ int main(int argc, char** argv) {
     }
     if (!input.eof() || cases != 256 || constructors != 1)
         return 1;
-    std::printf("BDS nonempty cache refresh: %d cases and constructor, %d mismatches (bit-exact)\n", cases, failures);
+    std::printf("BDS nonempty cache refresh: %d cases and constructor, %d mismatches (bit-exact)\n", cases,
+                failures);
     return failures ? 1 : 0;
 }

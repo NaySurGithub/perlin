@@ -44,7 +44,9 @@ namespace perlin::replay {
             std::memcpy(&f, p, 4);
             return f;
         }
-        std::string WorkDir() { return ReplayDirectory() + "/.recording"; }
+        std::string WorkDir() {
+            return ReplayDirectory() + "/.recording";
+        }
     }
 
     ReplayController::Tap ReplayController::NewSessionTap() {
@@ -63,7 +65,8 @@ namespace perlin::replay {
         generation++;
     }
 
-    bool ReplayController::StartRecording(const LiveInfo& info, const std::string& perlinVersion, std::string& error) {
+    bool ReplayController::StartRecording(const LiveInfo& info, const std::string& perlinVersion,
+                                          std::string& error) {
         if (recorder.Active())
             return false;
         Metadata m;
@@ -78,7 +81,9 @@ namespace perlin::replay {
         m.startPose = info.pose;
         const std::vector<Record> snapshot = cache.Snapshot();
         recordingPacks = info.packs;
-        return recorder.Start(WorkDir(), std::move(m), snapshot, error, [this] { return cache.Snapshot(); }, info.snapshotMs, 160u << 20);
+        return recorder.Start(
+            WorkDir(), std::move(m), snapshot, error, [this] { return cache.Snapshot(); }, info.snapshotMs,
+            160u << 20);
     }
 
     bool ReplayController::StopRecording(std::string& outPath, std::string& error) {
@@ -203,7 +208,10 @@ namespace perlin::replay {
             return out;
         for (const ui::Json& e : j.array) {
             StoredPack sp;
-            const auto str = [&](const char* k) { const ui::Json* v = e.Find(k); return v ? v->StringOr("") : std::string(); };
+            const auto str = [&](const char* k) {
+                const ui::Json* v = e.Find(k);
+                return v ? v->StringOr("") : std::string();
+            };
             sp.file = str("file");
             sp.uuid = str("uuid");
             sp.key = str("key");
@@ -276,7 +284,8 @@ namespace perlin::replay {
         recordIndex = 0;
     }
 
-    bool ReplayController::Advance(double dtMs, const std::function<void(const Record&)>& inject, double budgetMs) {
+    bool ReplayController::Advance(double dtMs, const std::function<void(const Record&)>& inject,
+                                   double budgetMs) {
         if (!reader)
             return false;
         const auto started = std::chrono::steady_clock::now();
@@ -327,7 +336,8 @@ namespace perlin::replay {
                 recordIndex++;
                 progressed = true;
                 if (budgetMs > 0 && (recordIndex & 63) == 0 &&
-                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count() > budgetMs) {
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+                            .count() > budgetMs) {
                     timeMs = std::min(target, static_cast<double>(rec.timeMs));
                     return true;
                 }
@@ -355,14 +365,16 @@ namespace perlin::replay {
         m.timeMs = atMs;
         m.name = name;
         meta.markers.push_back(m);
-        std::sort(meta.markers.begin(), meta.markers.end(), [](const Marker& a, const Marker& b) { return a.timeMs < b.timeMs; });
+        std::sort(meta.markers.begin(), meta.markers.end(),
+                  [](const Marker& a, const Marker& b) { return a.timeMs < b.timeMs; });
     }
 
     bool ReplayController::SaveMarkers(std::string& error) {
         return SaveArchiveFile("metadata.json", meta.ToJson().Dump(2), error);
     }
 
-    bool ReplayController::SaveArchiveFile(const std::string& name, const std::string& content, std::string& error) {
+    bool ReplayController::SaveArchiveFile(const std::string& name, const std::string& content,
+                                           std::string& error) {
         if (path.empty())
             return false;
         reader.reset();
@@ -379,8 +391,10 @@ namespace perlin::replay {
     namespace {
         float Angle(float a, float b, float t) {
             float d = std::fmod(b - a, 360.0f);
-            if (d > 180.0f) d -= 360.0f;
-            if (d < -180.0f) d += 360.0f;
+            if (d > 180.0f)
+                d -= 360.0f;
+            if (d < -180.0f)
+                d += 360.0f;
             return a + d * t;
         }
     }
@@ -394,7 +408,11 @@ namespace perlin::replay {
             const Record& r = chunkRecords[i];
             if (r.dir != Dir::ToServer || r.id != 144 || r.body.size() < 20)
                 continue;
-            const auto f = [&](size_t o) { float v; std::memcpy(&v, r.body.data() + o, 4); return v; };
+            const auto f = [&](size_t o) {
+                float v;
+                std::memcpy(&v, r.body.data() + o, 4);
+                return v;
+            };
             const double span = static_cast<double>(r.timeMs) - recordedAtMs;
             if (span <= 0.5 || span > 600.0)
                 return out;

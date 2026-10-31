@@ -12,32 +12,43 @@ namespace rhi {
 
     constexpr const char* ApiName(Api api) {
         switch (api) {
-        case Api::Vulkan: return "Vulkan";
-        case Api::D3D12: return "Direct3D 12";
-        case Api::D3D11: return "Direct3D 11";
-        case Api::Metal: return "Metal";
-        case Api::WebGPU: return "WebGPU";
-        default: return "None";
+        case Api::Vulkan:
+            return "Vulkan";
+        case Api::D3D12:
+            return "Direct3D 12";
+        case Api::D3D11:
+            return "Direct3D 11";
+        case Api::Metal:
+            return "Metal";
+        case Api::WebGPU:
+            return "WebGPU";
+        default:
+            return "None";
         }
     }
 
     // stable ids for settings files and the command line
     constexpr const char* ApiId(Api api) {
         switch (api) {
-        case Api::Vulkan: return "vulkan";
-        case Api::D3D12: return "d3d12";
-        case Api::D3D11: return "d3d11";
-        case Api::Metal: return "metal";
-        case Api::WebGPU: return "webgpu";
-        default: return "none";
+        case Api::Vulkan:
+            return "vulkan";
+        case Api::D3D12:
+            return "d3d12";
+        case Api::D3D11:
+            return "d3d11";
+        case Api::Metal:
+            return "metal";
+        case Api::WebGPU:
+            return "webgpu";
+        default:
+            return "none";
         }
     }
 
     Api ApiFromId(std::string_view id);
 
     // index in the low 24 bits, generation above: a stale handle never aliases a recycled slot
-    template <class Tag>
-    struct Handle {
+    template <class Tag> struct Handle {
         uint32_t value = 0;
         constexpr explicit operator bool() const { return value != 0; }
         constexpr bool operator==(const Handle&) const = default;
@@ -105,8 +116,12 @@ namespace rhi {
         bool floating;
     };
     const FormatInfo& GetFormatInfo(Format format);
-    inline bool IsDepthFormat(Format f) { return GetFormatInfo(f).depth; }
-    inline bool HasStencil(Format f) { return GetFormatInfo(f).stencil; }
+    inline bool IsDepthFormat(Format f) {
+        return GetFormatInfo(f).depth;
+    }
+    inline bool HasStencil(Format f) {
+        return GetFormatInfo(f).stencil;
+    }
 
     enum class ShaderStage : uint8_t {
         None = 0,
@@ -196,9 +211,9 @@ namespace rhi {
 
     struct SubresourceRange {
         uint32_t baseMip = 0;
-        uint32_t mipCount = 0;       // 0 = all remaining
+        uint32_t mipCount = 0; // 0 = all remaining
         uint32_t baseLayer = 0;
-        uint32_t layerCount = 0;     // 0 = all remaining
+        uint32_t layerCount = 0; // 0 = all remaining
     };
 
     enum class Filter : uint8_t { Nearest, Linear };
@@ -336,7 +351,16 @@ namespace rhi {
         float depthBiasClamp = 0.0f;
     };
 
-    enum class StencilOp : uint8_t { Keep, Zero, Replace, IncrementClamp, DecrementClamp, Invert, IncrementWrap, DecrementWrap };
+    enum class StencilOp : uint8_t {
+        Keep,
+        Zero,
+        Replace,
+        IncrementClamp,
+        DecrementClamp,
+        Invert,
+        IncrementWrap,
+        DecrementWrap
+    };
 
     struct StencilFace {
         StencilOp fail = StencilOp::Keep;
@@ -357,7 +381,17 @@ namespace rhi {
     };
 
     enum class BlendFactor : uint8_t {
-        Zero, One, SrcColor, InvSrcColor, SrcAlpha, InvSrcAlpha, DstColor, InvDstColor, DstAlpha, InvDstAlpha, SrcAlphaSaturate
+        Zero,
+        One,
+        SrcColor,
+        InvSrcColor,
+        SrcAlpha,
+        InvSrcAlpha,
+        DstColor,
+        InvDstColor,
+        DstAlpha,
+        InvDstAlpha,
+        SrcAlphaSaturate
     };
     enum class BlendOp : uint8_t { Add, Subtract, ReverseSubtract, Min, Max };
 

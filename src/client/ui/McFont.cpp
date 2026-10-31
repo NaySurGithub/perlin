@@ -15,14 +15,17 @@ namespace perlin::ui {
     namespace {
 #include "client/ui/FontProviderTables.inc"
         const uint32_t kCp437High[128] = {
-            0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, 0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
-            0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9, 0x00FF, 0x00D6, 0x00DC, 0x00F8, 0x00A3, 0x00D8, 0x00D7, 0x0192,
-            0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA, 0x00BF, 0x00AE, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
-            0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
-            0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F, 0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
-            0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
-            0x03B1, 0x03B2, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x03BC, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x2205, 0x2208, 0x2229,
-            0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0000};
+            0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, 0x00EA, 0x00EB, 0x00E8, 0x00EF,
+            0x00EE, 0x00EC, 0x00C4, 0x00C5, 0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9,
+            0x00FF, 0x00D6, 0x00DC, 0x00F8, 0x00A3, 0x00D8, 0x00D7, 0x0192, 0x00E1, 0x00ED, 0x00F3, 0x00FA,
+            0x00F1, 0x00D1, 0x00AA, 0x00BA, 0x00BF, 0x00AE, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
+            0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557,
+            0x255D, 0x255C, 0x255B, 0x2510, 0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F,
+            0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567, 0x2568, 0x2564, 0x2565, 0x2559,
+            0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+            0x03B1, 0x03B2, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x03BC, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4,
+            0x221E, 0x2205, 0x2208, 0x2229, 0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248,
+            0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0000};
         const uint8_t kFont5x7[95][5] = {
             {0x00, 0x00, 0x00, 0x00, 0x00}, {0x00, 0x00, 0x5F, 0x00, 0x00}, {0x00, 0x07, 0x00, 0x07, 0x00},
             {0x14, 0x7F, 0x14, 0x7F, 0x14}, {0x24, 0x2A, 0x7F, 0x2A, 0x12}, {0x23, 0x13, 0x08, 0x64, 0x62},
@@ -84,7 +87,8 @@ namespace perlin::ui {
             i += 3;
         } else if ((c >> 3) == 0x1E && i + 3 < s.size()) {
             cp = ((c & 0x07u) << 18) | ((static_cast<unsigned char>(s[i + 1]) & 0x3Fu) << 12) |
-                 ((static_cast<unsigned char>(s[i + 2]) & 0x3Fu) << 6) | (static_cast<unsigned char>(s[i + 3]) & 0x3Fu);
+                 ((static_cast<unsigned char>(s[i + 2]) & 0x3Fu) << 6) |
+                 (static_cast<unsigned char>(s[i + 3]) & 0x3Fu);
             i += 4;
         } else {
             cp = c;
@@ -112,14 +116,17 @@ namespace perlin::ui {
         for (int ch = 0x20; ch <= 0x7E; ch++) {
             const uint8_t* columns = kFont5x7[ch - 0x20];
             int first = 0, last = 4;
-            while (first < 5 && columns[first] == 0) first++;
-            while (last >= 0 && columns[last] == 0) last--;
+            while (first < 5 && columns[first] == 0)
+                first++;
+            while (last >= 0 && columns[last] == 0)
+                last--;
             const int cx = (ch % cellsAcross) * cellPx, cy = (ch / cellsAcross) * cellPx;
             if (first <= last) {
                 for (int col = first; col <= last; col++)
                     for (int row = 0; row < 8; row++)
                         if (columns[col] & (1 << row)) {
-                            const size_t o = (static_cast<size_t>(cy + row) * stride + (cx + col - first)) * 4;
+                            const size_t o =
+                                (static_cast<size_t>(cy + row) * stride + (cx + col - first)) * 4;
                             cells[o] = cells[o + 1] = cells[o + 2] = cells[o + 3] = 255;
                         }
             }
@@ -149,7 +156,8 @@ namespace perlin::ui {
         atlasHeight = atlasWidth * 2;
         atlas.assign(static_cast<size_t>(atlasWidth) * static_cast<size_t>(atlasHeight) * 4, 0);
         for (int y = 0; y < sheet; y++)
-            std::memcpy(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], &cells[static_cast<size_t>(y) * static_cast<size_t>(sheet) * 4],
+            std::memcpy(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4],
+                        &cells[static_cast<size_t>(y) * static_cast<size_t>(sheet) * 4],
                         static_cast<size_t>(sheet) * 4);
         dynY0 = ((sheet + 15) / 16) * 16;
         dynNext = 0;
@@ -193,7 +201,8 @@ namespace perlin::ui {
             const uint32_t* chars;
             int cols, rows, cellH, ascent;
         };
-        const Source sources[2] = {{nonlatin, kNonlatinChars, 16, 67, 8, 7}, {accented, kAccentedChars, 16, 75, 12, 10}};
+        const Source sources[2] = {{nonlatin, kNonlatinChars, 16, 67, 8, 7},
+                                   {accented, kAccentedChars, 16, 75, 12, 10}};
         std::vector<Sheet> loaded;
         std::unordered_map<uint32_t, std::pair<uint16_t, uint16_t>> table;
         for (const Source& src : sources) {
@@ -206,13 +215,14 @@ namespace perlin::ui {
             sheet.cellW = w / src.cols;
             sheet.cellH = src.cellH;
             sheet.ascent = src.ascent;
-            sheet.rgba.assign(src.raw.rgba, src.raw.rgba + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+            sheet.rgba.assign(src.raw.rgba,
+                              src.raw.rgba + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
             if (sheet.cellW <= 0 || sheet.cellW > 16 || sheet.cellH > 16 || h < src.rows * src.cellH)
                 continue;
             const uint16_t index = static_cast<uint16_t>(loaded.size());
             for (int cell = 0; cell < src.cols * src.rows; cell++) {
                 const uint32_t cp = src.chars[cell];
-                if (cp == 0 || table.count(cp))
+                if (cp == 0 || table.contains(cp))
                     continue;
                 table[cp] = {index, static_cast<uint16_t>(cell)};
             }
@@ -227,7 +237,8 @@ namespace perlin::ui {
         glyphShelfX = glyphShelfHeight = 0;
         glyphShelfY = dynLimitY = atlasHeight;
         for (int y = dynY0; y < atlasHeight; y++)
-            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0, static_cast<size_t>(atlasWidth) * 4);
+            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0,
+                        static_cast<size_t>(atlasWidth) * 4);
         version++;
         return true;
     }
@@ -243,7 +254,10 @@ namespace perlin::ui {
         int ink = 0;
         for (int x = sheet.cellW - 1; x >= 0 && ink == 0; x--)
             for (int y = 0; y < sheet.cellH; y++)
-                if (sheet.rgba[(static_cast<size_t>(sy + y) * static_cast<size_t>(sheet.width) + static_cast<size_t>(sx + x)) * 4 + 3] > 0) {
+                if (sheet.rgba[(static_cast<size_t>(sy + y) * static_cast<size_t>(sheet.width) +
+                                static_cast<size_t>(sx + x)) *
+                                   4 +
+                               3] > 0) {
                     ink = x + 1;
                     break;
                 }
@@ -256,8 +270,12 @@ namespace perlin::ui {
         const int cx = (dynNext % perRow) * 16, cy = dynY0 + (dynNext / perRow) * 16;
         dynNext++;
         for (int y = 0; y < sheet.cellH; y++)
-            std::memcpy(&atlas[(static_cast<size_t>(cy + y) * static_cast<size_t>(atlasWidth) + static_cast<size_t>(cx)) * 4],
-                        &sheet.rgba[(static_cast<size_t>(sy + y) * static_cast<size_t>(sheet.width) + static_cast<size_t>(sx)) * 4],
+            std::memcpy(&atlas[(static_cast<size_t>(cy + y) * static_cast<size_t>(atlasWidth) +
+                                static_cast<size_t>(cx)) *
+                               4],
+                        &sheet.rgba[(static_cast<size_t>(sy + y) * static_cast<size_t>(sheet.width) +
+                                     static_cast<size_t>(sx)) *
+                                    4],
                         static_cast<size_t>(sheet.cellW) * 4);
         Glyph g;
         g.width = ink;
@@ -288,9 +306,12 @@ namespace perlin::ui {
         std::unordered_map<uint32_t, HexGlyph> parsed;
         std::string line;
         const auto digit = [](char ch) -> int {
-            if (ch >= '0' && ch <= '9') return ch - '0';
-            if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
-            if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+            if (ch >= '0' && ch <= '9')
+                return ch - '0';
+            if (ch >= 'A' && ch <= 'F')
+                return ch - 'A' + 10;
+            if (ch >= 'a' && ch <= 'f')
+                return ch - 'a' + 10;
             return -1;
         };
         while (std::getline(in, line)) {
@@ -301,11 +322,14 @@ namespace perlin::ui {
             bool ok = true;
             for (size_t i = 0; i < colon && ok; i++) {
                 const int d = digit(line[i]);
-                if (d < 0) ok = false;
-                else cp = cp * 16 + static_cast<uint32_t>(d);
+                if (d < 0)
+                    ok = false;
+                else
+                    cp = cp * 16 + static_cast<uint32_t>(d);
             }
             size_t len = line.size();
-            while (len > colon + 1 && (line[len - 1] == '\r' || line[len - 1] == '\n' || line[len - 1] == ' '))
+            while (len > colon + 1 &&
+                   (line[len - 1] == '\r' || line[len - 1] == '\n' || line[len - 1] == ' '))
                 len--;
             const size_t digits = len - colon - 1;
             if (!ok || (digits != 32 && digits != 64))
@@ -314,8 +338,10 @@ namespace perlin::ui {
             g.wide = digits == 64;
             for (size_t i = 0; i < digits / 2 && ok; i++) {
                 const int hi = digit(line[colon + 1 + i * 2]), lo = digit(line[colon + 2 + i * 2]);
-                if (hi < 0 || lo < 0) ok = false;
-                else g.rows[i] = static_cast<uint8_t>(hi * 16 + lo);
+                if (hi < 0 || lo < 0)
+                    ok = false;
+                else
+                    g.rows[i] = static_cast<uint8_t>(hi * 16 + lo);
             }
             if (ok)
                 parsed[cp] = g;
@@ -329,7 +355,8 @@ namespace perlin::ui {
         glyphShelfX = glyphShelfHeight = 0;
         glyphShelfY = dynLimitY = atlasHeight;
         for (int y = dynY0; y < atlasHeight; y++)
-            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0, static_cast<size_t>(atlasWidth) * 4);
+            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0,
+                        static_cast<size_t>(atlasWidth) * 4);
         version++;
         return true;
     }
@@ -360,7 +387,8 @@ namespace perlin::ui {
         glyphShelfX = glyphShelfHeight = 0;
         glyphShelfY = dynLimitY = atlasHeight;
         for (int y = dynY0; y < atlasHeight; y++)
-            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0, static_cast<size_t>(atlasWidth) * 4);
+            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0,
+                        static_cast<size_t>(atlasWidth) * 4);
         version++;
         return true;
     }
@@ -373,7 +401,9 @@ namespace perlin::ui {
             int ascent = 0, descent = 0, gap = 0;
             stbtt_GetFontVMetrics(&font->info, &ascent, &descent, &gap);
             const float total = static_cast<float>(ascent - descent);
-            const float scale = total > 0 ? std::min(stbtt_ScaleForPixelHeight(&font->info, 14.0f), 15.0f / total) : stbtt_ScaleForPixelHeight(&font->info, 14.0f);
+            const float scale = total > 0
+                                    ? std::min(stbtt_ScaleForPixelHeight(&font->info, 14.0f), 15.0f / total)
+                                    : stbtt_ScaleForPixelHeight(&font->info, 14.0f);
             const int baseline = static_cast<int>(std::lround(static_cast<float>(ascent) * scale)) + 1;
             int x0, y0, x1, y1;
             stbtt_GetGlyphBitmapBox(&font->info, index, scale, scale, &x0, &y0, &x1, &y1);
@@ -389,9 +419,13 @@ namespace perlin::ui {
                         const int px = x0 + col, py = baseline + y0 + row;
                         if (px < 0 || px >= 16 || py < 0 || py >= 16)
                             continue;
-                        if (bitmap[static_cast<size_t>(row) * static_cast<size_t>(w) + static_cast<size_t>(col)] < 110)
+                        if (bitmap[static_cast<size_t>(row) * static_cast<size_t>(w) +
+                                   static_cast<size_t>(col)] < 110)
                             continue;
-                        uint8_t* dst = &atlas[(static_cast<size_t>(cy + py) * static_cast<size_t>(atlasWidth) + static_cast<size_t>(cx + px)) * 4];
+                        uint8_t* dst =
+                            &atlas[(static_cast<size_t>(cy + py) * static_cast<size_t>(atlasWidth) +
+                                    static_cast<size_t>(cx + px)) *
+                                   4];
                         dst[0] = dst[1] = dst[2] = dst[3] = 255;
                         ink = std::max(ink, px + 1);
                     }
@@ -399,10 +433,13 @@ namespace perlin::ui {
             // atlas slot is 16 px for an 8 px line: py already holds the font baseline offset
             if (ink == 0) {
                 out.width = 0;
-                out.advance = std::max(2, static_cast<int>(std::lround(static_cast<float>(advance) * scale / 2.0f)));
+                out.advance =
+                    std::max(2, static_cast<int>(std::lround(static_cast<float>(advance) * scale / 2.0f)));
             } else {
                 out.width = (ink + 1) / 2;
-                out.advance = std::max(out.width + 1.0f, static_cast<float>(std::lround(static_cast<float>(advance) * scale / 2.0f)));
+                out.advance =
+                    std::max(out.width + 1.0f,
+                             static_cast<float>(std::lround(static_cast<float>(advance) * scale / 2.0f)));
             }
             return true;
         }
@@ -410,7 +447,8 @@ namespace perlin::ui {
     }
 
     void McFont::AddGlyphPage(uint32_t page, const std::vector<uint8_t>& rgba, int width, int height) {
-        if (width < 16 || height < 16 || rgba.size() < static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
+        if (width < 16 || height < 16 ||
+            rgba.size() < static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
             return;
         glyphPages[page] = {rgba, width, height};
         for (uint32_t cp = page << 8; cp < ((page + 1) << 8); cp++)
@@ -529,7 +567,9 @@ namespace perlin::ui {
             for (int col = 0; col < bytesPerRow * 8; col++) {
                 const uint8_t byte = hg.rows[static_cast<size_t>(row * bytesPerRow + col / 8)];
                 if (byte & (0x80 >> (col % 8))) {
-                    uint8_t* px = &atlas[(static_cast<size_t>(cy + row) * static_cast<size_t>(atlasWidth) + static_cast<size_t>(cx + col)) * 4];
+                    uint8_t* px = &atlas[(static_cast<size_t>(cy + row) * static_cast<size_t>(atlasWidth) +
+                                          static_cast<size_t>(cx + col)) *
+                                         4];
                     px[0] = px[1] = px[2] = px[3] = 255;
                     ink = std::max(ink, col + 1);
                 }
@@ -565,7 +605,7 @@ namespace perlin::ui {
         if (cp == ' ')
             return glyphs[' '];
         if (cp >= 0x80) {
-            if (glyphPages.count(cp >> 8))
+            if (glyphPages.contains(cp >> 8))
                 if (const Glyph* g = Dynamic(cp))
                     return *g;
             if (const auto it = mapped.find(cp); it != mapped.end())
@@ -585,7 +625,8 @@ namespace perlin::ui {
             if (cp == 0xA7) {
                 uint32_t code;
                 if (Next(s, i, code)) {
-                    if (code == 'l' || code == 'L') bold = true;
+                    if (code == 'l' || code == 'L')
+                        bold = true;
                     else if (code == 'r' || code == 'R')
                         bold = false;
                 }

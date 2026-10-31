@@ -46,7 +46,6 @@ namespace perlin {
             return false;
         }
 
-
         bool ReadJson(const std::string& url, const fs::path& scratch, ui::Json& out) {
             std::string text, error;
             return Download(url, scratch) && file::Read(scratch, text) && ui::Json::Parse(text, out, error);
@@ -92,7 +91,8 @@ namespace perlin {
                 if (!mz_zip_reader_get_filename(&zip, i, name, sizeof(name)))
                     continue;
                 const std::string n = name;
-                const bool vanillaSheet = n == "assets/minecraft/textures/font/ascii.png" || n == "assets/minecraft/textures/font/accented.png" ||
+                const bool vanillaSheet = n == "assets/minecraft/textures/font/ascii.png" ||
+                                          n == "assets/minecraft/textures/font/accented.png" ||
                                           n == "assets/minecraft/textures/font/nonlatin_european.png";
                 if (vanillaSheet) {
                     size_t size = 0;
@@ -104,7 +104,8 @@ namespace perlin {
                         out.write(static_cast<const char*>(bytes), static_cast<std::streamsize>(size));
                         mz_free(bytes);
                     }
-                } else if (!hexOk && n.contains("font/unifont_all_no_pua") && n.size() > 4 && n.compare(n.size() - 4, 4, ".zip") == 0) {
+                } else if (!hexOk && n.contains("font/unifont_all_no_pua") && n.size() > 4 &&
+                           n.compare(n.size() - 4, 4, ".zip") == 0) {
                     size_t size = 0;
                     void* bytes = mz_zip_reader_extract_to_heap(&zip, i, &size, 0);
                     if (bytes) {
@@ -124,9 +125,9 @@ namespace perlin {
 
     bool MojangFonts::Available(const std::string& dataDir) {
         std::error_code ec;
-        return fs::exists(UnihexPath(dataDir), ec) && fs::file_size(UnihexPath(dataDir), ec) > 1024 && fs::exists(fs::path(dataDir) / "font" / "ascii.png", ec) &&
-               fs::exists(fs::path(dataDir) / "font" / "accented.png", ec) &&
-               clientassets::Ready(dataDir);
+        return fs::exists(UnihexPath(dataDir), ec) && fs::file_size(UnihexPath(dataDir), ec) > 1024 &&
+               fs::exists(fs::path(dataDir) / "font" / "ascii.png", ec) &&
+               fs::exists(fs::path(dataDir) / "font" / "accented.png", ec) && clientassets::Ready(dataDir);
     }
 
     bool MojangFonts::Ensure(const std::string& dataDir) {
@@ -146,10 +147,12 @@ namespace perlin {
                 return false;
             }
             job.stage = assets::Stage::Extracting;
-            const bool ok = ExtractFromJar(jar, UnihexPath(dataDir), fs::path(dataDir) / "font" / "ascii.png");
+            const bool ok =
+                ExtractFromJar(jar, UnihexPath(dataDir), fs::path(dataDir) / "font" / "ascii.png");
             clientassets::BuildFromJar(jar, dataDir);
             fs::remove(jar, ec);
-            std::cout << (ok ? "[fonts] Unicode font ready" : "[fonts] Unicode font extraction failed") << std::endl;
+            std::cout << (ok ? "[fonts] Unicode font ready" : "[fonts] Unicode font extraction failed")
+                      << std::endl;
             job.stage = (ok || clientassets::Ready(dataDir)) ? assets::Stage::Done : assets::Stage::Failed;
             return ok;
         }
@@ -219,7 +222,8 @@ namespace perlin {
                 for (const auto& [key, value] : objects->object) {
                     const bool zipped = key.size() > 4 && key.compare(key.size() - 4, 4, ".zip") == 0;
                     const bool raw = key.size() > 4 && key.compare(key.size() - 4, 4, ".hex") == 0;
-                    if (!key.contains("unifont") || key.contains("_pua") && !key.contains("no_pua") || (!zipped && !raw))
+                    if (!key.contains("unifont") || key.contains("_pua") && !key.contains("no_pua") ||
+                        (!zipped && !raw))
                         continue;
                     if (key.contains("unifont_jp"))
                         continue;
@@ -229,7 +233,8 @@ namespace perlin {
                     const std::string h = hash->StringOr("");
                     const fs::path zip = root / "unifont.zip";
                     std::string bytes;
-                    if (Download(std::string(kResources) + h.substr(0, 2) + "/" + h, zip) && file::Read(zip, bytes)) {
+                    if (Download(std::string(kResources) + h.substr(0, 2) + "/" + h, zip) &&
+                        file::Read(zip, bytes)) {
                         if (raw) {
                             std::ofstream out(hexOut, std::ios::binary);
                             out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
@@ -246,7 +251,8 @@ namespace perlin {
                 }
         }
         fs::remove(root / "assets.tmp", ec);
-        std::cout << (ok ? "[fonts] Unicode font ready" : "[fonts] Unicode font download failed") << std::endl;
+        std::cout << (ok ? "[fonts] Unicode font ready" : "[fonts] Unicode font download failed")
+                  << std::endl;
         finish.ok = ok || clientassets::Ready(dataDir);
         return ok;
 #endif

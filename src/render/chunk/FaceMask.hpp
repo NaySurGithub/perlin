@@ -18,7 +18,8 @@ namespace perlin::render {
 
     void ColumnCoords(int axis, int p, int q, int depth, int& x, int& y, int& z);
 
-    FaceMask ComputeFaceMask(const SectionBlocks& section, const SectionNeighbours& neighbours, const BlockTable& table);
+    FaceMask ComputeFaceMask(const SectionBlocks& section, const SectionNeighbours& neighbours,
+                             const BlockTable& table);
 
     // keeps one mask per section so a remesh after a light or tint change, or a rebuild at another lod, skips the
     // visibility pass; entries are dropped when the section or a neighbour changes

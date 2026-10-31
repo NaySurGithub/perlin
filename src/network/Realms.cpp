@@ -17,7 +17,9 @@ namespace perlin::realms {
         constexpr const char* kRelyingParty = "https://pocket.realms.minecraft.net/";
         constexpr const char* kHost = "bedrock.frontendlegacy.realms.minecraft-services.net";
 
-        std::string Q(const std::string& s) { return "\"" + s + "\""; }
+        std::string Q(const std::string& s) {
+            return "\"" + s + "\"";
+        }
 
         http::Response Call(const std::string& method, const std::string& path, const std::string& body,
                             const std::string& authorization) {
@@ -28,8 +30,8 @@ namespace perlin::realms {
                 {"X-NetworkProtocolVersion", std::to_string(kBedrockProtocol)},
                 {"Authorization", authorization},
             };
-            return http::Request(kHost, 443, true, method, path, body, body.empty() ? std::string() : "application/json",
-                                 headers, 20);
+            return http::Request(kHost, 443, true, method, path, body,
+                                 body.empty() ? std::string() : "application/json", headers, 20);
         }
 
         bool OptInToTimeline(int64_t id, const std::string& authorization) {
@@ -42,8 +44,10 @@ namespace perlin::realms {
             const json::View v = doc->root();
             const auto flag = [&](const char* k) { return v[k].boolean() ? "true" : "false"; };
             const std::string realmOptIn = v["realmOptIn"].isString() ? v["realmOptIn"].str() : "NONE";
-            const std::string body = std::string("{\"autostories\":") + flag("autostories") + ",\"coordinates\":" + flag("coordinates") +
-                                     ",\"notifications\":" + flag("notifications") + ",\"playerOptIn\":\"OPT_IN\",\"realmOptIn\":\"" + realmOptIn +
+            const std::string body = std::string("{\"autostories\":") + flag("autostories") +
+                                     ",\"coordinates\":" + flag("coordinates") +
+                                     ",\"notifications\":" + flag("notifications") +
+                                     ",\"playerOptIn\":\"OPT_IN\",\"realmOptIn\":\"" + realmOptIn +
                                      "\",\"timeline\":" + flag("timeline") + "}";
             const http::Response p = Call("POST", path, body, authorization);
             Log("realms", "timeline opt-in answered {}: {}", p.status, p.body.substr(0, 300));
@@ -55,9 +59,9 @@ namespace perlin::realms {
                 return std::string("could not reach ") + what;
             std::string text = std::string(what) + " answered HTTP " + std::to_string(r.status);
             if (auto doc = json::Document::Parse(r.body)) {
-                const std::string why = doc->root()["errorMsg"].isString() ? doc->root()["errorMsg"].str()
+                const std::string why = doc->root()["errorMsg"].isString()  ? doc->root()["errorMsg"].str()
                                         : doc->root()["message"].isString() ? doc->root()["message"].str()
-                                                                              : std::string();
+                                                                            : std::string();
                 if (!why.empty())
                     text += ": " + why;
             }
@@ -149,12 +153,14 @@ namespace perlin::realms {
             if (r.status >= 400) {
                 Log("realms", "join POST answered {}: {}", r.status, r.body.substr(0, 400));
                 if (r.status == 403 || r.status == 404 || r.status == 405) {
-                    const http::Response g = Call("GET", "/worlds/" + std::to_string(id) + "/join", {}, authorization);
+                    const http::Response g =
+                        Call("GET", "/worlds/" + std::to_string(id) + "/join", {}, authorization);
                     Log("realms", "join GET answered {}: {}", g.status, g.body.substr(0, 400));
                     if (g.status == 200) {
                         r = g;
                     } else {
-                        error = Failure(r, "Realms") + (r.status == 403 ? " (the Realms service refused this account)" : "");
+                        error = Failure(r, "Realms") +
+                                (r.status == 403 ? " (the Realms service refused this account)" : "");
                         return false;
                     }
                 }
@@ -167,8 +173,11 @@ namespace perlin::realms {
             const std::string address = doc->root()["address"].str();
             const size_t colon = address.rfind(':');
             out.host = colon == std::string::npos ? address : address.substr(0, colon);
-            out.port = colon == std::string::npos ? uint16_t(19132) : static_cast<uint16_t>(std::atoi(address.c_str() + colon + 1));
-            out.protocol = doc->root()["networkProtocol"].isString() ? doc->root()["networkProtocol"].str() : "DEFAULT";
+            out.port = colon == std::string::npos
+                           ? uint16_t(19132)
+                           : static_cast<uint16_t>(std::atoi(address.c_str() + colon + 1));
+            out.protocol =
+                doc->root()["networkProtocol"].isString() ? doc->root()["networkProtocol"].str() : "DEFAULT";
             for (char& c : out.protocol)
                 c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
             Log("realms", "Realm {} is at {}:{} ({})", id, out.host, out.port, out.protocol);

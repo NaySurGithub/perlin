@@ -36,7 +36,7 @@ namespace perlin::ui {
 
         struct Glyph {
             float u0 = 0, v0 = 0, u1 = 0, v1 = 0;
-            int x = 0, y = 0, w = 0, h = 0;  // device pixels, y relative to the baseline
+            int x = 0, y = 0, w = 0, h = 0; // device pixels, y relative to the baseline
         };
         // glyph atlas rasterised for an em of `emPx` device pixels; render thread only
         struct Page {

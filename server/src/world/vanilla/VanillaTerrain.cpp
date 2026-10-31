@@ -13,13 +13,15 @@
 
 namespace perlin::server::vanilla {
 
-    std::unique_ptr<VanillaCpuBackend> VanillaCpuBackend::Create(const ServerConfig& config, std::string& error) {
+    std::unique_ptr<VanillaCpuBackend> VanillaCpuBackend::Create(const ServerConfig& config,
+                                                                 std::string& error) {
         std::unique_ptr<VanillaCpuBackend> b(new VanillaCpuBackend());
         b->pack = DataPack::Embedded();
         b->graph = std::make_unique<DensityGraph>(*b->pack, static_cast<int64_t>(config.seed));
         b->finalDensity = b->graph->Load("minecraft:overworld/final_density");
         if (!b->finalDensity) {
-            error = "the built-in overworld data has no overworld/final_density (rebuild: tools/gen_overworld_shape.py output is damaged)";
+            error = "the built-in overworld data has no overworld/final_density (rebuild: "
+                    "tools/gen_overworld_shape.py output is damaged)";
             return nullptr;
         }
         b->climate = std::make_unique<VanillaClimate>(*b->graph);
@@ -40,10 +42,12 @@ namespace perlin::server::vanilla {
             for (int x = 0; x < 16; x++)
                 for (int z = 0; z < 16; z++)
                     for (int y = 0; y < kHeight; y++)
-                        density[static_cast<size_t>((x * 16 + z) * kHeight + y)] = finalDensity->Eval(bx + x, kMinY + y, bz + z);
+                        density[static_cast<size_t>((x * 16 + z) * kHeight + y)] =
+                            finalDensity->Eval(bx + x, kMinY + y, bz + z);
             std::array<uint8_t, 256> biomes;
             BiomesOf(density.data(), positions[n].x, positions[n].z, biomes.data());
-            surface->Fill(density.data(), biomes.data(), out[n], features.get(), positions[n].x, positions[n].z);
+            surface->Fill(density.data(), biomes.data(), out[n], features.get(), positions[n].x,
+                          positions[n].z);
         }
     }
 }
@@ -106,16 +110,19 @@ namespace perlin::server::vanilla {
         // a surface hit is then confirmed against the real column biome, so these only decide where to look
         std::vector<int> SearchHeights(const char* java) {
             const std::string name = java;
-            if (name == "lush_caves" || name == "dripstone_caves" || name == "deep_dark" || name == "sulfur_caves")
+            if (name == "lush_caves" || name == "dripstone_caves" || name == "deep_dark" ||
+                name == "sulfur_caves")
                 return {-48, -16, 24};
-            if (name == "jagged_peaks" || name == "frozen_peaks" || name == "stony_peaks" || name == "snowy_slopes" || name == "grove" || name == "meadow" ||
-                name == "cherry_grove" || name == "windswept_hills" || name == "windswept_gravelly_hills" || name == "windswept_forest")
+            if (name == "jagged_peaks" || name == "frozen_peaks" || name == "stony_peaks" ||
+                name == "snowy_slopes" || name == "grove" || name == "meadow" || name == "cherry_grove" ||
+                name == "windswept_hills" || name == "windswept_gravelly_hills" || name == "windswept_forest")
                 return {64, 128, 192, 256};
             return {64};
         }
         bool IsCaveBiome(const char* java) {
             const std::string name = java;
-            return name == "lush_caves" || name == "dripstone_caves" || name == "deep_dark" || name == "sulfur_caves";
+            return name == "lush_caves" || name == "dripstone_caves" || name == "deep_dark" ||
+                   name == "sulfur_caves";
         }
     }
 
@@ -142,7 +149,8 @@ namespace perlin::server::vanilla {
         return FindBiome(target);
     }
 
-    bool VanillaCpuBackend::LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel, int& outX, int& outY, int& outZ) {
+    bool VanillaCpuBackend::LocateBiome(int biome, int fromX, int fromZ, int radius,
+                                        const std::atomic<bool>& cancel, int& outX, int& outY, int& outZ) {
         if (biome < 0 || biome >= kBiomeCount)
             return false;
         const std::vector<int> heights = SearchHeights(kBiomes[biome].java);
@@ -183,7 +191,8 @@ namespace perlin::server::vanilla {
                                     continue;
                                 hitY = ground;
                             }
-                            const double d = std::hypot(static_cast<double>(px - fromX), static_cast<double>(pz - fromZ));
+                            const double d =
+                                std::hypot(static_cast<double>(px - fromX), static_cast<double>(pz - fromZ));
                             if (!hits[w].found || d < hits[w].distance)
                                 hits[w] = {true, px, hitY, pz, d};
                             break;

@@ -16,15 +16,35 @@ namespace perlin {
 
     namespace Pad {
         namespace {
-            struct Entry { int code; const char* name; };
-            constexpr Entry kEntries[] = {
-                {A, "a"}, {B, "b"}, {X, "x"}, {Y, "y"}, {Back, "back"}, {Guide, "guide"}, {Start, "start"},
-                {LeftStick, "left_stick_click"}, {RightStick, "right_stick_click"}, {LeftShoulder, "left_bumper"},
-                {RightShoulder, "right_bumper"}, {DpadUp, "dpad_up"}, {DpadDown, "dpad_down"}, {DpadLeft, "dpad_left"},
-                {DpadRight, "dpad_right"}, {LeftTrigger, "left_trigger"}, {RightTrigger, "right_trigger"},
-                {LeftStickUp, "left_stick_up"}, {LeftStickDown, "left_stick_down"}, {LeftStickLeft, "left_stick_left"},
-                {LeftStickRight, "left_stick_right"}, {RightStickUp, "right_stick_up"}, {RightStickDown, "right_stick_down"},
-                {RightStickLeft, "right_stick_left"}, {RightStickRight, "right_stick_right"}};
+            struct Entry {
+                int code;
+                const char* name;
+            };
+            constexpr Entry kEntries[] = {{A, "a"},
+                                          {B, "b"},
+                                          {X, "x"},
+                                          {Y, "y"},
+                                          {Back, "back"},
+                                          {Guide, "guide"},
+                                          {Start, "start"},
+                                          {LeftStick, "left_stick_click"},
+                                          {RightStick, "right_stick_click"},
+                                          {LeftShoulder, "left_bumper"},
+                                          {RightShoulder, "right_bumper"},
+                                          {DpadUp, "dpad_up"},
+                                          {DpadDown, "dpad_down"},
+                                          {DpadLeft, "dpad_left"},
+                                          {DpadRight, "dpad_right"},
+                                          {LeftTrigger, "left_trigger"},
+                                          {RightTrigger, "right_trigger"},
+                                          {LeftStickUp, "left_stick_up"},
+                                          {LeftStickDown, "left_stick_down"},
+                                          {LeftStickLeft, "left_stick_left"},
+                                          {LeftStickRight, "left_stick_right"},
+                                          {RightStickUp, "right_stick_up"},
+                                          {RightStickDown, "right_stick_down"},
+                                          {RightStickLeft, "right_stick_left"},
+                                          {RightStickRight, "right_stick_right"}};
         }
         const char* Name(int code) {
             for (const Entry& e : kEntries)
@@ -80,15 +100,24 @@ namespace perlin {
             return "key.attack";
         case Action::Use:
             return "key.use";
-        case Action::Hotbar1: return "key.hotbar.1";
-        case Action::Hotbar2: return "key.hotbar.2";
-        case Action::Hotbar3: return "key.hotbar.3";
-        case Action::Hotbar4: return "key.hotbar.4";
-        case Action::Hotbar5: return "key.hotbar.5";
-        case Action::Hotbar6: return "key.hotbar.6";
-        case Action::Hotbar7: return "key.hotbar.7";
-        case Action::Hotbar8: return "key.hotbar.8";
-        case Action::Hotbar9: return "key.hotbar.9";
+        case Action::Hotbar1:
+            return "key.hotbar.1";
+        case Action::Hotbar2:
+            return "key.hotbar.2";
+        case Action::Hotbar3:
+            return "key.hotbar.3";
+        case Action::Hotbar4:
+            return "key.hotbar.4";
+        case Action::Hotbar5:
+            return "key.hotbar.5";
+        case Action::Hotbar6:
+            return "key.hotbar.6";
+        case Action::Hotbar7:
+            return "key.hotbar.7";
+        case Action::Hotbar8:
+            return "key.hotbar.8";
+        case Action::Hotbar9:
+            return "key.hotbar.9";
         case Action::ToggleHud:
             return "key.toggleHud";
         case Action::Chat:

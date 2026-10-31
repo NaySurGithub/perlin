@@ -58,9 +58,11 @@ namespace perlin::server {
     };
 
     // runs every action of a request against `inv`; on failure `inv` is left as it was
-    RequestResult ApplyStackRequest(PlayerInventory& inv, const proto2225::ItemStackRequest& request, bool creative);
+    RequestResult ApplyStackRequest(PlayerInventory& inv, const proto2225::ItemStackRequest& request,
+                                    bool creative);
 
-    proto2225::ItemStackResponsesEntry MakeResponse(PlayerInventory& inv, int32_t requestId, const RequestResult& result);
+    proto2225::ItemStackResponsesEntry MakeResponse(PlayerInventory& inv, int32_t requestId,
+                                                    const RequestResult& result);
 
     proto2225::ItemV4 ToWire(const ItemStack& stack);
 }

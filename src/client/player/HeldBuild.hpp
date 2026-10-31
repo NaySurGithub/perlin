@@ -27,9 +27,9 @@ namespace perlin::heldbuild {
     };
 
     struct Hit {
-        bool block = false;     // crosshair on a block (direct hit)
+        bool block = false; // crosshair on a block (direct hit)
         Target target;
-        glm::vec3 point{};      // where the ray stopped: hit point, or eye + look * reach without a hit
+        glm::vec3 point{}; // where the ray stopped: hit point, or eye + look * reach without a hit
     };
 
     class HeldBuild {
@@ -41,12 +41,14 @@ namespace perlin::heldbuild {
 
         // The repeat to attempt now, or nothing. `canBuildOver(pos)` says whether placing on `pos` replaces that
         // block (tall grass, snow layer...). `posDelta` is this tick's movement in blocks.
-        std::optional<Target> Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs, uint64_t simulationTick,
+        std::optional<Target> Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking,
+                                   uint64_t nowMs, uint64_t simulationTick,
                                    const std::function<bool(glm::ivec3)>& canBuildOver);
 
         // placement went through: click on `clicked` produced a block at `cell`; `snappable` / `interactive`
         // describe the held and clicked blocks, as GameMode::useItemOn records them
-        void Built(const Target& clicked, glm::ivec3 cell, bool snappable, bool interactive, uint64_t nowMs, bool fromRepeat);
+        void Built(const Target& clicked, glm::ivec3 cell, bool snappable, bool interactive, uint64_t nowMs,
+                   bool fromRepeat);
 
     private:
         uint64_t Delay(glm::vec3 posDelta, bool sneaking) const;
@@ -62,8 +64,8 @@ namespace perlin::heldbuild {
         glm::ivec3 direction{};
         int continueFacing = 0;
         uint64_t lastBuildMs = 0;
-        uint64_t nextBuildMs = 0;  // lastBuildMs once the attempt Next returned succeeds
-        bool pendingLine = false;  // attempt in flight is the line's next cell
+        uint64_t nextBuildMs = 0; // lastBuildMs once the attempt Next returned succeeds
+        bool pendingLine = false; // attempt in flight is the line's next cell
     };
 
     // face index along the dominant axis of `v` (Facing::fromVec3), vertical included

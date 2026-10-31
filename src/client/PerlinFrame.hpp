@@ -106,7 +106,7 @@ namespace perlin {
 
         private:
             Profiler::Stage stage;
-            std::chrono::steady_clock::time_point start{};
+            std::chrono::steady_clock::time_point start;
         };
 
         // entities the use button talks to instead of using the held item
@@ -125,7 +125,7 @@ namespace perlin {
 
     // everything one frame computes and later phases of the same frame read
     struct FrameContext {
-        std::chrono::steady_clock::time_point frameStart{};
+        std::chrono::steady_clock::time_point frameStart;
         float dt = frame::kDefaultFrameDelta;
         int width = 0, height = 0;
         BedrockSession* live = nullptr;

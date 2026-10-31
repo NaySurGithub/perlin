@@ -53,7 +53,8 @@ namespace perlin {
         } else {
             p.hasResponseData = false;
             p.hasCancelReason = true;
-            p.cancelReason = busy ? ModalFormResponsePacketCancelReason::Busy : ModalFormResponsePacketCancelReason::Closed;
+            p.cancelReason = busy ? ModalFormResponsePacketCancelReason::Busy
+                                  : ModalFormResponsePacketCancelReason::Closed;
         }
         return Send(p);
     }
@@ -130,48 +131,49 @@ namespace perlin {
 
         On<BossEventPacket>([this](const BossEventPacket& p) {
             std::lock_guard<std::mutex> lk(serverUiMutex);
-            auto it = std::find_if(bossBars.begin(), bossBars.end(), [&](const BossBar& b) { return b.id == p.targetEntityId; });
+            auto it = std::find_if(bossBars.begin(), bossBars.end(),
+                                   [&](const BossBar& b) { return b.id == p.targetEntityId; });
             switch (p.type) {
-                case BossEventPacketType::ShowBar: {
-                    BossBar bar;
-                    bar.id = p.targetEntityId;
-                    bar.title = p.title;
-                    bar.progress = std::clamp(p.progress, 0.0f, 1.0f);
-                    bar.color = static_cast<uint8_t>(p.color);
-                    bar.overlay = static_cast<uint8_t>(p.overlay);
-                    if (it != bossBars.end())
-                        *it = bar;
-                    else
-                        bossBars.push_back(bar);
-                    break;
+            case BossEventPacketType::ShowBar: {
+                BossBar bar;
+                bar.id = p.targetEntityId;
+                bar.title = p.title;
+                bar.progress = std::clamp(p.progress, 0.0f, 1.0f);
+                bar.color = static_cast<uint8_t>(p.color);
+                bar.overlay = static_cast<uint8_t>(p.overlay);
+                if (it != bossBars.end())
+                    *it = bar;
+                else
+                    bossBars.push_back(bar);
+                break;
+            }
+            case BossEventPacketType::HideBar:
+                if (it != bossBars.end())
+                    bossBars.erase(it);
+                break;
+            case BossEventPacketType::SetBarProgress:
+                if (it != bossBars.end())
+                    it->progress = std::clamp(p.progress, 0.0f, 1.0f);
+                break;
+            case BossEventPacketType::SetBarTitle:
+                if (it != bossBars.end())
+                    it->title = p.title;
+                break;
+            case BossEventPacketType::UpdateProperties:
+                if (it != bossBars.end()) {
+                    it->progress = std::clamp(p.progress, 0.0f, 1.0f);
+                    it->color = static_cast<uint8_t>(p.color);
+                    it->overlay = static_cast<uint8_t>(p.overlay);
                 }
-                case BossEventPacketType::HideBar:
-                    if (it != bossBars.end())
-                        bossBars.erase(it);
-                    break;
-                case BossEventPacketType::SetBarProgress:
-                    if (it != bossBars.end())
-                        it->progress = std::clamp(p.progress, 0.0f, 1.0f);
-                    break;
-                case BossEventPacketType::SetBarTitle:
-                    if (it != bossBars.end())
-                        it->title = p.title;
-                    break;
-                case BossEventPacketType::UpdateProperties:
-                    if (it != bossBars.end()) {
-                        it->progress = std::clamp(p.progress, 0.0f, 1.0f);
-                        it->color = static_cast<uint8_t>(p.color);
-                        it->overlay = static_cast<uint8_t>(p.overlay);
-                    }
-                    break;
-                case BossEventPacketType::Texture:
-                    if (it != bossBars.end()) {
-                        it->color = static_cast<uint8_t>(p.color);
-                        it->overlay = static_cast<uint8_t>(p.overlay);
-                    }
-                    break;
-                default:
-                    break;
+                break;
+            case BossEventPacketType::Texture:
+                if (it != bossBars.end()) {
+                    it->color = static_cast<uint8_t>(p.color);
+                    it->overlay = static_cast<uint8_t>(p.overlay);
+                }
+                break;
+            default:
+                break;
             }
         });
 
@@ -242,7 +244,8 @@ namespace perlin {
                 toasts.pop_front();
         });
 
-        On<UpdateClientInputLocksPacket>([this](const UpdateClientInputLocksPacket& p) { inputLocks = p.locks; });
+        On<UpdateClientInputLocksPacket>(
+            [this](const UpdateClientInputLocksPacket& p) { inputLocks = p.locks; });
 
         On<SetHealthPacket>([this](const SetHealthPacket& p) {
             std::lock_guard<std::mutex> lk(attrMutex);

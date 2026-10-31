@@ -15,15 +15,13 @@ namespace rhi::webgpu {
         constexpr const char* kShaderPrefix = "diagnostic(off, derivative_uniformity);\n";
 
         // the completion callback lost its message argument in older headers
-        template <class Fn>
-        constexpr auto QueueDoneFor() {
+        template <class Fn> constexpr auto QueueDoneFor() {
             if constexpr (std::is_convertible_v<void (*)(WGPUQueueWorkDoneStatus, void*, void*), Fn>) {
                 return +[](WGPUQueueWorkDoneStatus, void* a, void* b) {
                     auto* shared = static_cast<std::shared_ptr<std::atomic<uint64_t>>*>(a);
                     const uint64_t value = reinterpret_cast<uintptr_t>(b);
                     uint64_t seen = shared->get()->load();
-                    while (seen < value && !shared->get()->compare_exchange_weak(seen, value)) {
-                    }
+                    while (seen < value && !shared->get()->compare_exchange_weak(seen, value)) {}
                     delete shared;
                 };
             } else {
@@ -31,8 +29,7 @@ namespace rhi::webgpu {
                     auto* shared = static_cast<std::shared_ptr<std::atomic<uint64_t>>*>(a);
                     const uint64_t value = reinterpret_cast<uintptr_t>(b);
                     uint64_t seen = shared->get()->load();
-                    while (seen < value && !shared->get()->compare_exchange_weak(seen, value)) {
-                    }
+                    while (seen < value && !shared->get()->compare_exchange_weak(seen, value)) {}
                     delete shared;
                 };
             }
@@ -63,20 +60,28 @@ namespace rhi::webgpu {
         bool KindMatches(BindingType type, ResourceKind kind) {
             switch (type) {
             case BindingType::UniformBuffer:
-            case BindingType::UniformBufferDynamic: return kind == ResourceKind::UniformBuffer;
-            case BindingType::StorageBuffer: return kind == ResourceKind::StorageBuffer || kind == ResourceKind::StorageBufferRW;
-            case BindingType::StorageBufferRW: return kind == ResourceKind::StorageBufferRW;
-            case BindingType::SampledTexture: return kind == ResourceKind::SampledTexture;
-            case BindingType::StorageTextureRW: return kind == ResourceKind::StorageTexture;
-            case BindingType::Sampler: return kind == ResourceKind::Sampler;
+            case BindingType::UniformBufferDynamic:
+                return kind == ResourceKind::UniformBuffer;
+            case BindingType::StorageBuffer:
+                return kind == ResourceKind::StorageBuffer || kind == ResourceKind::StorageBufferRW;
+            case BindingType::StorageBufferRW:
+                return kind == ResourceKind::StorageBufferRW;
+            case BindingType::SampledTexture:
+                return kind == ResourceKind::SampledTexture;
+            case BindingType::StorageTextureRW:
+                return kind == ResourceKind::StorageTexture;
+            case BindingType::Sampler:
+                return kind == ResourceKind::Sampler;
             }
             return false;
         }
     }
 
-    WebGpuDevice::WebGpuDevice(Owned<WGPUInstance> instance, Owned<WGPUAdapter> adapter, Owned<WGPUDevice> device,
-                               const DeviceOptions& options, const AdapterInfo& info, bool mapSync)
-        : instance(std::move(instance)), adapter(std::move(adapter)), device(std::move(device)), options(options), mapSync(mapSync) {
+    WebGpuDevice::WebGpuDevice(Owned<WGPUInstance> instance, Owned<WGPUAdapter> adapter,
+                               Owned<WGPUDevice> device, const DeviceOptions& options,
+                               const AdapterInfo& info, bool mapSync)
+        : instance(std::move(instance)), adapter(std::move(adapter)), device(std::move(device)),
+          options(options), mapSync(mapSync) {
         caps.adapter = info;
     }
 
@@ -156,7 +161,8 @@ namespace rhi::webgpu {
         f.depthClipControl = has(WGPUFeatureName_DepthClipControl);
         f.drawIndirectFirstInstance = has(WGPUFeatureName_IndirectFirstInstance);
         f.shaderFloat16 = has(WGPUFeatureName_ShaderF16);
-        f.unifiedMemory = caps.adapter.type == AdapterType::Integrated || caps.adapter.type == AdapterType::Cpu;
+        f.unifiedMemory =
+            caps.adapter.type == AdapterType::Integrated || caps.adapter.type == AdapterType::Cpu;
         // one in-order queue: no async compute, no separate copy queue, no multi draw, no count buffers
         f.asyncCompute = false;
         f.dedicatedCopyQueue = false;
@@ -167,11 +173,13 @@ namespace rhi::webgpu {
         const bool f32Blend = has(WGPUFeatureName_Float32Blendable);
         const bool rg11 = has(WGPUFeatureName_RG11B10UfloatRenderable);
         const bool d32s8 = has(WGPUFeatureName_Depth32FloatStencil8);
-        const FormatUse S = FormatUse::Sampled, L = FormatUse::SampledLinear, C = FormatUse::ColorTarget, B = FormatUse::Blendable,
-                        D = FormatUse::DepthTarget, T = FormatUse::Storage, M = FormatUse::Msaa;
+        const FormatUse S = FormatUse::Sampled, L = FormatUse::SampledLinear, C = FormatUse::ColorTarget,
+                        B = FormatUse::Blendable, D = FormatUse::DepthTarget, T = FormatUse::Storage,
+                        M = FormatUse::Msaa;
         const auto set = [&](Format fmt, FormatUse use) { caps.formats[static_cast<size_t>(fmt)] = use; };
-        for (Format fmt : {Format::R8Unorm, Format::RG8Unorm, Format::RGBA8Unorm, Format::RGBA8Srgb, Format::BGRA8Unorm, Format::BGRA8Srgb,
-                           Format::R16Float, Format::RG16Float, Format::RGBA16Float, Format::RGB10A2Unorm})
+        for (Format fmt : {Format::R8Unorm, Format::RG8Unorm, Format::RGBA8Unorm, Format::RGBA8Srgb,
+                           Format::BGRA8Unorm, Format::BGRA8Srgb, Format::R16Float, Format::RG16Float,
+                           Format::RGBA16Float, Format::RGB10A2Unorm})
             set(fmt, S | L | C | B | M);
         set(Format::RGBA8Unorm, S | L | C | B | M | T);
         set(Format::RGBA16Float, S | L | C | B | M | T);
@@ -198,7 +206,6 @@ namespace rhi::webgpu {
             for (Format fmt : {Format::BC1Unorm, Format::BC3Unorm, Format::BC7Unorm})
                 set(fmt, S | L);
     }
-
 
     BufferHandle WebGpuDevice::CreateBuffer(const BufferDesc& desc) {
         Buffer b;
@@ -243,7 +250,8 @@ namespace rhi::webgpu {
     TextureHandle WebGpuDevice::CreateTexture(const TextureDesc& desc) {
         const WGPUTextureFormat format = ToTextureFormat(desc.format);
         if (format == WGPUTextureFormat_Undefined) {
-            ReportError(std::string("CreateTexture: format not available on webgpu: ") + std::to_string(static_cast<int>(desc.format)));
+            ReportError(std::string("CreateTexture: format not available on webgpu: ") +
+                        std::to_string(static_cast<int>(desc.format)));
             return {};
         }
         Texture t;
@@ -266,7 +274,8 @@ namespace rhi::webgpu {
         td.label = View(t.name);
         td.usage = usage;
         td.dimension = desc.dim == TextureDim::Tex3D ? WGPUTextureDimension_3D : WGPUTextureDimension_2D;
-        td.size = {desc.width, desc.height, desc.dim == TextureDim::Tex3D ? (std::max)(1u, desc.depthOrLayers) : LayerCountOf(t.desc)};
+        td.size = {desc.width, desc.height,
+                   desc.dim == TextureDim::Tex3D ? (std::max)(1u, desc.depthOrLayers) : LayerCountOf(t.desc)};
         td.format = format;
         td.mipLevelCount = t.desc.mips;
         td.sampleCount = t.desc.samples;
@@ -275,8 +284,9 @@ namespace rhi::webgpu {
             return {};
         uint64_t bytes = 0;
         for (uint32_t m = 0; m < t.desc.mips; m++)
-            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) * RowBlocks(desc.format, MipExtent(desc.height, m)) *
-                     LayerCountOf(t.desc) * DepthOf(t.desc);
+            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) *
+                     RowBlocks(desc.format, MipExtent(desc.height, m)) * LayerCountOf(t.desc) *
+                     DepthOf(t.desc);
         stats.textureBytes += bytes * t.desc.samples;
         stats.liveTextures++;
         const TextureHandle h = textures.Alloc(std::move(t));
@@ -299,7 +309,8 @@ namespace rhi::webgpu {
         sd.lodMinClamp = desc.minLod;
         sd.lodMaxClamp = (std::min)(desc.maxLod, 32.0f);
         sd.compare = desc.compare ? ToCompare(desc.compareOp) : WGPUCompareFunction_Undefined;
-        const bool allLinear = desc.min == Filter::Linear && desc.mag == Filter::Linear && desc.mip == Filter::Linear;
+        const bool allLinear =
+            desc.min == Filter::Linear && desc.mag == Filter::Linear && desc.mip == Filter::Linear;
         sd.maxAnisotropy = allLinear ? static_cast<uint16_t>(std::clamp(desc.maxAnisotropy, 1.0f, 16.0f)) : 1;
         s.sampler = Owned<WGPUSampler>(wgpuDeviceCreateSampler(device.Get(), &sd));
         if (!s.sampler)
@@ -318,7 +329,8 @@ namespace rhi::webgpu {
         s.desc.entry = nullptr;
         s.desc.name = nullptr;
         s.entry = desc.entry ? desc.entry : "main";
-        s.source = std::string(kShaderPrefix) + std::string(reinterpret_cast<const char*>(desc.code.data()), desc.code.size());
+        s.source = std::string(kShaderPrefix) +
+                   std::string(reinterpret_cast<const char*>(desc.code.data()), desc.code.size());
         WGPUShaderSourceWGSL wgsl{};
         wgsl.chain.sType = WGPUSType_ShaderSourceWGSL;
         wgsl.code = View(s.source);
@@ -335,7 +347,8 @@ namespace rhi::webgpu {
     BindLayoutHandle WebGpuDevice::CreateBindLayout(const BindLayoutDesc& desc) {
         BindLayout l;
         l.entries.assign(desc.entries.begin(), desc.entries.end());
-        std::sort(l.entries.begin(), l.entries.end(), [](const BindLayoutEntry& a, const BindLayoutEntry& b) { return a.binding < b.binding; });
+        std::sort(l.entries.begin(), l.entries.end(),
+                  [](const BindLayoutEntry& a, const BindLayoutEntry& b) { return a.binding < b.binding; });
         return bindLayouts.Alloc(std::move(l));
     }
 
@@ -381,20 +394,32 @@ namespace rhi::webgpu {
         stats.liveTextures--;
     }
 
-    void WebGpuDevice::Destroy(SamplerHandle h) { samplers.Free(h); }
-    void WebGpuDevice::Destroy(ShaderHandle h) { shaders.Free(h); }
-    void WebGpuDevice::Destroy(BindLayoutHandle h) { bindLayouts.Free(h); }
+    void WebGpuDevice::Destroy(SamplerHandle h) {
+        samplers.Free(h);
+    }
+    void WebGpuDevice::Destroy(ShaderHandle h) {
+        shaders.Free(h);
+    }
+    void WebGpuDevice::Destroy(BindLayoutHandle h) {
+        bindLayouts.Free(h);
+    }
     void WebGpuDevice::Destroy(BindGroupHandle h) {
         if (bindGroups.Free(h))
             stats.liveBindGroups--;
     }
-    void WebGpuDevice::Destroy(PipelineLayoutHandle h) { pipelineLayouts.Free(h); }
+    void WebGpuDevice::Destroy(PipelineLayoutHandle h) {
+        pipelineLayouts.Free(h);
+    }
     void WebGpuDevice::Destroy(PipelineHandle h) {
         if (pipelines.Free(h))
             stats.livePipelines--;
     }
-    void WebGpuDevice::Destroy(QuerySetHandle h) { queries.Free(h); }
-    void WebGpuDevice::Destroy(FenceHandle h) { fences.Free(h); }
+    void WebGpuDevice::Destroy(QuerySetHandle h) {
+        queries.Free(h);
+    }
+    void WebGpuDevice::Destroy(FenceHandle h) {
+        fences.Free(h);
+    }
 
     const BufferDesc* WebGpuDevice::GetDesc(BufferHandle h) const {
         const Buffer* b = buffers.Get(h);
@@ -419,7 +444,8 @@ namespace rhi::webgpu {
         const uint64_t hi = std::min<uint64_t>(b->gpuSize, AlignUp(offset + size, 4));
         if (hi <= lo)
             return;
-        wgpuQueueWriteBuffer(queue.Get(), b->buffer.Get(), lo, b->shadow.data() + lo, static_cast<size_t>(hi - lo));
+        wgpuQueueWriteBuffer(queue.Get(), b->buffer.Get(), lo, b->shadow.data() + lo,
+                             static_cast<size_t>(hi - lo));
     }
 
     void WebGpuDevice::Invalidate(BufferHandle handle, uint64_t, uint64_t) {
@@ -436,11 +462,11 @@ namespace rhi::webgpu {
             ReportError("Invalidate: readback map failed");
             return;
         }
-        if (const void* p = wgpuBufferGetConstMappedRange(b->buffer.Get(), 0, static_cast<size_t>(b->gpuSize)))
+        if (const void* p =
+                wgpuBufferGetConstMappedRange(b->buffer.Get(), 0, static_cast<size_t>(b->gpuSize)))
             std::memcpy(b->shadow.data(), p, b->shadow.size());
         wgpuBufferUnmap(b->buffer.Get());
     }
-
 
     FenceHandle WebGpuDevice::CreateFence(uint64_t initialValue) {
         Fence f;
@@ -456,8 +482,7 @@ namespace rhi::webgpu {
     void WebGpuDevice::SignalFence(FenceHandle fence, uint64_t value) {
         if (Fence* f = fences.Get(fence)) {
             uint64_t seen = f->value->load();
-            while (seen < value && !f->value->compare_exchange_weak(seen, value)) {
-            }
+            while (seen < value && !f->value->compare_exchange_weak(seen, value)) {}
         }
     }
 
@@ -485,7 +510,9 @@ namespace rhi::webgpu {
             if (done())
                 return true;
             if (timeoutNs != ~0ull &&
-                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()) >= timeoutNs)
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now() - start)
+                                          .count()) >= timeoutNs)
                 return false;
             std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
@@ -534,7 +561,6 @@ namespace rhi::webgpu {
         return m;
     }
 
-
     CommandList* WebGpuDevice::AcquireCommandList(QueueType queueType) {
         std::lock_guard lock(listMutex);
         WebGpuCommandList* list;
@@ -581,9 +607,8 @@ namespace rhi::webgpu {
         }
     }
 
-
-    WGPUTextureView WebGpuDevice::ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim, Format format, bool stencil,
-                                         bool attachment) {
+    WGPUTextureView WebGpuDevice::ViewOf(Texture& texture, const SubresourceRange& range, TextureDim dim,
+                                         Format format, bool stencil, bool attachment) {
         const SubresourceRange r = ResolveRange(range, texture.desc);
         const bool depthFormat = IsDepthFormat(texture.desc.format);
         ViewKey key;
@@ -605,7 +630,9 @@ namespace rhi::webgpu {
         vd.mipLevelCount = key.mipCount;
         vd.baseArrayLayer = key.baseLayer;
         vd.arrayLayerCount = key.layerCount;
-        vd.aspect = key.aspect == 0 ? WGPUTextureAspect_All : (key.aspect == 1 ? WGPUTextureAspect_DepthOnly : WGPUTextureAspect_StencilOnly);
+        vd.aspect = key.aspect == 0
+                        ? WGPUTextureAspect_All
+                        : (key.aspect == 1 ? WGPUTextureAspect_DepthOnly : WGPUTextureAspect_StencilOnly);
         vd.usage = 0;
         WGPUTextureView view = wgpuTextureCreateView(texture.texture.Get(), &vd);
         if (view)
@@ -613,7 +640,9 @@ namespace rhi::webgpu {
         return view;
     }
 
-    std::shared_ptr<NativeSet> WebGpuDevice::CachedLayout(const std::string& key, const std::function<std::shared_ptr<NativeSet>()>& make) {
+    std::shared_ptr<NativeSet>
+    WebGpuDevice::CachedLayout(const std::string& key,
+                               const std::function<std::shared_ptr<NativeSet>()>& make) {
         std::lock_guard lock(layoutMutex);
         if (const auto it = layoutCache.find(key); it != layoutCache.end())
             return it->second;
@@ -623,7 +652,8 @@ namespace rhi::webgpu {
         return made;
     }
 
-    std::shared_ptr<NativeSet> WebGpuDevice::BuildNativeSet(const PipelineLayoutDesc& pl, uint32_t set, std::span<const Shader* const> stages,
+    std::shared_ptr<NativeSet> WebGpuDevice::BuildNativeSet(const PipelineLayoutDesc& pl, uint32_t set,
+                                                            std::span<const Shader* const> stages,
                                                             ShaderStage) {
         const BindLayout* layout = bindLayouts.Get(pl.sets[set]);
         std::vector<NativeSet::Entry> chosen;
@@ -663,8 +693,9 @@ namespace rhi::webgpu {
         std::string key;
         for (size_t i = 0; i < chosen.size(); i++) {
             const NativeSet::Entry& e = chosen[i];
-            key += std::to_string(e.rhi.binding) + ':' + std::to_string(static_cast<int>(e.rhi.type)) + ':' + std::to_string(visibility[i]) + ':' +
-                   std::to_string(static_cast<int>(e.rhi.viewDim)) + (e.rhi.filterable ? 'f' : 'n') + (e.depth ? 'd' : '-') + (e.comparison ? 'c' : '-') + ';';
+            key += std::to_string(e.rhi.binding) + ':' + std::to_string(static_cast<int>(e.rhi.type)) + ':' +
+                   std::to_string(visibility[i]) + ':' + std::to_string(static_cast<int>(e.rhi.viewDim)) +
+                   (e.rhi.filterable ? 'f' : 'n') + (e.depth ? 'd' : '-') + (e.comparison ? 'c' : '-') + ';';
         }
         auto made = CachedLayout(key, [&]() -> std::shared_ptr<NativeSet> {
             auto result = std::make_shared<NativeSet>();
@@ -682,12 +713,16 @@ namespace rhi::webgpu {
                     n.buffer.type = WGPUBufferBindingType_Uniform;
                     n.buffer.hasDynamicOffset = e.type == BindingType::UniformBufferDynamic;
                     break;
-                case BindingType::StorageBuffer: n.buffer.type = WGPUBufferBindingType_ReadOnlyStorage; break;
-                case BindingType::StorageBufferRW: n.buffer.type = WGPUBufferBindingType_Storage; break;
+                case BindingType::StorageBuffer:
+                    n.buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+                    break;
+                case BindingType::StorageBufferRW:
+                    n.buffer.type = WGPUBufferBindingType_Storage;
+                    break;
                 case BindingType::SampledTexture:
                     n.texture.sampleType = chosen[i].depth ? WGPUTextureSampleType_Depth
-                                           : e.filterable ? WGPUTextureSampleType_Float
-                                                          : WGPUTextureSampleType_UnfilterableFloat;
+                                           : e.filterable  ? WGPUTextureSampleType_Float
+                                                           : WGPUTextureSampleType_UnfilterableFloat;
                     n.texture.viewDimension = ToViewDimension(e.viewDim);
                     break;
                 case BindingType::Sampler:
@@ -766,7 +801,8 @@ namespace rhi::webgpu {
                     ReportError("bind group texture at binding " + std::to_string(le.binding) + " is gone");
                     return nullptr;
                 }
-                n.textureView = ViewOf(*t, src->texture.range, le.viewDim, src->texture.format, src->texture.stencil, false);
+                n.textureView = ViewOf(*t, src->texture.range, le.viewDim, src->texture.format,
+                                       src->texture.stencil, false);
                 break;
             }
             case BindingType::Sampler: {
@@ -776,7 +812,8 @@ namespace rhi::webgpu {
                     return nullptr;
                 }
                 // a layout that promises a nearest sampler cannot take a filtering one
-                n.sampler = (!le.filterable && s->linear && !set.entries[i].comparison) ? nearestSampler.Get() : s->sampler.Get();
+                n.sampler = (!le.filterable && s->linear && !set.entries[i].comparison) ? nearestSampler.Get()
+                                                                                        : s->sampler.Get();
                 break;
             }
             }
@@ -793,14 +830,15 @@ namespace rhi::webgpu {
         return made;
     }
 
-
-    TextureHandle WebGpuDevice::CreateSurfaceTexture(Format format, uint32_t width, uint32_t height, bool sampled) {
+    TextureHandle WebGpuDevice::CreateSurfaceTexture(Format format, uint32_t width, uint32_t height,
+                                                     bool sampled) {
         Texture t;
         t.external = true;
         t.desc.format = format;
         t.desc.width = width;
         t.desc.height = height;
-        t.desc.usage = TextureUsage::ColorTarget | TextureUsage::CopySrc | (sampled ? TextureUsage::Sampled : TextureUsage::None);
+        t.desc.usage = TextureUsage::ColorTarget | TextureUsage::CopySrc |
+                       (sampled ? TextureUsage::Sampled : TextureUsage::None);
         t.name = "swapchain image";
         return textures.Alloc(std::move(t));
     }

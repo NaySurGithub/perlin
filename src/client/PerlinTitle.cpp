@@ -795,6 +795,7 @@ namespace perlin {
             titleScreen.lastPage != ui::TitlePage::Edit && titleScreen.lastPage != ui::TitlePage::Direct &&
             titleScreen.lastPage != ui::TitlePage::AddRealm) {
             std::vector<std::string> addresses;
+            addresses.reserve(title.servers.size());
             for (const ui::ServerEntry& e : title.servers)
                 addresses.push_back(e.address);
             PingServers(addresses);

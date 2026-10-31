@@ -115,8 +115,8 @@ namespace perlin::jshader {
         auto source = OpenPack(path);
         if (!source)
             return false;
-        for (const char* marker : {"shaders.properties", "final.fsh", "composite.fsh", "gbuffers_terrain.fsh", "gbuffers_basic.fsh",
-                                   "gbuffers_textured.fsh", "shadow.vsh"})
+        for (const char* marker : {"shaders.properties", "final.fsh", "composite.fsh", "gbuffers_terrain.fsh",
+                                   "gbuffers_basic.fsh", "gbuffers_textured.fsh", "shadow.vsh"})
             if (source->Exists(marker))
                 return true;
         return false;

@@ -6,12 +6,12 @@
 #include <iterator>
 
 static int g_failed = 0;
-#define CHECK(cond)                                                              \
-    do {                                                                         \
-        if (!(cond)) {                                                           \
-            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-            g_failed++;                                                          \
-        }                                                                        \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                             \
+            g_failed++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 using namespace rhi;
@@ -37,7 +37,8 @@ int main(int argc, char** argv) {
         CHECK(m && m->offset == 0 && m->bytes == 16);
         CHECK(post->uniformBytes >= 48);
         // every graphics program has both stages for every target the pack was built with
-        for (ShaderTarget t : {ShaderTarget::SpirV, ShaderTarget::Dxil, ShaderTarget::Hlsl, ShaderTarget::Msl, ShaderTarget::Wgsl}) {
+        for (ShaderTarget t : {ShaderTarget::SpirV, ShaderTarget::Dxil, ShaderTarget::Hlsl, ShaderTarget::Msl,
+                               ShaderTarget::Wgsl}) {
             CHECK(!lib.Code(*post, ShaderStage::Vertex, t).empty());
             CHECK(!lib.Code(*post, ShaderStage::Fragment, t).empty());
         }

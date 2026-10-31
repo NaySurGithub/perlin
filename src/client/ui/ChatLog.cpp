@@ -12,7 +12,9 @@
 
 namespace perlin::ui {
     namespace {
-        bool Utf8Lead(unsigned char c) { return (c & 0xC0) != 0x80; }
+        bool Utf8Lead(unsigned char c) {
+            return (c & 0xC0) != 0x80;
+        }
 
         size_t PrevChar(const std::string& s, size_t pos) {
             if (pos == 0)
@@ -122,10 +124,17 @@ namespace perlin::ui {
 
     void ChatLog::AddMessage(const std::string& original, uint64_t tick) {
         std::string text = original;
-        if (text.contains(" is at ") && !text.starts_with('<') && !text.contains("\xC2\xA7" "a[")) {
+        if (text.contains(" is at ") && !text.starts_with('<') &&
+            !text.contains("\xC2\xA7"
+                           "a[")) {
             const auto found = FindCoordinates(text);
             for (auto it = found.rbegin(); it != found.rend(); ++it)
-                text.replace(it->begin, it->end - it->begin, "\xC2\xA7" "a[" + it->x + ", " + it->y + ", " + it->z + "]\xC2\xA7" "r");
+                text.replace(it->begin, it->end - it->begin,
+                             "\xC2\xA7"
+                             "a[" +
+                                 it->x + ", " + it->y + ", " + it->z +
+                                 "]\xC2\xA7"
+                                 "r");
         }
         const std::vector<std::string> urls = FindUrls(text);
         size_t urlAt = 0, urlPos = 0;
@@ -136,7 +145,8 @@ namespace perlin::ui {
             size_t at = 0;
             while (urlAt < urls.size() && at < piece.size()) {
                 const std::string& u = urls[urlAt];
-                while (at + 1 < piece.size() && static_cast<unsigned char>(piece[at]) == 0xC2 && static_cast<unsigned char>(piece[at + 1]) == 0xA7 && at + 3 <= piece.size())
+                while (at + 1 < piece.size() && static_cast<unsigned char>(piece[at]) == 0xC2 &&
+                       static_cast<unsigned char>(piece[at + 1]) == 0xA7 && at + 3 <= piece.size())
                     at += 3;
                 size_t b = std::string::npos, e = 0;
                 if (urlPos == 0) {
@@ -272,10 +282,13 @@ namespace perlin::ui {
     std::vector<std::string> ChatLog::FindUrls(const std::string& text) {
         std::vector<std::string> out;
         const auto isStart = [&](size_t i) {
-            const bool afterCode = i >= 3 && static_cast<unsigned char>(text[i - 3]) == 0xC2 && static_cast<unsigned char>(text[i - 2]) == 0xA7;
-            if (!afterCode && i > 0 && (std::isalnum(static_cast<unsigned char>(text[i - 1])) || text[i - 1] == '/'))
+            const bool afterCode = i >= 3 && static_cast<unsigned char>(text[i - 3]) == 0xC2 &&
+                                   static_cast<unsigned char>(text[i - 2]) == 0xA7;
+            if (!afterCode && i > 0 &&
+                (std::isalnum(static_cast<unsigned char>(text[i - 1])) || text[i - 1] == '/'))
                 return false;
-            return text.compare(i, 8, "https://") == 0 || text.compare(i, 7, "http://") == 0 || text.compare(i, 4, "www.") == 0;
+            return text.compare(i, 8, "https://") == 0 || text.compare(i, 7, "http://") == 0 ||
+                   text.compare(i, 4, "www.") == 0;
         };
         for (size_t i = 0; i < text.size();) {
             if (!isStart(i)) {
@@ -283,11 +296,15 @@ namespace perlin::ui {
                 continue;
             }
             size_t e = i;
-            while (e < text.size() && text[e] != ' ' && text[e] != '\t' && static_cast<unsigned char>(text[e]) != 0xC2 && text[e] != '"' && text[e] != '<' && text[e] != '>')
+            while (e < text.size() && text[e] != ' ' && text[e] != '\t' &&
+                   static_cast<unsigned char>(text[e]) != 0xC2 && text[e] != '"' && text[e] != '<' &&
+                   text[e] != '>')
                 e++;
             while (e > i && std::strchr(".,;:!?)]}'*", text[e - 1]))
                 e--;
-            const size_t head = text.compare(i, 8, "https://") == 0 ? 8 : text.compare(i, 7, "http://") == 0 ? 7 : 4;
+            const size_t head = text.compare(i, 8, "https://") == 0  ? 8
+                                : text.compare(i, 7, "http://") == 0 ? 7
+                                                                     : 4;
             if (e > i + head && out.size() < 8)
                 out.push_back(text.substr(i, e - i));
             i = std::max(e, i + 1);
@@ -298,8 +315,14 @@ namespace perlin::ui {
     std::vector<ChatLog::Coordinate> ChatLog::FindCoordinates(const std::string& line) {
         std::vector<Coordinate> out;
         const size_t n = line.size();
-        const auto isDigit = [&](size_t i) { return i < n && std::isdigit(static_cast<unsigned char>(line[i])); };
-        const auto skipSpace = [&](size_t i) { while (i < n && line[i] == ' ') i++; return i; };
+        const auto isDigit = [&](size_t i) {
+            return i < n && std::isdigit(static_cast<unsigned char>(line[i]));
+        };
+        const auto skipSpace = [&](size_t i) {
+            while (i < n && line[i] == ' ')
+                i++;
+            return i;
+        };
         const auto number = [&](size_t i, std::string& text) -> size_t {
             size_t j = i;
             if (j < n && line[j] == '-')
@@ -312,30 +335,51 @@ namespace perlin::ui {
             return j;
         };
         for (size_t i = 0; i < n;) {
-            if (!(isDigit(i) || (line[i] == '-' && isDigit(i + 1))) || (i > 0 && (isDigit(i - 1) || std::isalpha(static_cast<unsigned char>(line[i - 1]))))) {
+            if (!(isDigit(i) || (line[i] == '-' && isDigit(i + 1))) ||
+                (i > 0 && (isDigit(i - 1) || std::isalpha(static_cast<unsigned char>(line[i - 1]))))) {
                 i++;
                 continue;
             }
             std::string x, y = "~", z;
             size_t j = number(i, x);
             size_t k = skipSpace(j);
-            if (k >= n || line[k] != ',') { i = j; continue; }
+            if (k >= n || line[k] != ',') {
+                i = j;
+                continue;
+            }
             k = skipSpace(k + 1);
             size_t m = std::string::npos;
             std::string mid;
-            if (k < n && line.compare(k, 4, "(y?)") == 0) { m = k + 4; }
-            else if (k < n && line[k] == '~') { m = k + 1; }
-            else { m = number(k, mid); if (m != std::string::npos) y = mid; }
-            if (m == std::string::npos) { i = j; continue; }
+            if (k < n && line.compare(k, 4, "(y?)") == 0) {
+                m = k + 4;
+            } else if (k < n && line[k] == '~') {
+                m = k + 1;
+            } else {
+                m = number(k, mid);
+                if (m != std::string::npos)
+                    y = mid;
+            }
+            if (m == std::string::npos) {
+                i = j;
+                continue;
+            }
             size_t q = skipSpace(m);
-            if (q >= n || line[q] != ',') { i = j; continue; }
+            if (q >= n || line[q] != ',') {
+                i = j;
+                continue;
+            }
             q = skipSpace(q + 1);
             const size_t e = number(q, z);
-            if (e == std::string::npos) { i = j; continue; }
+            if (e == std::string::npos) {
+                i = j;
+                continue;
+            }
             Coordinate c;
             c.begin = i;
             c.end = e;
-            c.x = x; c.y = y; c.z = z;
+            c.x = x;
+            c.y = y;
+            c.z = z;
             c.command = "/tp @s " + x + " " + y + " " + z;
             out.push_back(std::move(c));
             i = e;
@@ -348,7 +392,8 @@ namespace perlin::ui {
             if (candidateLower.starts_with(prefixLower))
                 return true;
             const size_t colon = candidateLower.find(':');
-            return colon != std::string::npos && candidateLower.compare(colon + 1, prefixLower.size(), prefixLower) == 0;
+            return colon != std::string::npos &&
+                   candidateLower.compare(colon + 1, prefixLower.size(), prefixLower) == 0;
         }
     }
 
@@ -376,9 +421,11 @@ namespace perlin::ui {
             {
                 size_t i = 1;
                 while (i < ws) {
-                    while (i < ws && input[i] == ' ') i++;
+                    while (i < ws && input[i] == ' ')
+                        i++;
                     const size_t b = i;
-                    while (i < ws && input[i] != ' ') i++;
+                    while (i < ws && input[i] != ' ')
+                        i++;
                     if (i > b)
                         tokens.push_back(input.substr(b, i - b));
                 }
@@ -438,7 +485,8 @@ namespace perlin::ui {
     ChatLog::Result ChatLog::Type(const std::vector<InputManager::Typed>& typed, float wheel) {
         Result r;
         if (wheel != 0.0f) {
-            const int step = static_cast<int>(std::lround(wheel > 0 ? std::max(1.0f, wheel) : std::min(-1.0f, wheel)));
+            const int step =
+                static_cast<int>(std::lround(wheel > 0 ? std::max(1.0f, wheel) : std::min(-1.0f, wheel)));
             scroll = std::clamp(scroll + step, 0, std::max(0, static_cast<int>(lines.size()) - 20));
         }
         for (const auto& t : typed) {
@@ -489,11 +537,20 @@ namespace perlin::ui {
                 }
                 return r;
             }
-            case Key::Up: Recall(-1); break;
-            case Key::Down: Recall(1); break;
-            case Key::PageUp: scroll = std::clamp(scroll + 19, 0, std::max(0, static_cast<int>(lines.size()) - 20)); break;
-            case Key::PageDown: scroll = std::clamp(scroll - 19, 0, std::max(0, static_cast<int>(lines.size()) - 20)); break;
-            default: break;
+            case Key::Up:
+                Recall(-1);
+                break;
+            case Key::Down:
+                Recall(1);
+                break;
+            case Key::PageUp:
+                scroll = std::clamp(scroll + 19, 0, std::max(0, static_cast<int>(lines.size()) - 20));
+                break;
+            case Key::PageDown:
+                scroll = std::clamp(scroll - 19, 0, std::max(0, static_cast<int>(lines.size()) - 20));
+                break;
+            default:
+                break;
             }
             Recompute();
         }
@@ -523,16 +580,20 @@ namespace perlin::ui {
                 const McFont& font = McFont::Instance();
                 for (const UrlSpan& u : l.urls) {
                     const std::string full = u.url.compare(0, 4, "www.") == 0 ? "https://" + u.url : u.url;
-                    v.clicks.push_back({font.Width(l.text.substr(0, u.begin)), font.Width(l.text.substr(u.begin, u.end - u.begin)), "url:" + full});
+                    v.clicks.push_back({font.Width(l.text.substr(0, u.begin)),
+                                        font.Width(l.text.substr(u.begin, u.end - u.begin)), "url:" + full});
                 }
             }
             if (open) {
                 const McFont& font = McFont::Instance();
                 for (const Coordinate& c : FindCoordinates(l.text)) {
                     size_t b = c.begin, e = c.end;
-                    if (b > 0 && l.text[b - 1] == '[') b--;
-                    if (e < l.text.size() && l.text[e] == ']') e++;
-                    v.clicks.push_back({font.Width(l.text.substr(0, b)), font.Width(l.text.substr(b, e - b)), c.command});
+                    if (b > 0 && l.text[b - 1] == '[')
+                        b--;
+                    if (e < l.text.size() && l.text[e] == ']')
+                        e++;
+                    v.clicks.push_back(
+                        {font.Width(l.text.substr(0, b)), font.Width(l.text.substr(b, e - b)), c.command});
                 }
             }
             s.chatLines.push_back(std::move(v));
@@ -558,14 +619,18 @@ namespace perlin::ui {
                 bool quote = false;
                 while (i < input.size() && (quote || depth > 0 || input[i] != ' ')) {
                     const char ch = input[i];
-                    if (ch == '"') quote = !quote;
-                    else if (!quote && (ch == '[' || ch == '{')) depth++;
-                    else if (!quote && (ch == ']' || ch == '}') && depth > 0) depth--;
+                    if (ch == '"')
+                        quote = !quote;
+                    else if (!quote && (ch == '[' || ch == '{'))
+                        depth++;
+                    else if (!quote && (ch == ']' || ch == '}') && depth > 0)
+                        depth--;
                     i++;
                 }
                 return std::pair<size_t, size_t>(b, i);
             };
-            while (i < input.size() && input[i] == ' ') i++;
+            while (i < input.size() && input[i] == ' ')
+                i++;
             const auto head = word();
             const std::string name = str::Lower(input.substr(head.first, head.second - head.first));
             size_t maxArgs = 0;
@@ -583,7 +648,8 @@ namespace perlin::ui {
             } else {
                 size_t index = 0;
                 while (i < input.size()) {
-                    while (i < input.size() && input[i] == ' ') i++;
+                    while (i < input.size() && input[i] == ' ')
+                        i++;
                     if (i >= input.size())
                         break;
                     const auto arg = word();
@@ -606,7 +672,8 @@ namespace perlin::ui {
                 suggestOffset = suggestIndex;
             else if (suggestIndex >= suggestOffset + window)
                 suggestOffset = suggestIndex - window + 1;
-            suggestOffset = std::min(suggestOffset, suggestions.size() > window ? suggestions.size() - window : 0);
+            suggestOffset =
+                std::min(suggestOffset, suggestions.size() > window ? suggestions.size() - window : 0);
             const size_t first = suggestOffset;
             for (size_t i = first; i < suggestions.size() && i < first + window; i++)
                 s.chatSuggestions.push_back(suggestions[i]);
@@ -614,7 +681,8 @@ namespace perlin::ui {
             s.chatSuggestMore[1] = first + window < suggestions.size();
             const std::string typed = input.substr(suggestWordStart, caret - suggestWordStart);
             const std::string& chosen = suggestions[suggestIndex];
-            if (chosen.size() > typed.size() && str::Lower(chosen.substr(0, typed.size())) == str::Lower(typed) && caret == input.size())
+            if (chosen.size() > typed.size() &&
+                str::Lower(chosen.substr(0, typed.size())) == str::Lower(typed) && caret == input.size())
                 s.chatGhost = chosen.substr(typed.size());
             else
                 s.chatGhost.clear();

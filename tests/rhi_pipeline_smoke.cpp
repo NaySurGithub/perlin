@@ -42,12 +42,15 @@ int main(int argc, char** argv) {
     }
 
     const ShaderTarget target = ShaderLibrary::TargetFor(api);
-    std::vector<BindLayoutEntry> uniformEntries{{0, BindingType::UniformBufferDynamic, ShaderStage::All, 1, TextureDim::Tex2D}};
+    std::vector<BindLayoutEntry> uniformEntries{
+        {0, BindingType::UniformBufferDynamic, ShaderStage::All, 1, TextureDim::Tex2D}};
     std::vector<BindLayoutEntry> textureEntries;
     for (const TextureSlot& s : lib.TextureSlots()) {
-        textureEntries.push_back({s.slot * 2, BindingType::SampledTexture, ShaderStage::Fragment | ShaderStage::Vertex, 1,
+        textureEntries.push_back({s.slot * 2, BindingType::SampledTexture,
+                                  ShaderStage::Fragment | ShaderStage::Vertex, 1,
                                   s.array ? TextureDim::Tex2DArray : TextureDim::Tex2D});
-        textureEntries.push_back({s.slot * 2 + 1, BindingType::Sampler, ShaderStage::Fragment | ShaderStage::Vertex, 1, TextureDim::Tex2D});
+        textureEntries.push_back({s.slot * 2 + 1, BindingType::Sampler,
+                                  ShaderStage::Fragment | ShaderStage::Vertex, 1, TextureDim::Tex2D});
     }
     BindLayoutDesc uld;
     uld.entries = uniformEntries;
@@ -90,7 +93,8 @@ int main(int argc, char** argv) {
         PipelineHandle pipe = dev->CreateGraphicsPipeline(gd);
         const std::string report = dev->DebugReport();
         if (!pipe || !report.empty()) {
-            std::fprintf(stderr, "FAIL %s %s\n%s", p.name.c_str(), pipe ? "validation output" : "no pipeline", report.c_str());
+            std::fprintf(stderr, "FAIL %s %s\n%s", p.name.c_str(), pipe ? "validation output" : "no pipeline",
+                         report.c_str());
             failed++;
         }
         if (pipe)

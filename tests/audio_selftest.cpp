@@ -17,12 +17,12 @@ using namespace perlin::audio;
 namespace fs = std::filesystem;
 
 static int failures = 0;
-#define CHECK(cond)                                                                  \
-    do {                                                                             \
-        if (!(cond)) {                                                               \
-            std::cout << "FAIL " << __FILE__ << ":" << __LINE__ << " " #cond << "\n"; \
-            failures++;                                                              \
-        }                                                                            \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::cout << "FAIL " << __FILE__ << ":" << __LINE__ << " " #cond << "\n";                        \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 static void Put32(std::vector<uint8_t>& b, uint32_t v) {
@@ -37,20 +37,36 @@ static void Put16(std::vector<uint8_t>& b, uint16_t v) {
 static std::vector<uint8_t> MakeWav(const std::vector<int16_t>& samples, int rate, int channels) {
     std::vector<uint8_t> b = {'R', 'I', 'F', 'F'};
     Put32(b, 36 + static_cast<uint32_t>(samples.size() * 2));
-    for (char c : std::string("WAVEfmt ")) b.push_back(static_cast<uint8_t>(c));
-    Put32(b, 16); Put16(b, 1); Put16(b, static_cast<uint16_t>(channels)); Put32(b, rate);
-    Put32(b, rate * channels * 2); Put16(b, static_cast<uint16_t>(channels * 2)); Put16(b, 16);
-    for (char c : std::string("data")) b.push_back(static_cast<uint8_t>(c));
+    for (char c : std::string("WAVEfmt "))
+        b.push_back(static_cast<uint8_t>(c));
+    Put32(b, 16);
+    Put16(b, 1);
+    Put16(b, static_cast<uint16_t>(channels));
+    Put32(b, rate);
+    Put32(b, rate * channels * 2);
+    Put16(b, static_cast<uint16_t>(channels * 2));
+    Put16(b, 16);
+    for (char c : std::string("data"))
+        b.push_back(static_cast<uint8_t>(c));
     Put32(b, static_cast<uint32_t>(samples.size() * 2));
-    for (int16_t s : samples) Put16(b, static_cast<uint16_t>(s));
+    for (int16_t s : samples)
+        Put16(b, static_cast<uint16_t>(s));
     return b;
 }
 
-static std::vector<uint8_t> MakeFsb(uint32_t codec, const std::vector<uint8_t>& data, uint64_t samples, int freqIndex, bool stereo) {
+static std::vector<uint8_t> MakeFsb(uint32_t codec, const std::vector<uint8_t>& data, uint64_t samples,
+                                    int freqIndex, bool stereo) {
     std::vector<uint8_t> b = {'F', 'S', 'B', '5'};
-    Put32(b, 1); Put32(b, 1); Put32(b, 8); Put32(b, 0); Put32(b, static_cast<uint32_t>(data.size())); Put32(b, codec);
-    while (b.size() < 60) b.push_back(0);
-    const uint64_t mode = (static_cast<uint64_t>(freqIndex) << 1) | (stereo ? 1ull << 5 : 0) | (samples << 34);
+    Put32(b, 1);
+    Put32(b, 1);
+    Put32(b, 8);
+    Put32(b, 0);
+    Put32(b, static_cast<uint32_t>(data.size()));
+    Put32(b, codec);
+    while (b.size() < 60)
+        b.push_back(0);
+    const uint64_t mode =
+        (static_cast<uint64_t>(freqIndex) << 1) | (stereo ? 1ull << 5 : 0) | (samples << 34);
     Put32(b, static_cast<uint32_t>(mode));
     Put32(b, static_cast<uint32_t>(mode >> 32));
     b.insert(b.end(), data.begin(), data.end());
@@ -72,15 +88,24 @@ static void TestDecoders() {
     CHECK(pcm.rate == 22050 && pcm.channels == 2 && pcm.Frames() == 2 && pcm.samples[1] == -200);
 
     std::vector<uint8_t> raw;
-    for (int16_t s : {1, 2, 3, 4}) Put16(raw, static_cast<uint16_t>(s));
+    for (int16_t s : {1, 2, 3, 4})
+        Put16(raw, static_cast<uint16_t>(s));
     CHECK(DecodeSound(MakeFsb(2, raw, 4, 9, false), ".fsb", pcm));
     CHECK(pcm.rate == 48000 && pcm.channels == 1 && pcm.Frames() == 4 && pcm.samples[3] == 4);
 
     std::vector<uint8_t> frame(0x8C, 0);
-    for (int i = 0; i < 8 * 4; i++) { frame[12 + i * 4] = 0x11; frame[13 + i * 4] = 0x11; frame[14 + i * 4] = 0x11; frame[15 + i * 4] = 0x11; }
+    for (int i = 0; i < 8 * 4; i++) {
+        frame[12 + i * 4] = 0x11;
+        frame[13 + i * 4] = 0x11;
+        frame[14 + i * 4] = 0x11;
+        frame[15 + i * 4] = 0x11;
+    }
     CHECK(DecodeSound(MakeFsb(16, frame, 256, 8, false), ".fsb", pcm));
     CHECK(pcm.Frames() == 256 && pcm.samples[0] == 1 && pcm.samples[255] == 1);
-    frame[0] = 0x11; frame[1] = 0x11; frame[2] = 0x11; frame[3] = 0x11;
+    frame[0] = 0x11;
+    frame[1] = 0x11;
+    frame[2] = 0x11;
+    frame[3] = 0x11;
     frame[8] = 64;
     CHECK(DecodeSound(MakeFsb(16, frame, 256, 8, false), ".fsb", pcm));
     CHECK(pcm.samples[0] == ((64 + 60 * 64) >> 6));
@@ -95,7 +120,10 @@ static void TestDecoders() {
             std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
             CHECK(DecodeSound(bytes, ".fsb", pcm));
             double e = 0, c = 0;
-            for (size_t i = 0; i + 1 < pcm.samples.size(); i++) { e += double(pcm.samples[i]) * pcm.samples[i]; c += double(pcm.samples[i]) * pcm.samples[i + 1]; }
+            for (size_t i = 0; i + 1 < pcm.samples.size(); i++) {
+                e += double(pcm.samples[i]) * pcm.samples[i];
+                c += double(pcm.samples[i]) * pcm.samples[i + 1];
+            }
             CHECK(pcm.Frames() == 22016 && c / e > 0.95);
         }
     }
@@ -110,8 +138,10 @@ static float RenderPeak(AudioEngine& engine, int frames, float* left = nullptr, 
         r = std::max(r, std::fabs(buf[i * 2 + 1]));
     }
     peak = std::max(l, r);
-    if (left) *left = l;
-    if (right) *right = r;
+    if (left)
+        *left = l;
+    if (right)
+        *right = r;
     return peak;
 }
 
@@ -215,12 +245,15 @@ static void TestSoundSystem() {
     const auto wav = MakeWav(std::vector<int16_t>(2400, 12000), 48000, 1);
     for (const char* f : {"sounds/step/stone1.wav", "sounds/mob/cow/say1.wav", "sounds/mob/cow/say2.wav"}) {
         fs::create_directories((root / f).parent_path());
-        std::ofstream(root / f, std::ios::binary).write(reinterpret_cast<const char*>(wav.data()), static_cast<std::streamsize>(wav.size()));
+        std::ofstream(root / f, std::ios::binary)
+            .write(reinterpret_cast<const char*>(wav.data()), static_cast<std::streamsize>(wav.size()));
     }
     Write(root / "sounds/sound_definitions.json", R"({"format_version":"1.14.0","sound_definitions":{
         "step.stone":{"category":"block","sounds":[{"name":"sounds/step/stone1","volume":0.5}]},
         "mob.cow.say":{"category":"neutral","max_distance":null,"sounds":["sounds/mob/cow/say1",{"name":"sounds/mob/cow/say2","weight":2}]}}})");
-    Write(root / "sounds.json", R"({"block_sounds":{"stone":{"events":{"break":{"sound":"break.stone","volume":1.0},"item.use.on":{"sound":"step.stone"}}}},
+    Write(
+        root / "sounds.json",
+        R"({"block_sounds":{"stone":{"events":{"break":{"sound":"break.stone","volume":1.0},"item.use.on":{"sound":"step.stone"}}}},
         "interactive_sounds":{"block_sounds":{"stone":{"events":{"step":{"sound":"step.stone","volume":0.5,"pitch":[0.9,1.1]}}}}},
         "entity_sounds":{"defaults":{"events":{"hurt":"mob.generic.hurt"}},"entities":{"cow":{"pitch":0.6,"events":{"ambient":"mob.cow.say","step":{"sound":"mob.cow.step"}}}}},
         "individual_named_sounds":{"sounds":{"cow.moo":{"sound":"mob.cow.say","volume":0.4}}}})");
@@ -230,11 +263,15 @@ static void TestSoundSystem() {
     SoundSystem sounds(engine);
     std::string lastSubtitle;
     bool lastGlobal = false;
-    sounds.SetSubtitleHook([&](const std::string& s, const glm::dvec3&, float, bool g) { lastSubtitle = s; lastGlobal = g; });
+    sounds.SetSubtitleHook([&](const std::string& s, const glm::dvec3&, float, bool g) {
+        lastSubtitle = s;
+        lastGlobal = g;
+    });
     sounds.SetBlockNamer([](int32_t id) { return id == 7 ? std::string("minecraft:stone") : std::string(); });
     sounds.Configure(root.string());
     CHECK(sounds.HasSounds() && sounds.DefinitionCount() == 2);
-    CHECK(EventKey("minecraft:item_use_on") == EventKey("ItemUseOn") && EventKey("item.use.on") == "itemuseon");
+    CHECK(EventKey("minecraft:item_use_on") == EventKey("ItemUseOn") &&
+          EventKey("item.use.on") == "itemuseon");
     CHECK(sounds.BlockSoundType("minecraft:stone") == "stone");
     sounds.LoadBlocksText(R"({"custom:stone":{"sound":"wood"}})");
     CHECK(sounds.BlockSoundType("custom:stone") == "wood");
@@ -270,8 +307,8 @@ static void TestSoundSystem() {
             "pack.test":{"category":"block","sounds":["sounds/custom/tone"]}}})");
         fs::create_directories(pack / "sounds/custom");
         const auto tone = MakeWav(std::vector<int16_t>(2400, pack == high ? 8000 : 4000), 48000, 1);
-        std::ofstream(pack / "sounds/custom/tone.wav", std::ios::binary).write(
-            reinterpret_cast<const char*>(tone.data()), static_cast<std::streamsize>(tone.size()));
+        std::ofstream(pack / "sounds/custom/tone.wav", std::ios::binary)
+            .write(reinterpret_cast<const char*>(tone.data()), static_cast<std::streamsize>(tone.size()));
     }
     AudioEngine layeredEngine;
     SoundSystem layered(layeredEngine);
@@ -304,8 +341,10 @@ static void TestSubtitles() {
     auto lines = s.Visible({0, 0, 0}, 0.0f, 1.2);
     CHECK(lines.size() == 2);
     for (const auto& l : lines) {
-        if (l.text == "Cow moos") CHECK(l.direction == -1);
-        if (l.text == "Explosion") CHECK(l.direction == 0);
+        if (l.text == "Cow moos")
+            CHECK(l.direction == -1);
+        if (l.text == "Explosion")
+            CHECK(l.direction == 0);
         CHECK(l.brightness <= 1.0f && l.brightness >= 75.0f / 255.0f);
     }
     s.Add("mob.zombie.say", {100, 0, 0}, 1.0f, false, 1.2);

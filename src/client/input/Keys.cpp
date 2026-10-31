@@ -11,10 +11,24 @@ namespace perlin {
         };
 
         constexpr Named kNamed[] = {
-            {Key::Backspace, "backspace"}, {Key::Tab, "tab"}, {Key::Enter, "enter"},   {Key::Shift, "shift"},
-            {Key::Control, "control"},     {Key::Alt, "alt"}, {Key::Escape, "escape"}, {Key::Space, "space"},
-            {Key::PageUp, "page.up"}, {Key::PageDown, "page.down"}, {Key::End, "end"}, {Key::Home, "home"},
-            {Key::Delete, "delete"}, {Key::Slash, "slash"}, {Key::Left, "left"},           {Key::Up, "up"},   {Key::Right, "right"},   {Key::Down, "down"},
+            {Key::Backspace, "backspace"},
+            {Key::Tab, "tab"},
+            {Key::Enter, "enter"},
+            {Key::Shift, "shift"},
+            {Key::Control, "control"},
+            {Key::Alt, "alt"},
+            {Key::Escape, "escape"},
+            {Key::Space, "space"},
+            {Key::PageUp, "page.up"},
+            {Key::PageDown, "page.down"},
+            {Key::End, "end"},
+            {Key::Home, "home"},
+            {Key::Delete, "delete"},
+            {Key::Slash, "slash"},
+            {Key::Left, "left"},
+            {Key::Up, "up"},
+            {Key::Right, "right"},
+            {Key::Down, "down"},
         };
 
         constexpr Named kMouse[] = {

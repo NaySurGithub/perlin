@@ -22,7 +22,8 @@ namespace perlin::ui {
         return LoadUiTemplate(dataDir, "death_screen.rml", DefaultDeathScreenTemplate(), version);
     }
 
-    std::string BuildDeathScreenRml(const std::string& templateText, const DeathScreenText& t, int guiW, int guiH) {
+    std::string BuildDeathScreenRml(const std::string& templateText, const DeathScreenText& t, int guiW,
+                                    int guiH) {
         std::string d = templateText;
         ReplaceAll(d, "w", std::to_string(guiW));
         ReplaceAll(d, "h", std::to_string(guiH));

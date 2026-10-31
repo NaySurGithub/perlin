@@ -37,7 +37,8 @@ namespace perlin {
         constexpr ProgramName kPrograms[static_cast<size_t>(Program::Count)] = {
             {"terrain_solid", "vv_terrain_solid", gpu::VertexLayout::Terrain, "java_gbuffers_terrain"},
             {"terrain_cutout", "vv_terrain_cutout", gpu::VertexLayout::Terrain, "java_gbuffers_terrain"},
-            {"terrain_translucent", "vv_terrain_translucent", gpu::VertexLayout::Terrain, "java_gbuffers_water"},
+            {"terrain_translucent", "vv_terrain_translucent", gpu::VertexLayout::Terrain,
+             "java_gbuffers_water"},
             {"sky", "vv_sky", gpu::VertexLayout::Terrain, "java_gbuffers_skybasic"},
             {"star", "vv_star", gpu::VertexLayout::Position},
             {"sunrise", "vv_sunrise", gpu::VertexLayout::Color},
@@ -81,7 +82,8 @@ namespace perlin {
                 out.assign(embedded.begin(), embedded.end());
                 return true;
             }
-            for (const std::string& path : {paths::ExeDir() + "/perlin_shaders.pack", std::string("perlin_shaders.pack")}) {
+            for (const std::string& path :
+                 {paths::ExeDir() + "/perlin_shaders.pack", std::string("perlin_shaders.pack")}) {
                 std::ifstream in(path, std::ios::binary);
                 if (!in)
                     continue;
@@ -97,13 +99,16 @@ namespace perlin {
             return false;
         }
 
-        std::string FailureFile() { return paths::DataDir() + "/render_failures.txt"; }
+        std::string FailureFile() {
+            return paths::DataDir() + "/render_failures.txt";
+        }
 
         std::vector<rhi::KnownFailure> ReadFailures() {
             std::ifstream in(FailureFile());
             if (!in)
                 return {};
-            return rhi::ParseFailures(std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
+            return rhi::ParseFailures(
+                std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
         }
 
         void WriteFailures(const std::vector<rhi::KnownFailure>& failures) {
@@ -117,10 +122,13 @@ namespace perlin {
         programLayouts.fill(gpu::VertexLayout::Ui);
     }
 
-    RenderContext_rhi::~RenderContext_rhi() { Shutdown(); }
+    RenderContext_rhi::~RenderContext_rhi() {
+        Shutdown();
+    }
 
     std::string RenderContext_rhi::GpuVendor() const {
-        return initialized ? rhi::VendorName(const_cast<gpu::Gpu&>(gpu).Caps().adapter.vendorId) : std::string();
+        return initialized ? rhi::VendorName(const_cast<gpu::Gpu&>(gpu).Caps().adapter.vendorId)
+                           : std::string();
     }
 
     std::string RenderContext_rhi::GpuDescription() const {
@@ -158,7 +166,8 @@ namespace perlin {
         return true;
     }
 
-    bool RenderContext_rhi::StartDevice(const std::string& forced, std::span<const uint8_t> pack, bool strict) {
+    bool RenderContext_rhi::StartDevice(const std::string& forced, std::span<const uint8_t> pack,
+                                        bool strict) {
         NativeWindowInfo native = platform->GetNativeWindowInfo();
         rhi::UserChoice user;
         user.api = forced == "auto" || forced.empty() ? rhi::Api::None : rhi::ApiFromId(forced);
@@ -181,13 +190,15 @@ namespace perlin {
 
         std::vector<std::pair<rhi::Api, uint32_t>> order;
         if (profile.api != rhi::Api::None)
-            order.push_back({profile.api, profile.adapterIndex});
+            order.emplace_back(profile.api, profile.adapterIndex);
         for (const rhi::Candidate& c : profile.fallbacks)
-            order.push_back({c.adapter.api, c.adapter.index});
+            order.emplace_back(c.adapter.api, c.adapter.index);
         if (strict)
-            order.erase(std::remove_if(order.begin(), order.end(), [&](const auto& o) { return o.first != user.api; }), order.end());
+            order.erase(std::remove_if(order.begin(), order.end(),
+                                       [&](const auto& o) { return o.first != user.api; }),
+                        order.end());
         else if (order.empty())
-            order.push_back({rhi::Api::Vulkan, 0});
+            order.emplace_back(rhi::Api::Vulkan, 0);
 
         for (const auto& [api, adapter] : order) {
             gpu::GpuSettings s;
@@ -199,7 +210,8 @@ namespace perlin {
             s.window = {native.window, native.display, native.wayland};
             s.width = static_cast<uint32_t>(std::max(1, width));
             s.height = static_cast<uint32_t>(std::max(1, height));
-            s.present = vsync ? rhi::PresentMode::Fifo : (profile.tearing ? rhi::PresentMode::Immediate : rhi::PresentMode::Mailbox);
+            s.present = vsync ? rhi::PresentMode::Fifo
+                              : (profile.tearing ? rhi::PresentMode::Immediate : rhi::PresentMode::Mailbox);
             s.framesInFlight = std::max(1u, profile.framesInFlight);
             s.hdr = profile.hdr;
             std::string error;
@@ -218,7 +230,8 @@ namespace perlin {
         return gpu.Chain() || gpu.OffscreenTexture();
     }
 
-    bool RenderContext_rhi::InitializeOffscreen(const gpu::GpuSettings& s, std::span<const uint8_t> pack, std::string* error) {
+    bool RenderContext_rhi::InitializeOffscreen(const gpu::GpuSettings& s, std::span<const uint8_t> pack,
+                                                std::string* error) {
         settings = s;
         settings.offscreen = true;
         packData.assign(pack.begin(), pack.end());
@@ -252,10 +265,12 @@ namespace perlin {
         initialized = false;
     }
 
-    int RenderContext_rhi::ProgramIndex(Program program) const { return programIds[static_cast<size_t>(program)]; }
+    int RenderContext_rhi::ProgramIndex(Program program) const {
+        return programIds[static_cast<size_t>(program)];
+    }
 
-    bool RenderContext_rhi::MakeTexture(TexRec& rec, uint32_t w, uint32_t h, uint32_t layers, uint32_t mips, rhi::Format format,
-                                        gpu::SamplerKind sampler, const char* name) {
+    bool RenderContext_rhi::MakeTexture(TexRec& rec, uint32_t w, uint32_t h, uint32_t layers, uint32_t mips,
+                                        rhi::Format format, gpu::SamplerKind sampler, const char* name) {
         FreeTexture(rec);
         rhi::TextureDesc td;
         td.dim = layers > 1 ? rhi::TextureDim::Tex2DArray : rhi::TextureDim::Tex2D;
@@ -323,10 +338,12 @@ namespace perlin {
             return false;
 
         const auto upload = [&](const auto& vertices, const char* name) {
-            return gpu.CreateStatic(vertices.data(), vertices.size() * sizeof(vertices[0]), rhi::BufferUsage::Vertex, name);
+            return gpu.CreateStatic(vertices.data(), vertices.size() * sizeof(vertices[0]),
+                                    rhi::BufferUsage::Vertex, name);
         };
         const auto uploadIndices = [&](const std::vector<uint16_t>& indices, const char* name) {
-            return gpu.CreateStatic(indices.data(), indices.size() * sizeof(uint16_t), rhi::BufferUsage::Index, name);
+            return gpu.CreateStatic(indices.data(), indices.size() * sizeof(uint16_t),
+                                    rhi::BufferUsage::Index, name);
         };
         const std::vector<PositionVertex> topSkyV = BuildSkyDisc(16.0f);
         // sky discs ride the terrain layout so converted java sky programs
@@ -344,7 +361,8 @@ namespace perlin {
                 v.z = p.z;
                 v.rgba = 0xFFFFFFFFu;
                 v.light = bright;
-                v.normal = PackColor(p.x * inv * 0.5f + 0.5f, p.y * inv * 0.5f + 0.5f, p.z * inv * 0.5f + 0.5f);
+                v.normal =
+                    PackColor(p.x * inv * 0.5f + 0.5f, p.y * inv * 0.5f + 0.5f, p.z * inv * 0.5f + 0.5f);
                 out.push_back(v);
             }
             return out;
@@ -353,14 +371,17 @@ namespace perlin {
         bottomSky = upload(toTerrain(BuildSkyDisc(-16.0f)), "sky bottom");
         {
             std::vector<PositionVertex> box;
+            box.reserve(8);
             for (int i = 0; i < 8; i++)
                 box.push_back({(i & 1) ? 1.0f : -1.0f, (i & 2) ? 1.0f : -1.0f, (i & 4) ? 1.0f : -1.0f});
             skyBox = upload(box, "sky box");
-            skyBoxIdx = uploadIndices({0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3},
+            skyBoxIdx = uploadIndices({0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1,
+                                       2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3},
                                       "sky box indices");
         }
         {
-            const std::vector<PositionVertex> screen = {{-1.0f, -1.0f, 0.0f}, {3.0f, -1.0f, 0.0f}, {-1.0f, 3.0f, 0.0f}};
+            const std::vector<PositionVertex> screen = {
+                {-1.0f, -1.0f, 0.0f}, {3.0f, -1.0f, 0.0f}, {-1.0f, 3.0f, 0.0f}};
             screenTri = upload(screen, "screen triangle");
         }
         const std::vector<uint16_t> skyFan = FanIndices(static_cast<int>(topSkyV.size()));
@@ -380,7 +401,8 @@ namespace perlin {
         moonVerts = upload(BuildMoonQuads(), "moon");
         quadIdx = uploadIndices(QuadIndices(1), "quad");
 
-        if (!MakeTexture(lightmap, kLightmapSize, kLightmapSize, 1, 1, rhi::Format::RGBA8Unorm, gpu::SamplerKind::LinearClamp, "lightmap"))
+        if (!MakeTexture(lightmap, kLightmapSize, kLightmapSize, 1, 1, rhi::Format::RGBA8Unorm,
+                         gpu::SamplerKind::LinearClamp, "lightmap"))
             return false;
         const std::vector<uint8_t> blank(kLightmapBytes, 0);
         gpu.WriteTexture(lightmap.handle, 0, 0, 0, kLightmapSize, kLightmapSize, blank.data());
@@ -392,8 +414,9 @@ namespace perlin {
         DestroyPostTargets();
         post.failed = false;
         DestroyShadows();
-        for (rhi::BufferHandle* b : {&topSky, &bottomSky, &skyBox, &skyBoxIdx, &screenTri, &starVerts, &starIdx, &sunriseVerts, &sunriseIdx,
-                                     &sunVerts, &moonVerts, &quadIdx, &fanIdx}) {
+        for (rhi::BufferHandle* b :
+             {&topSky, &bottomSky, &skyBox, &skyBoxIdx, &screenTri, &starVerts, &starIdx, &sunriseVerts,
+              &sunriseIdx, &sunVerts, &moonVerts, &quadIdx, &fanIdx}) {
             if (*b) {
                 gpu.ForgetBuffer(*b);
                 dev.Destroy(*b);
@@ -404,7 +427,9 @@ namespace perlin {
         cloudIb.Destroy(dev);
         cloudVertexCapacity = cloudIndexCapacity = 0;
         cloudBuilt = false;
-        for (TexRec* t : {&atlas, &lightmap, &sunTex, &moonTex, &cloudMapTex, &tileFlagsTex, &crosshair, &javaNoise, &javaNormalDef, &javaSpecDef, &javaBlack, &javaCloudWater, &javaMaterials})
+        for (TexRec* t :
+             {&atlas, &lightmap, &sunTex, &moonTex, &cloudMapTex, &tileFlagsTex, &crosshair, &javaNoise,
+              &javaNormalDef, &javaSpecDef, &javaBlack, &javaCloudWater, &javaMaterials})
             FreeTexture(*t);
         javaTexReady = false;
         javaMaterialCount = 0;
@@ -438,7 +463,9 @@ namespace perlin {
     void RenderContext_rhi::SetVsync(bool enabled) {
         vsync = enabled;
         if (initialized && !offscreen)
-            gpu.SetPresentMode(enabled ? rhi::PresentMode::Fifo : (gpu.Caps().features.tearing ? rhi::PresentMode::Immediate : rhi::PresentMode::Mailbox));
+            gpu.SetPresentMode(enabled ? rhi::PresentMode::Fifo
+                                       : (gpu.Caps().features.tearing ? rhi::PresentMode::Immediate
+                                                                      : rhi::PresentMode::Mailbox));
     }
 
     bool RenderContext_rhi::QueryNativeHandles(NativeHandleInfo& out) const {
@@ -491,9 +518,12 @@ namespace perlin {
         modelIdentity = false;
     }
 
-    void RenderContext_rhi::SetMatrix(const float columnMajor[16]) { uni.Mat4("u_mvp", columnMajor); }
+    void RenderContext_rhi::SetMatrix(const float columnMajor[16]) {
+        uni.Mat4("u_mvp", columnMajor);
+    }
 
-    void RenderContext_rhi::BindTexture(const char* name, rhi::TextureHandle texture, gpu::SamplerKind sampler) {
+    void RenderContext_rhi::BindTexture(const char* name, rhi::TextureHandle texture,
+                                        gpu::SamplerKind sampler) {
         const rhi::TextureSlot* slot = gpu.Library().FindTexture(name);
         if (!slot || !texture)
             return;
@@ -515,7 +545,8 @@ namespace perlin {
         const glm::mat4 viewProj = vd.proj * vd.view;
         const glm::mat4 modelViewProj = modelIdentity ? viewProj : viewProj * model;
         if (builtinIds[0] < 0) {
-            static constexpr const char* names[kBuiltinCount] = {"u_modelViewProj", "u_viewProj", "u_view", "u_proj", "u_model", "u_viewRect", "u_viewTexel"};
+            static constexpr const char* names[kBuiltinCount] = {
+                "u_modelViewProj", "u_viewProj", "u_view", "u_proj", "u_model", "u_viewRect", "u_viewTexel"};
             for (int i = 0; i < kBuiltinCount; i++)
                 builtinIds[i] = uni.Id(names[i]);
         }
@@ -524,9 +555,11 @@ namespace perlin {
         uni.Mat4(builtinIds[2], glm::value_ptr(vd.view));
         uni.Mat4(builtinIds[3], glm::value_ptr(vd.proj));
         uni.Mat4(builtinIds[4], glm::value_ptr(model));
-        const float rect[4] = {static_cast<float>(vd.x), static_cast<float>(vd.y), static_cast<float>(vd.w), static_cast<float>(vd.h)};
+        const float rect[4] = {static_cast<float>(vd.x), static_cast<float>(vd.y), static_cast<float>(vd.w),
+                               static_cast<float>(vd.h)};
         uni.Set(builtinIds[5], rect, 4);
-        const float texel[4] = {vd.w ? 1.0f / static_cast<float>(vd.w) : 0.0f, vd.h ? 1.0f / static_cast<float>(vd.h) : 0.0f, 0.0f, 0.0f};
+        const float texel[4] = {vd.w ? 1.0f / static_cast<float>(vd.w) : 0.0f,
+                                vd.h ? 1.0f / static_cast<float>(vd.h) : 0.0f, 0.0f, 0.0f};
         uni.Set(builtinIds[6], texel, 4);
 
         dc = {};
@@ -561,8 +594,9 @@ namespace perlin {
         return true;
     }
 
-    void RenderContext_rhi::Push(View view, const DrawCall& templ, const Source& vertices, const Source* indices, rhi::IndexType indexType,
-                                 uint32_t first, uint32_t count, const rhi::Rect* scissor) {
+    void RenderContext_rhi::Push(View view, const DrawCall& templ, const Source& vertices,
+                                 const Source* indices, rhi::IndexType indexType, uint32_t first,
+                                 uint32_t count, const rhi::Rect* scissor) {
         DrawCall dc = templ;
         dc.vertices = vertices.buffer;
         dc.vertexOffset = vertices.offset;
@@ -580,8 +614,9 @@ namespace perlin {
         views[static_cast<size_t>(view)].draws.push_back(dc);
     }
 
-    void RenderContext_rhi::Submit(View view, const DrawState& state, const Source& vertices, const Source* indices, rhi::IndexType indexType,
-                                   uint32_t first, uint32_t count, const rhi::Rect* scissor) {
+    void RenderContext_rhi::Submit(View view, const DrawState& state, const Source& vertices,
+                                   const Source* indices, rhi::IndexType indexType, uint32_t first,
+                                   uint32_t count, const rhi::Rect* scissor) {
         DrawCall dc;
         if (count && vertices.buffer && (!indices || indices->buffer) && Prepare(view, state, dc))
             Push(view, dc, vertices, indices, indexType, first, count, scissor);
@@ -648,11 +683,16 @@ namespace perlin {
 
     rhi::CompareOp RenderContext_rhi::ReverseOp(rhi::CompareOp op) {
         switch (op) {
-        case rhi::CompareOp::Less: return rhi::CompareOp::Greater;
-        case rhi::CompareOp::LessEqual: return rhi::CompareOp::GreaterEqual;
-        case rhi::CompareOp::Greater: return rhi::CompareOp::Less;
-        case rhi::CompareOp::GreaterEqual: return rhi::CompareOp::LessEqual;
-        default: return op;
+        case rhi::CompareOp::Less:
+            return rhi::CompareOp::Greater;
+        case rhi::CompareOp::LessEqual:
+            return rhi::CompareOp::GreaterEqual;
+        case rhi::CompareOp::Greater:
+            return rhi::CompareOp::Less;
+        case rhi::CompareOp::GreaterEqual:
+            return rhi::CompareOp::LessEqual;
+        default:
+            return op;
         }
     }
 
@@ -687,7 +727,8 @@ namespace perlin {
             views[static_cast<size_t>(v)].proj = worldProj;
         }
         views[static_cast<size_t>(View::Hand)].proj = ReverseDepth(glm::make_mat4(params.handProjection));
-        const glm::mat4 ortho = ReverseDepth(glm::orthoRH_ZO(0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, -1000.0f, 1000.0f));
+        const glm::mat4 ortho = ReverseDepth(glm::orthoRH_ZO(
+            0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, -1000.0f, 1000.0f));
         for (View v : {View::Gui, View::Doll, View::Top, View::ExportUi})
             views[static_cast<size_t>(v)].proj = ortho;
     }
@@ -695,23 +736,29 @@ namespace perlin {
     void RenderContext_rhi::SetFrameUniforms(const FrameParams& params) {
         uni.Set("u_camera", params.cameraPosition, 3);
         uni.Set("u_fogColor", params.fogColor, 4);
-        const float env[4] = {params.environmentalFogStart, params.environmentalFogEnd, params.renderDistanceFogStart, params.renderDistanceFogEnd};
+        const float env[4] = {params.environmentalFogStart, params.environmentalFogEnd,
+                              params.renderDistanceFogStart, params.renderDistanceFogEnd};
         uni.Set("u_fogEnv", env, 4);
         const float fogSky[4] = {params.skyFogEnd, params.cloudFogEnd, 0.0f, 0.0f};
         uni.Set("u_fogSky", fogSky, 4);
-        const float texInfo[4] = {1.0f / static_cast<float>(std::max(1, tileSize)), params.rgss ? 1.0f : 0.0f, 0.0f, 0.0f};
+        const float texInfo[4] = {1.0f / static_cast<float>(std::max(1, tileSize)), params.rgss ? 1.0f : 0.0f,
+                                  0.0f, 0.0f};
         uni.Set("u_textureInfo", texInfo, 4);
         const float sunY = std::cos(params.sky.sunAngle);
-        const float sun[4] = {-std::sin(params.sky.sunAngle), sunY, 0.0f, std::clamp((sunY + 0.1f) / 0.35f, 0.0f, 1.0f)};
+        const float sun[4] = {-std::sin(params.sky.sunAngle), sunY, 0.0f,
+                              std::clamp((sunY + 0.1f) / 0.35f, 0.0f, 1.0f)};
         uni.Set("u_sunDir", sun, 4);
-        const float time[4] = {params.timeSeconds, params.sky.rainBrightness, params.sky.starBrightness, 0.0f};
+        const float time[4] = {params.timeSeconds, params.sky.rainBrightness, params.sky.starBrightness,
+                               0.0f};
         uni.Set("u_time", time, 4);
-        const float skyParams[4] = {params.cloud.height, std::floor(static_cast<float>(params.sky.moonPhase)), params.sky.enabled ? 1.0f : 0.0f,
+        const float skyParams[4] = {params.cloud.height, std::floor(static_cast<float>(params.sky.moonPhase)),
+                                    params.sky.enabled ? 1.0f : 0.0f,
                                     static_cast<float>(params.cameraMedium)};
         uni.Set("u_skyParams", skyParams, 4);
         const float held[4] = {params.heldLight, 0.0f, 0.0f, 0.0f};
         uni.Set("u_heldLight", held, 4);
-        const float dyn[4] = {static_cast<float>(params.dynMode), static_cast<float>(params.dynMode ? std::clamp(params.dynCount, 0, 8) : 0),
+        const float dyn[4] = {static_cast<float>(params.dynMode),
+                              static_cast<float>(params.dynMode ? std::clamp(params.dynCount, 0, 8) : 0),
                               params.waterSurfaceAbove, 0.0f};
         uni.Set("u_dynParams", dyn, 4);
         uni.Set("u_dynLights", &params.dynLights[0][0], 32);
@@ -726,11 +773,12 @@ namespace perlin {
     void RenderContext_rhi::BeginFrame(const FrameParams& paramsIn) {
         if (!initialized)
             return;
-        if (jpack && !jpackReady && !jpackError.size()) {
+        if (jpack && !jpackReady && jpackError.empty()) {
             static uint32_t waitFrames = 0;
             const int left = jpack->WarmUp();
             if (left == 0 && !jpack->TerrainUsable()) {
-                jpackError = "the shader pack's terrain program failed to compile (see [jshader] lines above)";
+                jpackError =
+                    "the shader pack's terrain program failed to compile (see [jshader] lines above)";
                 Log("javapack", "{}", jpackError);
             } else if (left == 0) {
                 jpackReady = true;
@@ -796,8 +844,10 @@ namespace perlin {
         frame = params;
         PlanViews(params);
         {
-            const bool usable = std::isfinite(params.projection[0]) && params.projection[0] != 0.0f && std::isfinite(params.view[12]);
-            cam.havePrev = cam.haveCur && usable && !params.teleported && cam.sizeW == width && cam.sizeH == height;
+            const bool usable = std::isfinite(params.projection[0]) && params.projection[0] != 0.0f &&
+                                std::isfinite(params.view[12]);
+            cam.havePrev =
+                cam.haveCur && usable && !params.teleported && cam.sizeW == width && cam.sizeH == height;
             if (usable) {
                 cam.prev2View = cam.prevView;
                 cam.havePrev2 = cam.havePrev;
@@ -819,9 +869,11 @@ namespace perlin {
                         rz[c][2] = cam.proj[c][3] - cam.proj[c][2];
                     cam.proj = rz;
                 }
-                cam.eye = glm::dvec3(params.cameraPosition[0], params.cameraPosition[1], params.cameraPosition[2]);
+                cam.eye =
+                    glm::dvec3(params.cameraPosition[0], params.cameraPosition[1], params.cameraPosition[2]);
                 cam.prevTime = cam.time;
-                cam.time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                cam.time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
+                               .count();
             }
             cam.haveCur = usable;
             cam.teleported = params.teleported;
@@ -829,7 +881,8 @@ namespace perlin {
             cam.sizeH = height;
         }
         PlanPost(params);
-        if (shadowConfigDirty || params.shadowQuality != shadowQualityBuilt || params.shadowDistance != shadowDistanceBuilt) {
+        if (shadowConfigDirty || params.shadowQuality != shadowQualityBuilt ||
+            params.shadowDistance != shadowDistanceBuilt) {
             shadowConfigDirty = false;
             shadowQualityBuilt = params.shadowQuality;
             shadowDistanceBuilt = params.shadowDistance;
@@ -850,8 +903,10 @@ namespace perlin {
         uni.Vec4("u_cloudMap", 0.0f, 3.96f, 1.0f / 3072.0f, 1.0f / 3072.0f);
         if (cloudTexture.width > 0 && cloudTexture.height > 0) {
             const double widthBlocks = cloudTexture.width * 12.0;
-            uni.Vec4("u_cloudMap", static_cast<float>(std::fmod(params.cloud.gameTicks * 0.030000001, widthBlocks)), 3.96f,
-                     static_cast<float>(1.0 / widthBlocks), static_cast<float>(1.0 / (cloudTexture.height * 12.0)));
+            uni.Vec4("u_cloudMap",
+                     static_cast<float>(std::fmod(params.cloud.gameTicks * 0.030000001, widthBlocks)), 3.96f,
+                     static_cast<float>(1.0 / widthBlocks),
+                     static_cast<float>(1.0 / (cloudTexture.height * 12.0)));
         }
         {
             const glm::mat4 inverse = glm::inverse(glm::make_mat4(mvp));
@@ -881,7 +936,8 @@ namespace perlin {
                 int fw = 0, fh = 0;
                 platform->GetFramebufferSize(fw, fh);
                 if (failures == 20 || failures == 600 || failures % 6000 == 0)
-                    Log("render", "{} has had no image to draw to for {} frames (window {}x{})", rendererName, failures, fw, fh);
+                    Log("render", "{} has had no image to draw to for {} frames (window {}x{})", rendererName,
+                        failures, fw, fh);
                 // a surface that stays dead is replaced: new window surface, new swapchain
                 if (fw > 0 && fh > 0 && (failures == 45 || failures == 360 || failures == 3000)) {
                     platform->RenewRenderSurface();
@@ -889,7 +945,8 @@ namespace perlin {
                     gpu.SetWindow({native.window, native.display, native.wayland});
                     nativeWindow = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(native.window));
                     nativeDisplay = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(native.display));
-                    const bool healed = gpu.RecreateSurface(static_cast<uint32_t>(fw), static_cast<uint32_t>(fh));
+                    const bool healed =
+                        gpu.RecreateSurface(static_cast<uint32_t>(fw), static_cast<uint32_t>(fh));
                     Log("render", "rebuilding the window surface: {}", (healed ? "ok" : "failed"));
                 }
             }
@@ -929,7 +986,8 @@ namespace perlin {
             // the pack wrote the whole picture and the depth: the world stage draws on top instead of clearing
             const bool recorded = jpack->Record(*list, frame, po);
             if (std::getenv("JSHADER_TRACE"))
-                std::fprintf(stderr, "[jshader] pack frame recorded: %d (stages %zu, first views %zu)\n", recorded ? 1 : 0, stages.size(),
+                std::fprintf(stderr, "[jshader] pack frame recorded: %d (stages %zu, first views %zu)\n",
+                             recorded ? 1 : 0, stages.size(),
                              stages.empty() ? size_t{0} : stages[0].views.size());
             if (recorded)
                 for (Stage& stage : stages)
@@ -980,15 +1038,17 @@ namespace perlin {
         std::vector<std::string> shots;
         {
             std::lock_guard lock(captureMutex);
-            sinks.assign(std::make_move_iterator(pendingSinks.begin()), std::make_move_iterator(pendingSinks.end()));
+            sinks.assign(std::make_move_iterator(pendingSinks.begin()),
+                         std::make_move_iterator(pendingSinks.end()));
             pendingSinks.clear();
             shots.swap(pendingShots);
         }
         if (sinks.empty() && shots.empty())
             return;
         const uint32_t w = target.w, h = target.h;
-        const uint32_t pitch = static_cast<uint32_t>((static_cast<uint64_t>(w) * 4 + gpu.Caps().limits.copyRowPitchAlignment - 1) /
-                                                     gpu.Caps().limits.copyRowPitchAlignment * gpu.Caps().limits.copyRowPitchAlignment);
+        const uint32_t pitch = static_cast<uint32_t>(
+            (static_cast<uint64_t>(w) * 4 + gpu.Caps().limits.copyRowPitchAlignment - 1) /
+            gpu.Caps().limits.copyRowPitchAlignment * gpu.Caps().limits.copyRowPitchAlignment);
         rhi::BufferDesc bd;
         bd.size = static_cast<uint64_t>(pitch) * h;
         bd.usage = rhi::BufferUsage::CopyDst;
@@ -1008,7 +1068,8 @@ namespace perlin {
         r.w = w;
         r.h = h;
         r.pitch = pitch;
-        r.bgra = target.colorFormat == rhi::Format::BGRA8Unorm || target.colorFormat == rhi::Format::BGRA8Srgb;
+        r.bgra =
+            target.colorFormat == rhi::Format::BGRA8Unorm || target.colorFormat == rhi::Format::BGRA8Srgb;
         r.frame = gpu.FrameNumber();
         r.sinks = std::move(sinks);
         r.paths = std::move(shots);
@@ -1031,7 +1092,8 @@ namespace perlin {
                     swapped.assign(data, data + static_cast<size_t>(r.pitch) * r.h);
                     for (uint32_t y = 0; y < r.h; y++)
                         for (uint32_t x = 0; x < r.w; x++)
-                            std::swap(swapped[static_cast<size_t>(y) * r.pitch + x * 4], swapped[static_cast<size_t>(y) * r.pitch + x * 4 + 2]);
+                            std::swap(swapped[static_cast<size_t>(y) * r.pitch + x * 4],
+                                      swapped[static_cast<size_t>(y) * r.pitch + x * 4 + 2]);
                     bgra = swapped.data();
                 }
                 for (CaptureSink& sink : r.sinks)
@@ -1045,7 +1107,8 @@ namespace perlin {
         }
     }
 
-    void RenderContext_rhi::SaveBmp(const std::string& path, uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra) {
+    void RenderContext_rhi::SaveBmp(const std::string& path, uint32_t w, uint32_t h, uint32_t pitch,
+                                    const uint8_t* bgra) {
         FILE* f = fopen(path.c_str(), "wb");
         if (!f)
             return;
@@ -1110,7 +1173,8 @@ namespace perlin {
         const uint8_t* data = dev.Map(buffer);
         rgba.resize(static_cast<size_t>(w) * h * 4);
         for (uint32_t y = 0; y < h; y++)
-            std::memcpy(rgba.data() + static_cast<size_t>(y) * w * 4, data + static_cast<size_t>(y) * pitch, static_cast<size_t>(w) * 4);
+            std::memcpy(rgba.data() + static_cast<size_t>(y) * w * 4, data + static_cast<size_t>(y) * pitch,
+                        static_cast<size_t>(w) * 4);
         gpu.ForgetBuffer(buffer);
         dev.Destroy(buffer);
         return true;
@@ -1198,7 +1262,8 @@ namespace perlin {
         std::vector<uint8_t> flagsSaved = tileFlagData;
         std::vector<uint8_t> atlasSaved = std::move(atlasSource);
         const int atlasTilesSaved = atlasTiles, tilePxSaved = tileSize;
-        const Texture sunSaved = sunSource, moonSaved = moonSource, cloudSaved = cloudSource, iconSaved = iconSource;
+        const Texture sunSaved = sunSource, moonSaved = moonSource, cloudSaved = cloudSource,
+                      iconSaved = iconSource;
         uint8_t lightmapSaved[kLightmapBytes];
         std::memcpy(lightmapSaved, lastLightmap, kLightmapBytes);
         const bool lightmapWas = lightmapValid;

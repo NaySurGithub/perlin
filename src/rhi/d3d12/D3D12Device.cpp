@@ -64,7 +64,6 @@ namespace rhi::d3d12 {
         }
     }
 
-
     BufferHandle Device::CreateBuffer(const BufferDesc& desc) {
         if (desc.size == 0) {
             ReportError("CreateBuffer: zero size");
@@ -102,10 +101,13 @@ namespace rhi::d3d12 {
             ad.HeapType = D3D12_HEAP_TYPE_READBACK;
             initial = D3D12_RESOURCE_STATE_COPY_DEST;
             break;
-        default: ad.HeapType = D3D12_HEAP_TYPE_DEFAULT; break;
+        default:
+            ad.HeapType = D3D12_HEAP_TYPE_DEFAULT;
+            break;
         }
         rec.state = initial;
-        if (FAILED(allocator->CreateResource(&ad, &rd, initial, nullptr, rec.alloc.put(), winrt::guid_of<ID3D12Resource>(), rec.resource.put_void()))) {
+        if (FAILED(allocator->CreateResource(&ad, &rd, initial, nullptr, rec.alloc.put(),
+                                             winrt::guid_of<ID3D12Resource>(), rec.resource.put_void()))) {
             ReportError("CreateBuffer '" + rec.name + "' failed");
             return {};
         }
@@ -148,7 +150,8 @@ namespace rhi::d3d12 {
         rec.layers = LayerCountOf(desc);
 
         D3D12_RESOURCE_DESC rd{};
-        rd.Dimension = desc.dim == TextureDim::Tex3D ? D3D12_RESOURCE_DIMENSION_TEXTURE3D : D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        rd.Dimension = desc.dim == TextureDim::Tex3D ? D3D12_RESOURCE_DIMENSION_TEXTURE3D
+                                                     : D3D12_RESOURCE_DIMENSION_TEXTURE2D;
         rd.Width = desc.width;
         rd.Height = desc.height;
         rd.DepthOrArraySize = static_cast<UINT16>(desc.dim == TextureDim::Tex3D ? DepthOf(desc) : rec.layers);
@@ -187,19 +190,22 @@ namespace rhi::d3d12 {
         // render targets get their own heap: drivers place them for compression and the allocator never fragments them
         if (pClear)
             ad.Flags = D3D12MA::ALLOCATION_FLAG_COMMITTED;
-        if (FAILED(allocator->CreateResource(&ad, &rd, D3D12_RESOURCE_STATE_COMMON, pClear, rec.alloc.put(), winrt::guid_of<ID3D12Resource>(),
-                                             rec.resource.put_void()))) {
+        if (FAILED(allocator->CreateResource(&ad, &rd, D3D12_RESOURCE_STATE_COMMON, pClear, rec.alloc.put(),
+                                             winrt::guid_of<ID3D12Resource>(), rec.resource.put_void()))) {
             ReportError("CreateTexture '" + rec.name + "' failed");
             return {};
         }
         if (!rec.name.empty())
             rec.resource->SetName(Widen(rec.name.c_str()).c_str());
-        rec.states.assign(static_cast<size_t>(rec.mips) * (desc.dim == TextureDim::Tex3D ? 1 : rec.layers) * rec.planes, D3D12_RESOURCE_STATE_COMMON);
+        rec.states.assign(static_cast<size_t>(rec.mips) * (desc.dim == TextureDim::Tex3D ? 1 : rec.layers) *
+                              rec.planes,
+                          D3D12_RESOURCE_STATE_COMMON);
 
         uint64_t bytes = 0;
         for (uint32_t m = 0; m < rec.mips; m++)
-            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) * RowBlocks(desc.format, MipExtent(desc.height, m)) *
-                     DepthOf(desc) * rec.layers * (std::max)(1u, desc.samples);
+            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) *
+                     RowBlocks(desc.format, MipExtent(desc.height, m)) * DepthOf(desc) * rec.layers *
+                     (std::max)(1u, desc.samples);
         textureBytes += static_cast<int64_t>(bytes);
         liveTextures++;
 
@@ -240,7 +246,8 @@ namespace rhi::d3d12 {
             rtvPool.Free(v);
     }
 
-    D3D12_CPU_DESCRIPTOR_HANDLE Device::RenderView(TextureRec& tex, uint32_t mip, uint32_t layer, bool depth, bool readOnly) {
+    D3D12_CPU_DESCRIPTOR_HANDLE Device::RenderView(TextureRec& tex, uint32_t mip, uint32_t layer, bool depth,
+                                                   bool readOnly) {
         const uint64_t key = mip | (static_cast<uint64_t>(layer) << 8) | (readOnly ? 1ull << 41 : 0);
         std::lock_guard lock(viewMutex);
         auto& map = depth ? tex.views.dsv : tex.views.rtv;
@@ -253,7 +260,8 @@ namespace rhi::d3d12 {
             D3D12_DEPTH_STENCIL_VIEW_DESC dv{};
             dv.Format = tex.dsvFormat;
             if (readOnly)
-                dv.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH | (tex.planes > 1 ? D3D12_DSV_FLAG_READ_ONLY_STENCIL : D3D12_DSV_FLAG_NONE);
+                dv.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH |
+                           (tex.planes > 1 ? D3D12_DSV_FLAG_READ_ONLY_STENCIL : D3D12_DSV_FLAG_NONE);
             dv.ViewDimension = ms ? D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY : D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
             if (ms) {
                 dv.Texture2DMSArray.FirstArraySlice = layer;
@@ -415,7 +423,8 @@ namespace rhi::d3d12 {
                 if (layout->entries[i].binding == e.binding)
                     index = i;
             if (index == SIZE_MAX) {
-                ReportError("CreateBindGroup: binding " + std::to_string(e.binding) + " is not in the layout");
+                ReportError("CreateBindGroup: binding " + std::to_string(e.binding) +
+                            " is not in the layout");
                 continue;
             }
             const BindLayoutEntry& le = layout->entries[index];
@@ -441,17 +450,22 @@ namespace rhi::d3d12 {
                 }
                 const uint64_t size = e.buffer.size ? e.buffer.size : b->desc.size - e.buffer.offset;
                 if (le.type == BindingType::UniformBufferDynamic) {
-                    const auto it = std::find(layout->dynamicBindings.begin(), layout->dynamicBindings.end(), le.binding);
-                    rec.dynamicBase[static_cast<size_t>(it - layout->dynamicBindings.begin())] = b->address + e.buffer.offset;
+                    const auto it =
+                        std::find(layout->dynamicBindings.begin(), layout->dynamicBindings.end(), le.binding);
+                    rec.dynamicBase[static_cast<size_t>(it - layout->dynamicBindings.begin())] =
+                        b->address + e.buffer.offset;
                 } else if (le.type == BindingType::UniformBuffer) {
-                    D3D12_CONSTANT_BUFFER_VIEW_DESC cv{b->address + e.buffer.offset, static_cast<UINT>(AlignUp(size, 256))};
+                    D3D12_CONSTANT_BUFFER_VIEW_DESC cv{b->address + e.buffer.offset,
+                                                       static_cast<UINT>(AlignUp(size, 256))};
                     device->CreateConstantBufferView(&cv, resourceHeap.Cpu(rec.tableOffset + slotIndex));
                 } else if (le.type == BindingType::StorageBuffer) {
                     const auto sv = BufferSrv(e.buffer.offset, size, b->desc.stride);
-                    device->CreateShaderResourceView(b->resource.get(), &sv, resourceHeap.Cpu(rec.tableOffset + slotIndex));
+                    device->CreateShaderResourceView(b->resource.get(), &sv,
+                                                     resourceHeap.Cpu(rec.tableOffset + slotIndex));
                 } else {
                     const auto uv = BufferUav(e.buffer.offset, size, b->desc.stride);
-                    device->CreateUnorderedAccessView(b->resource.get(), nullptr, &uv, resourceHeap.Cpu(rec.tableOffset + slotIndex));
+                    device->CreateUnorderedAccessView(b->resource.get(), nullptr, &uv,
+                                                      resourceHeap.Cpu(rec.tableOffset + slotIndex));
                 }
                 break;
             }
@@ -466,11 +480,13 @@ namespace rhi::d3d12 {
                     StateValidator::BoundResource br;
                     br.texture = e.texture.texture;
                     br.range = e.texture.range;
-                    br.want = le.type == BindingType::StorageTextureRW ? State::ShaderWrite : State::DepthReadSampled;
+                    br.want = le.type == BindingType::StorageTextureRW ? State::ShaderWrite
+                                                                       : State::DepthReadSampled;
                     rec.bound.push_back(br);
                 }
                 const SubresourceRange r = ResolveRange(e.texture.range, t->desc);
-                const TextureDim dim = e.texture.viewDim != TextureDim::Tex2D ? e.texture.viewDim : le.viewDim;
+                const TextureDim dim =
+                    e.texture.viewDim != TextureDim::Tex2D ? e.texture.viewDim : le.viewDim;
                 const FormatMap override = MapFormat(e.texture.format);
                 const DXGI_FORMAT fmt = e.texture.stencil ? MapFormat(t->desc.format).stencilView
                                         : e.texture.format != Format::Unknown ? override.view
@@ -490,11 +506,14 @@ namespace rhi::d3d12 {
                         }
                         break;
                     case TextureDim::Tex2DArray:
-                        sv.ViewDimension = ms ? D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY : D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+                        sv.ViewDimension =
+                            ms ? D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY : D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
                         if (ms)
                             sv.Texture2DMSArray = {r.baseLayer, r.layerCount};
                         else
-                            sv.Texture2DArray = {r.baseMip, r.mipCount, r.baseLayer, r.layerCount, e.texture.stencil ? 1u : 0u, 0.0f};
+                            sv.Texture2DArray = {
+                                r.baseMip, r.mipCount, r.baseLayer, r.layerCount, e.texture.stencil ? 1u : 0u,
+                                0.0f};
                         break;
                     case TextureDim::Cube:
                         sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
@@ -505,7 +524,8 @@ namespace rhi::d3d12 {
                         sv.Texture3D = {r.baseMip, r.mipCount, 0.0f};
                         break;
                     }
-                    device->CreateShaderResourceView(t->resource.get(), &sv, resourceHeap.Cpu(rec.tableOffset + slotIndex));
+                    device->CreateShaderResourceView(t->resource.get(), &sv,
+                                                     resourceHeap.Cpu(rec.tableOffset + slotIndex));
                 } else {
                     D3D12_UNORDERED_ACCESS_VIEW_DESC uv{};
                     uv.Format = fmt;
@@ -516,14 +536,18 @@ namespace rhi::d3d12 {
                         break;
                     case TextureDim::Tex3D:
                         uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
-                        uv.Texture3D = {r.baseMip, 0, DepthOf(t->desc) >> r.baseMip ? (std::max)(1u, DepthOf(t->desc) >> r.baseMip) : 1u};
+                        uv.Texture3D = {r.baseMip, 0,
+                                        DepthOf(t->desc) >> r.baseMip
+                                            ? (std::max)(1u, DepthOf(t->desc) >> r.baseMip)
+                                            : 1u};
                         break;
                     default:
                         uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
                         uv.Texture2DArray = {r.baseMip, r.baseLayer, r.layerCount, 0};
                         break;
                     }
-                    device->CreateUnorderedAccessView(t->resource.get(), nullptr, &uv, resourceHeap.Cpu(rec.tableOffset + slotIndex));
+                    device->CreateUnorderedAccessView(t->resource.get(), nullptr, &uv,
+                                                      resourceHeap.Cpu(rec.tableOffset + slotIndex));
                 }
                 break;
             }
@@ -583,13 +607,22 @@ namespace rhi::d3d12 {
                 r.RegisterSpace = s;
                 r.OffsetInDescriptorsFromTableStart = l->tableOffset[i];
                 switch (e.type) {
-                case BindingType::UniformBuffer: r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV; break;
+                case BindingType::UniformBuffer:
+                    r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+                    break;
                 case BindingType::StorageBuffer:
-                case BindingType::SampledTexture: r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; break;
+                case BindingType::SampledTexture:
+                    r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+                    break;
                 case BindingType::StorageBufferRW:
-                case BindingType::StorageTextureRW: r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV; break;
-                case BindingType::Sampler: r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER; break;
-                case BindingType::UniformBufferDynamic: continue;
+                case BindingType::StorageTextureRW:
+                    r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+                    break;
+                case BindingType::Sampler:
+                    r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+                    break;
+                case BindingType::UniformBufferDynamic:
+                    continue;
                 }
                 (e.type == BindingType::Sampler ? samplerRanges[s] : tableRanges[s]).push_back(r);
             }
@@ -646,7 +679,8 @@ namespace rhi::d3d12 {
                         (error ? static_cast<const char*>(error->GetBufferPointer()) : "unknown"));
             return {};
         }
-        if (FAILED(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), winrt::guid_of<ID3D12RootSignature>(),
+        if (FAILED(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
+                                               winrt::guid_of<ID3D12RootSignature>(),
                                                rec.rootSignature.put_void()))) {
             ReportError("CreateRootSignature failed (more than 64 root dwords?)");
             return {};
@@ -691,7 +725,9 @@ namespace rhi::d3d12 {
 
         D3D12_RASTERIZER_DESC& rs = pd.RasterizerState;
         rs.FillMode = desc.raster.wireframe ? D3D12_FILL_MODE_WIREFRAME : D3D12_FILL_MODE_SOLID;
-        rs.CullMode = desc.raster.cull == CullMode::None ? D3D12_CULL_MODE_NONE : desc.raster.cull == CullMode::Back ? D3D12_CULL_MODE_BACK : D3D12_CULL_MODE_FRONT;
+        rs.CullMode = desc.raster.cull == CullMode::None   ? D3D12_CULL_MODE_NONE
+                      : desc.raster.cull == CullMode::Back ? D3D12_CULL_MODE_BACK
+                                                           : D3D12_CULL_MODE_FRONT;
         rs.FrontCounterClockwise = desc.raster.frontFace == FrontFace::CounterClockwise;
         rs.DepthBias = static_cast<INT>(desc.raster.depthBiasConstant);
         rs.DepthBiasClamp = desc.raster.depthBiasClamp;
@@ -701,13 +737,15 @@ namespace rhi::d3d12 {
 
         D3D12_DEPTH_STENCIL_DESC& ds = pd.DepthStencilState;
         ds.DepthEnable = desc.depthStencil.depthTest;
-        ds.DepthWriteMask = desc.depthStencil.depthWrite ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+        ds.DepthWriteMask =
+            desc.depthStencil.depthWrite ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
         ds.DepthFunc = ToD3D(desc.depthStencil.depthCompare);
         ds.StencilEnable = desc.depthStencil.stencilTest;
         ds.StencilReadMask = desc.depthStencil.stencilReadMask;
         ds.StencilWriteMask = desc.depthStencil.stencilWriteMask;
         auto face = [](const StencilFace& f) {
-            return D3D12_DEPTH_STENCILOP_DESC{ToD3D(f.fail), ToD3D(f.depthFail), ToD3D(f.pass), ToD3D(f.compare)};
+            return D3D12_DEPTH_STENCILOP_DESC{ToD3D(f.fail), ToD3D(f.depthFail), ToD3D(f.pass),
+                                              ToD3D(f.compare)};
         };
         ds.FrontFace = face(desc.depthStencil.front);
         ds.BackFace = face(desc.depthStencil.back);
@@ -715,9 +753,15 @@ namespace rhi::d3d12 {
         D3D12_INPUT_ELEMENT_DESC elements[kMaxVertexAttributes];
         for (uint32_t i = 0; i < desc.attributeCount; i++) {
             const VertexAttributeDesc& a = desc.attributes[i];
-            const bool instance = a.stream < desc.streamCount && desc.streams[a.stream].step == VertexStep::Instance;
-            elements[i] = {"TEXCOORD", a.location, MapFormat(a.format).view, a.stream, a.offset,
-                           instance ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA : D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            const bool instance =
+                a.stream < desc.streamCount && desc.streams[a.stream].step == VertexStep::Instance;
+            elements[i] = {"TEXCOORD",
+                           a.location,
+                           MapFormat(a.format).view,
+                           a.stream,
+                           a.offset,
+                           instance ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
+                                    : D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
                            instance ? 1u : 0u};
         }
         pd.InputLayout = {elements, desc.attributeCount};
@@ -737,13 +781,15 @@ namespace rhi::d3d12 {
         key = Fnv(&pd.RasterizerState, sizeof(pd.RasterizerState), key);
         key = Fnv(&pd.DepthStencilState, sizeof(pd.DepthStencilState), key);
         for (uint32_t i = 0; i < desc.attributeCount; i++) {
-            const uint32_t v[] = {elements[i].SemanticIndex, static_cast<uint32_t>(elements[i].Format), elements[i].InputSlot,
-                                  elements[i].AlignedByteOffset, static_cast<uint32_t>(elements[i].InputSlotClass)};
+            const uint32_t v[] = {elements[i].SemanticIndex, static_cast<uint32_t>(elements[i].Format),
+                                  elements[i].InputSlot, elements[i].AlignedByteOffset,
+                                  static_cast<uint32_t>(elements[i].InputSlotClass)};
             key = Fnv(v, sizeof(v), key);
         }
         key = Fnv(pd.RTVFormats, sizeof(pd.RTVFormats), key);
-        const uint32_t tail[] = {static_cast<uint32_t>(pd.DSVFormat), static_cast<uint32_t>(pd.PrimitiveTopologyType), pd.SampleDesc.Count,
-                                pd.NumRenderTargets};
+        const uint32_t tail[] = {static_cast<uint32_t>(pd.DSVFormat),
+                                 static_cast<uint32_t>(pd.PrimitiveTopologyType), pd.SampleDesc.Count,
+                                 pd.NumRenderTargets};
         key = Fnv(tail, sizeof(tail), key);
         key = Fnv(&layout->hash, sizeof(layout->hash), key);
         const std::wstring name = HashName("g", key);
@@ -752,10 +798,12 @@ namespace rhi::d3d12 {
         HRESULT hr = E_FAIL;
         if (pipelineLibrary) {
             std::lock_guard lock(libraryMutex);
-            hr = pipelineLibrary->LoadGraphicsPipeline(name.c_str(), &pd, winrt::guid_of<ID3D12PipelineState>(), rec.pso.put_void());
+            hr = pipelineLibrary->LoadGraphicsPipeline(
+                name.c_str(), &pd, winrt::guid_of<ID3D12PipelineState>(), rec.pso.put_void());
         }
         if (FAILED(hr)) {
-            hr = device->CreateGraphicsPipelineState(&pd, winrt::guid_of<ID3D12PipelineState>(), rec.pso.put_void());
+            hr = device->CreateGraphicsPipelineState(&pd, winrt::guid_of<ID3D12PipelineState>(),
+                                                     rec.pso.put_void());
             if (SUCCEEDED(hr) && pipelineLibrary) {
                 std::lock_guard lock(libraryMutex);
                 pipelineLibrary->StorePipeline(name.c_str(), rec.pso.get());
@@ -765,8 +813,10 @@ namespace rhi::d3d12 {
             {
                 char code[32];
                 std::snprintf(code, sizeof(code), "0x%08X", static_cast<unsigned>(hr));
-                ReportError("CreateGraphicsPipelineState failed (" + std::string(code) + ") for '" + std::string(desc.name ? desc.name : "") + "' rt=" +
-                            std::to_string(desc.colorCount) + " attrs=" + std::to_string(desc.attributeCount));
+                ReportError("CreateGraphicsPipelineState failed (" + std::string(code) + ") for '" +
+                            std::string(desc.name ? desc.name : "") +
+                            "' rt=" + std::to_string(desc.colorCount) +
+                            " attrs=" + std::to_string(desc.attributeCount));
             }
             return {};
         }
@@ -804,10 +854,12 @@ namespace rhi::d3d12 {
         HRESULT hr = E_FAIL;
         if (pipelineLibrary) {
             std::lock_guard lock(libraryMutex);
-            hr = pipelineLibrary->LoadComputePipeline(name.c_str(), &pd, winrt::guid_of<ID3D12PipelineState>(), rec.pso.put_void());
+            hr = pipelineLibrary->LoadComputePipeline(
+                name.c_str(), &pd, winrt::guid_of<ID3D12PipelineState>(), rec.pso.put_void());
         }
         if (FAILED(hr)) {
-            hr = device->CreateComputePipelineState(&pd, winrt::guid_of<ID3D12PipelineState>(), rec.pso.put_void());
+            hr = device->CreateComputePipelineState(&pd, winrt::guid_of<ID3D12PipelineState>(),
+                                                    rec.pso.put_void());
             if (SUCCEEDED(hr) && pipelineLibrary) {
                 std::lock_guard lock(libraryMutex);
                 pipelineLibrary->StorePipeline(name.c_str(), rec.pso.get());
@@ -845,19 +897,20 @@ namespace rhi::d3d12 {
         if (it != signatures.end())
             return it->second.get();
         D3D12_INDIRECT_ARGUMENT_DESC arg{};
-        arg.Type = dispatch ? D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH : D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
+        arg.Type =
+            dispatch ? D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH : D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
         D3D12_COMMAND_SIGNATURE_DESC sd{};
         sd.ByteStride = dispatch ? sizeof(D3D12_DISPATCH_ARGUMENTS) : stride;
         sd.NumArgumentDescs = 1;
         sd.pArgumentDescs = &arg;
         winrt::com_ptr<ID3D12CommandSignature> sig;
-        if (FAILED(device->CreateCommandSignature(&sd, nullptr, winrt::guid_of<ID3D12CommandSignature>(), sig.put_void())))
+        if (FAILED(device->CreateCommandSignature(&sd, nullptr, winrt::guid_of<ID3D12CommandSignature>(),
+                                                  sig.put_void())))
             return nullptr;
         auto* raw = sig.get();
         signatures.emplace(key, std::move(sig));
         return raw;
     }
-
 
     void Device::Retire(std::function<void()> release) {
         QueueSerials snapshot;
@@ -895,8 +948,12 @@ namespace rhi::d3d12 {
 
     // samplers are cached and shared by description: they live until the device does
     void Device::Destroy(SamplerHandle) {}
-    void Device::Destroy(ShaderHandle h) { shaders.Free(h); }
-    void Device::Destroy(BindLayoutHandle h) { bindLayouts.Free(h); }
+    void Device::Destroy(ShaderHandle h) {
+        shaders.Free(h);
+    }
+    void Device::Destroy(BindLayoutHandle h) {
+        bindLayouts.Free(h);
+    }
 
     void Device::Destroy(BindGroupHandle h) {
         BindGroupRec* g = bindGroups.Get(h);
@@ -960,11 +1017,12 @@ namespace rhi::d3d12 {
         return r ? r->address : 0;
     }
 
-
     FenceHandle Device::CreateFence(uint64_t initial) {
         FenceRec rec;
-        if (FAILED(device->CreateFence(initial, D3D12_FENCE_FLAG_SHARED, winrt::guid_of<ID3D12Fence>(), rec.fence.put_void())) &&
-            FAILED(device->CreateFence(initial, D3D12_FENCE_FLAG_NONE, winrt::guid_of<ID3D12Fence>(), rec.fence.put_void())))
+        if (FAILED(device->CreateFence(initial, D3D12_FENCE_FLAG_SHARED, winrt::guid_of<ID3D12Fence>(),
+                                       rec.fence.put_void())) &&
+            FAILED(device->CreateFence(initial, D3D12_FENCE_FLAG_NONE, winrt::guid_of<ID3D12Fence>(),
+                                       rec.fence.put_void())))
             return {};
         return fences.Alloc(std::move(rec));
     }
@@ -983,7 +1041,10 @@ namespace rhi::d3d12 {
         std::lock_guard lock(waitMutex);
         if (FAILED(f->fence->SetEventOnCompletion(value, waitEvent.get())))
             return false;
-        const DWORD ms = timeoutNs == ~0ull ? INFINITE : static_cast<DWORD>(std::min<uint64_t>(timeoutNs / 1'000'000ull, 0xFFFFFFFEull));
+        const DWORD ms =
+            timeoutNs == ~0ull
+                ? INFINITE
+                : static_cast<DWORD>(std::min<uint64_t>(timeoutNs / 1'000'000ull, 0xFFFFFFFEull));
         return WaitForSingleObject(waitEvent.get(), ms) == WAIT_OBJECT_0;
     }
 
@@ -1017,16 +1078,21 @@ namespace rhi::d3d12 {
 
     CommandList* Device::AcquireCommandList(QueueType requested) {
         // without a separate compute queue the work runs on the direct queue
-        const QueueType queue = (requested == QueueType::Compute && !queues[1].queue) ? QueueType::Graphics : requested;
+        const QueueType queue =
+            (requested == QueueType::Compute && !queues[1].queue) ? QueueType::Graphics : requested;
         ThreadPools& tp = PoolsForThisThread();
         auto& per = tp.slots[slot][static_cast<size_t>(queue)];
         if (per.used == per.lists.size()) {
-            const D3D12_COMMAND_LIST_TYPE types[kQueueCount] = {D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_TYPE_COMPUTE,
+            const D3D12_COMMAND_LIST_TYPE types[kQueueCount] = {D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                                                D3D12_COMMAND_LIST_TYPE_COMPUTE,
                                                                 D3D12_COMMAND_LIST_TYPE_COPY};
             winrt::com_ptr<ID3D12CommandAllocator> alloc;
             winrt::com_ptr<ID3D12GraphicsCommandList> list;
-            if (FAILED(device->CreateCommandAllocator(types[static_cast<size_t>(queue)], winrt::guid_of<ID3D12CommandAllocator>(), alloc.put_void())) ||
-                FAILED(device->CreateCommandList(0, types[static_cast<size_t>(queue)], alloc.get(), nullptr, winrt::guid_of<ID3D12GraphicsCommandList>(),
+            if (FAILED(device->CreateCommandAllocator(types[static_cast<size_t>(queue)],
+                                                      winrt::guid_of<ID3D12CommandAllocator>(),
+                                                      alloc.put_void())) ||
+                FAILED(device->CreateCommandList(0, types[static_cast<size_t>(queue)], alloc.get(), nullptr,
+                                                 winrt::guid_of<ID3D12GraphicsCommandList>(),
                                                  list.put_void()))) {
                 ReportError("command list creation failed");
                 return nullptr;
@@ -1041,7 +1107,8 @@ namespace rhi::d3d12 {
     }
 
     void Device::Submit(QueueType requested, const SubmitDesc& desc) {
-        const QueueType queueType = (requested == QueueType::Compute && !queues[1].queue) ? QueueType::Graphics : requested;
+        const QueueType queueType =
+            (requested == QueueType::Compute && !queues[1].queue) ? QueueType::Graphics : requested;
         QueueInfo& q = queues[static_cast<size_t>(queueType)];
         std::vector<ID3D12CommandList*> native;
         native.reserve(desc.lists.size());
@@ -1069,7 +1136,9 @@ namespace rhi::d3d12 {
 
     void Device::SignalSerial(QueueType) {}
 
-    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) { return MakeSwapchain(*this, desc); }
+    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) {
+        return MakeSwapchain(*this, desc);
+    }
 
     void Device::ResetSlot(uint32_t s) {
         {

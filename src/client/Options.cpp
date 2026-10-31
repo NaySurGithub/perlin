@@ -218,7 +218,8 @@ namespace perlin {
         o.cape = stored.cape;
         o.slimArms = stored.slimArms;
         o.onlineLogin = stored.onlineLogin;
-        o.transport = stored.transport == "raknet" || stored.transport == "nethernet" ? stored.transport : "auto";
+        o.transport =
+            stored.transport == "raknet" || stored.transport == "nethernet" ? stored.transport : "auto";
         o.resourcePackDir = stored.resourcePackDir;
         o.bedrockSamplesDir = stored.bedrockSamplesDir;
         o.fancyGraphics = stored.graphics != "fast";
@@ -227,7 +228,9 @@ namespace perlin {
         o.fovEffects = stored.fovEffects;
         o.motionBlur = std::clamp(stored.motionBlur, 0.0f, 1.0f);
         o.thirdPersonCrosshair = stored.thirdPersonCrosshair;
-        o.glass = (stored.glass == "connected" || stored.glass == "connectedClear" || stored.glass == "clear") ? stored.glass : std::string("normal");
+        o.glass = (stored.glass == "connected" || stored.glass == "connectedClear" || stored.glass == "clear")
+                      ? stored.glass
+                      : std::string("normal");
         o.thirdPersonNametag = stored.thirdPersonNametag;
         o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
         o.damageTint = stored.damageTint;
@@ -268,14 +271,21 @@ namespace perlin {
         o.guiScale = std::clamp(stored.guiScale, 0, 16);
         o.sound = stored.sound;
         o.menuBlur = std::clamp(stored.menuBlur, 0, 10);
-        o.renderer = stored.renderer == "d3d12" || stored.renderer == "d3d11" || stored.renderer == "vulkan" || stored.renderer == "metal" || stored.renderer == "webgpu" ? stored.renderer : std::string("auto");
-        o.capePhysics = stored.capePhysics == "off" || stored.capePhysics == "shoulder" ? stored.capePhysics : std::string("off");
+        o.renderer = stored.renderer == "d3d12" || stored.renderer == "d3d11" ||
+                             stored.renderer == "vulkan" || stored.renderer == "metal" ||
+                             stored.renderer == "webgpu"
+                         ? stored.renderer
+                         : std::string("auto");
+        o.capePhysics = stored.capePhysics == "off" || stored.capePhysics == "shoulder" ? stored.capePhysics
+                                                                                        : std::string("off");
         o.sprintMode = stored.sprintMode == "toggle" ? "toggle" : "hold";
         o.sneakMode = stored.sneakMode == "toggle" ? "toggle" : "hold";
-        o.dynamicLights = stored.dynamicLights == "fast" || stored.dynamicLights == "fancy" ? stored.dynamicLights : "off";
+        o.dynamicLights =
+            stored.dynamicLights == "fast" || stored.dynamicLights == "fancy" ? stored.dynamicLights : "off";
         o.language = stored.language.empty() ? std::string("en_US") : stored.language;
-        for (float* v : {&o.sound.master, &o.sound.music, &o.sound.record, &o.sound.weather, &o.sound.block, &o.sound.hostile,
-                         &o.sound.neutral, &o.sound.player, &o.sound.ambient, &o.sound.voice})
+        for (float* v :
+             {&o.sound.master, &o.sound.music, &o.sound.record, &o.sound.weather, &o.sound.block,
+              &o.sound.hostile, &o.sound.neutral, &o.sound.player, &o.sound.ambient, &o.sound.voice})
             *v = std::clamp(*v, 0.0f, 1.0f);
         o.zoom = stored.zoom;
         o.zoom.inSeconds = std::clamp(o.zoom.inSeconds, 0.0f, 5.0f);

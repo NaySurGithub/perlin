@@ -11,16 +11,31 @@
 namespace rhi::metal {
     namespace {
         bool IsIntegerFormat(Format f) {
-            return f == Format::R8Uint || f == Format::R16Uint || f == Format::R32Uint || f == Format::RG32Uint || f == Format::RGBA32Uint;
+            return f == Format::R8Uint || f == Format::R16Uint || f == Format::R32Uint ||
+                   f == Format::RG32Uint || f == Format::RGBA32Uint;
         }
 
         bool StorageCapable(Format f) {
             switch (f) {
-            case Format::R8Unorm: case Format::RG8Unorm: case Format::RGBA8Unorm: case Format::BGRA8Unorm:
-            case Format::R8Uint: case Format::R16Uint: case Format::R32Uint: case Format::RG32Uint: case Format::RGBA32Uint:
-            case Format::R16Float: case Format::RG16Float: case Format::RGBA16Float:
-            case Format::R32Float: case Format::RG32Float: case Format::RGBA32Float:
-            case Format::RGB10A2Unorm: case Format::R11G11B10Float: case Format::RG16Unorm: case Format::RGBA16Unorm:
+            case Format::R8Unorm:
+            case Format::RG8Unorm:
+            case Format::RGBA8Unorm:
+            case Format::BGRA8Unorm:
+            case Format::R8Uint:
+            case Format::R16Uint:
+            case Format::R32Uint:
+            case Format::RG32Uint:
+            case Format::RGBA32Uint:
+            case Format::R16Float:
+            case Format::RG16Float:
+            case Format::RGBA16Float:
+            case Format::R32Float:
+            case Format::RG32Float:
+            case Format::RGBA32Float:
+            case Format::RGB10A2Unorm:
+            case Format::R11G11B10Float:
+            case Format::RG16Unorm:
+            case Format::RGBA16Unorm:
                 return true;
             default:
                 return false;
@@ -36,7 +51,8 @@ namespace rhi::metal {
         }
     }
 
-    Device::Device(id<MTLDevice> dev, const DeviceOptions& opts, const AdapterInfo& info) : device(dev), options(opts) {
+    Device::Device(id<MTLDevice> dev, const DeviceOptions& opts, const AdapterInfo& info)
+        : device(dev), options(opts) {
         caps.adapter = info;
         options.framesInFlight = std::clamp(options.framesInFlight, 1u, 4u);
     }
@@ -153,9 +169,14 @@ namespace rhi::metal {
             size = AlignUp(size, 256);
         MTLResourceOptions opts = MTLResourceStorageModePrivate;
         switch (desc.memory) {
-        case MemoryClass::GpuOnly: break;
-        case MemoryClass::Upload: opts = MTLResourceStorageModeShared | MTLResourceCPUCacheModeWriteCombined; break;
-        default: opts = MTLResourceStorageModeShared; break;
+        case MemoryClass::GpuOnly:
+            break;
+        case MemoryClass::Upload:
+            opts = MTLResourceStorageModeShared | MTLResourceCPUCacheModeWriteCombined;
+            break;
+        default:
+            opts = MTLResourceStorageModeShared;
+            break;
         }
         b.buffer = [device newBufferWithLength:size options:opts];
         if (!b.buffer)
@@ -216,8 +237,9 @@ namespace rhi::metal {
 
         uint64_t bytes = 0;
         for (uint32_t m = 0; m < t.desc.mips; m++)
-            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) * RowBlocks(desc.format, MipExtent(desc.height, m)) *
-                     LayerCountOf(t.desc) * DepthOf(t.desc);
+            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) *
+                     RowBlocks(desc.format, MipExtent(desc.height, m)) * LayerCountOf(t.desc) *
+                     DepthOf(t.desc);
         stats.textureBytes += bytes * t.desc.samples;
         stats.liveTextures++;
         const TextureHandle h = textures.Alloc(std::move(t));
@@ -273,7 +295,8 @@ namespace rhi::metal {
     BindLayoutHandle Device::CreateBindLayout(const BindLayoutDesc& desc) {
         BindLayout l;
         l.entries.assign(desc.entries.begin(), desc.entries.end());
-        std::sort(l.entries.begin(), l.entries.end(), [](const BindLayoutEntry& a, const BindLayoutEntry& b) { return a.binding < b.binding; });
+        std::sort(l.entries.begin(), l.entries.end(),
+                  [](const BindLayoutEntry& a, const BindLayoutEntry& b) { return a.binding < b.binding; });
         return bindLayouts.Alloc(std::move(l));
     }
 
@@ -320,20 +343,32 @@ namespace rhi::metal {
             stats.liveTextures--;
     }
 
-    void Device::Destroy(SamplerHandle h) { samplers.Free(h); }
-    void Device::Destroy(ShaderHandle h) { shaders.Free(h); }
-    void Device::Destroy(BindLayoutHandle h) { bindLayouts.Free(h); }
+    void Device::Destroy(SamplerHandle h) {
+        samplers.Free(h);
+    }
+    void Device::Destroy(ShaderHandle h) {
+        shaders.Free(h);
+    }
+    void Device::Destroy(BindLayoutHandle h) {
+        bindLayouts.Free(h);
+    }
     void Device::Destroy(BindGroupHandle h) {
         if (bindGroups.Free(h))
             stats.liveBindGroups--;
     }
-    void Device::Destroy(PipelineLayoutHandle h) { pipelineLayouts.Free(h); }
+    void Device::Destroy(PipelineLayoutHandle h) {
+        pipelineLayouts.Free(h);
+    }
     void Device::Destroy(PipelineHandle h) {
         if (pipelines.Free(h))
             stats.livePipelines--;
     }
-    void Device::Destroy(QuerySetHandle h) { queries.Free(h); }
-    void Device::Destroy(FenceHandle h) { fences.Free(h); }
+    void Device::Destroy(QuerySetHandle h) {
+        queries.Free(h);
+    }
+    void Device::Destroy(FenceHandle h) {
+        fences.Free(h);
+    }
 
     const BufferDesc* Device::GetDesc(BufferHandle h) const {
         const Buffer* b = buffers.Get(h);
@@ -350,13 +385,16 @@ namespace rhi::metal {
         return b ? b->contents : nullptr;
     }
 
-    id<MTLTexture> Device::ViewOf(Texture& t, const SubresourceRange& range, TextureDim dim, Format format, bool stencil) {
+    id<MTLTexture> Device::ViewOf(Texture& t, const SubresourceRange& range, TextureDim dim, Format format,
+                                  bool stencil) {
         const SubresourceRange r = ResolveRange(range, t.desc);
         const uint32_t layers = LayerCountOf(t.desc);
         MTLPixelFormat pf = format == Format::Unknown ? ToPixelFormat(t.desc.format) : ToPixelFormat(format);
         if (stencil) {
             // the stencil plane of a combined format is its own pixel format
-            pf = ToPixelFormat(t.desc.format) == MTLPixelFormatDepth32Float_Stencil8 ? MTLPixelFormatX32_Stencil8 : MTLPixelFormatInvalid;
+            pf = ToPixelFormat(t.desc.format) == MTLPixelFormatDepth32Float_Stencil8
+                     ? MTLPixelFormatX32_Stencil8
+                     : MTLPixelFormatInvalid;
 #if TARGET_OS_OSX
             if (ToPixelFormat(t.desc.format) == MTLPixelFormatDepth24Unorm_Stencil8)
                 pf = MTLPixelFormatX24_Stencil8;
@@ -364,7 +402,8 @@ namespace rhi::metal {
         }
         const bool wholeMips = r.baseMip == 0 && r.mipCount == (std::max)(1u, t.desc.mips);
         const bool wholeLayers = r.baseLayer == 0 && r.layerCount == layers;
-        const bool sameType = (dim == TextureDim::Tex2D && t.desc.dim == TextureDim::Tex2D) || dim == t.desc.dim;
+        const bool sameType =
+            (dim == TextureDim::Tex2D && t.desc.dim == TextureDim::Tex2D) || dim == t.desc.dim;
         if (format == Format::Unknown && !stencil && wholeMips && wholeLayers && sameType)
             return t.texture;
         if (t.desc.samples > 1)
@@ -386,9 +425,12 @@ namespace rhi::metal {
             type = MTLTextureType2D;
         const NSRange levels = NSMakeRange(r.baseMip, r.mipCount);
         const NSRange slices = t.desc.dim == TextureDim::Tex3D ? NSMakeRange(0, 1)
-                               : dim == TextureDim::Tex2D     ? NSMakeRange(r.baseLayer, 1)
-                                                              : NSMakeRange(r.baseLayer, r.layerCount);
-        id<MTLTexture> view = [t.texture newTextureViewWithPixelFormat:pf textureType:type levels:levels slices:slices];
+                               : dim == TextureDim::Tex2D      ? NSMakeRange(r.baseLayer, 1)
+                                                               : NSMakeRange(r.baseLayer, r.layerCount);
+        id<MTLTexture> view = [t.texture newTextureViewWithPixelFormat:pf
+                                                           textureType:type
+                                                                levels:levels
+                                                                slices:slices];
         if (view)
             t.views[key] = view;
         return view;
@@ -400,7 +442,8 @@ namespace rhi::metal {
         t.desc.format = format;
         t.desc.width = width;
         t.desc.height = height;
-        t.desc.usage = TextureUsage::ColorTarget | TextureUsage::CopySrc | (sampled ? TextureUsage::Sampled : TextureUsage::None);
+        t.desc.usage = TextureUsage::ColorTarget | TextureUsage::CopySrc |
+                       (sampled ? TextureUsage::Sampled : TextureUsage::None);
         t.external = true;
         t.name = "swapchain image";
         return textures.Alloc(std::move(t));
@@ -423,7 +466,8 @@ namespace rhi::metal {
     }
 
     // slang numbers samplers 2*slot+1, past metal's 16 sampler slots: they are compacted in declaration order
-    id<MTLFunction> Device::CompileStage(const Shader& sh, const PipelineLayoutDesc& layout, std::vector<StageSlot>& slots, std::string& error) {
+    id<MTLFunction> Device::CompileStage(const Shader& sh, const PipelineLayoutDesc& layout,
+                                         std::vector<StageSlot>& slots, std::string& error) {
         std::vector<const ShaderResource*> resources;
         for (const ShaderResource& r : sh.iface.resources)
             resources.push_back(&r);
@@ -450,7 +494,8 @@ namespace rhi::metal {
                     return nil;
                 }
                 s.index = nextSampler++;
-                edits.push_back({r->clauseBegin, r->clauseEnd, "[[sampler(" + std::to_string(s.index) + ")]]"});
+                edits.push_back(
+                    {r->clauseBegin, r->clauseEnd, "[[sampler(" + std::to_string(s.index) + ")]]"});
             }
             if (r->set < kMaxBindGroups)
                 if (const BindLayout* l = bindLayouts.Get(layout.sets[r->set])) {
@@ -482,7 +527,9 @@ namespace rhi::metal {
         if (!lib) {
             NSError* err = nil;
             MTLCompileOptions* opts = [MTLCompileOptions new];
-            lib = [device newLibraryWithSource:[NSString stringWithUTF8String:patched.c_str()] options:opts error:&err];
+            lib = [device newLibraryWithSource:[NSString stringWithUTF8String:patched.c_str()]
+                                       options:opts
+                                         error:&err];
             if (!lib) {
                 error = err ? [[err localizedDescription] UTF8String] : "newLibraryWithSource failed";
                 return nil;
@@ -507,9 +554,11 @@ namespace rhi::metal {
         Pipeline p;
         std::string error;
         id<MTLFunction> vsFn = CompileStage(*vs, layout->desc, p.stages[kStageVertex], error);
-        id<MTLFunction> fsFn = vsFn && fs ? CompileStage(*fs, layout->desc, p.stages[kStageFragment], error) : nil;
+        id<MTLFunction> fsFn =
+            vsFn && fs ? CompileStage(*fs, layout->desc, p.stages[kStageFragment], error) : nil;
         if (!vsFn || (fs && !fsFn)) {
-            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") + "): " + error);
+            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") +
+                        "): " + error);
             return {};
         }
 
@@ -529,7 +578,9 @@ namespace rhi::metal {
         for (uint32_t i = 0; i < desc.streamCount; i++) {
             const NSUInteger index = kVertexBufferBase - i;
             vd.layouts[index].stride = (std::max)(desc.streams[i].stride, 1u);
-            vd.layouts[index].stepFunction = desc.streams[i].step == VertexStep::Instance ? MTLVertexStepFunctionPerInstance : MTLVertexStepFunctionPerVertex;
+            vd.layouts[index].stepFunction = desc.streams[i].step == VertexStep::Instance
+                                                 ? MTLVertexStepFunctionPerInstance
+                                                 : MTLVertexStepFunctionPerVertex;
             vd.layouts[index].stepRate = 1;
         }
         if (desc.attributeCount)
@@ -550,10 +601,14 @@ namespace rhi::metal {
             }
             // metal's mask bits run the other way round: red is the high bit
             MTLColorWriteMask mask = MTLColorWriteMaskNone;
-            if (Has(t.writeMask, ColorMask::R)) mask |= MTLColorWriteMaskRed;
-            if (Has(t.writeMask, ColorMask::G)) mask |= MTLColorWriteMaskGreen;
-            if (Has(t.writeMask, ColorMask::B)) mask |= MTLColorWriteMaskBlue;
-            if (Has(t.writeMask, ColorMask::A)) mask |= MTLColorWriteMaskAlpha;
+            if (Has(t.writeMask, ColorMask::R))
+                mask |= MTLColorWriteMaskRed;
+            if (Has(t.writeMask, ColorMask::G))
+                mask |= MTLColorWriteMaskGreen;
+            if (Has(t.writeMask, ColorMask::B))
+                mask |= MTLColorWriteMaskBlue;
+            if (Has(t.writeMask, ColorMask::A))
+                mask |= MTLColorWriteMaskAlpha;
             ca.writeMask = mask;
         }
         const bool hasDepth = desc.depthFormat != Format::Unknown;
@@ -565,22 +620,29 @@ namespace rhi::metal {
         pd.rasterSampleCount = (std::max)(1u, desc.samples);
         pd.alphaToCoverageEnabled = desc.blend.alphaToCoverage;
         switch (desc.topology) {
-        case Topology::LineList: pd.inputPrimitiveTopology = MTLPrimitiveTopologyClassLine; break;
-        case Topology::PointList: pd.inputPrimitiveTopology = MTLPrimitiveTopologyClassPoint; break;
-        default: pd.inputPrimitiveTopology = MTLPrimitiveTopologyClassTriangle; break;
+        case Topology::LineList:
+            pd.inputPrimitiveTopology = MTLPrimitiveTopologyClassLine;
+            break;
+        case Topology::PointList:
+            pd.inputPrimitiveTopology = MTLPrimitiveTopologyClassPoint;
+            break;
+        default:
+            pd.inputPrimitiveTopology = MTLPrimitiveTopologyClassTriangle;
+            break;
         }
 
         NSError* err = nil;
         p.render = [device newRenderPipelineStateWithDescriptor:pd error:&err];
         if (!p.render) {
-            ReportError(std::string("pipeline creation failed (") + (desc.name ? desc.name : "?") + "): " +
-                        (err ? [[err localizedDescription] UTF8String] : "unknown"));
+            ReportError(std::string("pipeline creation failed (") + (desc.name ? desc.name : "?") +
+                        "): " + (err ? [[err localizedDescription] UTF8String] : "unknown"));
             return {};
         }
 
         const DepthStencilState& ds = desc.depthStencil;
         MTLDepthStencilDescriptor* dd = [MTLDepthStencilDescriptor new];
-        dd.depthCompareFunction = hasDepth && ds.depthTest ? ToCompare(ds.depthCompare) : MTLCompareFunctionAlways;
+        dd.depthCompareFunction =
+            hasDepth && ds.depthTest ? ToCompare(ds.depthCompare) : MTLCompareFunctionAlways;
         dd.depthWriteEnabled = hasDepth && ds.depthWrite;
         if (hasDepth && ds.stencilTest) {
             const auto face = [&](const StencilFace& f) {
@@ -598,8 +660,11 @@ namespace rhi::metal {
         }
         p.depthStencil = [device newDepthStencilStateWithDescriptor:dd];
 
-        p.cull = desc.raster.cull == CullMode::None ? MTLCullModeNone : desc.raster.cull == CullMode::Back ? MTLCullModeBack : MTLCullModeFront;
-        p.winding = desc.raster.frontFace == FrontFace::CounterClockwise ? MTLWindingCounterClockwise : MTLWindingClockwise;
+        p.cull = desc.raster.cull == CullMode::None   ? MTLCullModeNone
+                 : desc.raster.cull == CullMode::Back ? MTLCullModeBack
+                                                      : MTLCullModeFront;
+        p.winding = desc.raster.frontFace == FrontFace::CounterClockwise ? MTLWindingCounterClockwise
+                                                                         : MTLWindingClockwise;
         p.fill = desc.raster.wireframe ? MTLTriangleFillModeLines : MTLTriangleFillModeFill;
         p.clip = desc.raster.depthClip ? MTLDepthClipModeClip : MTLDepthClipModeClamp;
         p.biasConstant = desc.raster.depthBiasConstant;
@@ -623,13 +688,15 @@ namespace rhi::metal {
         std::string error;
         id<MTLFunction> fn = CompileStage(*cs, layout->desc, p.stages[kStageCompute], error);
         if (!fn) {
-            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") + "): " + error);
+            ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") +
+                        "): " + error);
             return {};
         }
         NSError* err = nil;
         p.comp = [device newComputePipelineStateWithFunction:fn error:&err];
         if (!p.comp) {
-            ReportError(std::string("compute pipeline creation failed: ") + (err ? [[err localizedDescription] UTF8String] : "unknown"));
+            ReportError(std::string("compute pipeline creation failed: ") +
+                        (err ? [[err localizedDescription] UTF8String] : "unknown"));
             return {};
         }
         p.threads = MTLSizeMake(cs->threads[0], cs->threads[1], cs->threads[2]);
@@ -651,8 +718,7 @@ namespace rhi::metal {
     void Device::SignalFence(FenceHandle fence, uint64_t value) {
         if (Fence* f = fences.Get(fence)) {
             uint64_t cur = f->value->load();
-            while (cur < value && !f->value->compare_exchange_weak(cur, value)) {
-            }
+            while (cur < value && !f->value->compare_exchange_weak(cur, value)) {}
         }
     }
 
@@ -663,7 +729,9 @@ namespace rhi::metal {
         const auto start = std::chrono::steady_clock::now();
         while (f->value->load() < value) {
             if (timeoutNs != ~0ull &&
-                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()) >= timeoutNs)
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now() - start)
+                                          .count()) >= timeoutNs)
                 return false;
             std::this_thread::yield();
         }
@@ -676,9 +744,8 @@ namespace rhi::metal {
             return;
         std::shared_ptr<std::atomic<uint64_t>> counter = f->value;
         [after addCompletedHandler:^(id<MTLCommandBuffer>) {
-            uint64_t cur = counter->load();
-            while (cur < value && !counter->compare_exchange_weak(cur, value)) {
-            }
+          uint64_t cur = counter->load();
+          while (cur < value && !counter->compare_exchange_weak(cur, value)) {}
         }];
     }
 
@@ -751,5 +818,7 @@ namespace rhi::metal {
         stats.submits++;
     }
 
-    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) { return MakeSwapchain(*this, desc); }
+    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) {
+        return MakeSwapchain(*this, desc);
+    }
 }

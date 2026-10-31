@@ -12,7 +12,8 @@ namespace perlin {
         static TexturePack& Instance();
 
         bool Open(const std::string& packsDir, const std::string& name, std::string& error);
-        bool OpenStack(const std::string& packsDir, const std::vector<std::string>& names, std::string& error);
+        bool OpenStack(const std::string& packsDir, const std::vector<std::string>& names,
+                       std::string& error);
         void Close();
         bool Active() const;
         uint64_t Generation() const { return generation; }

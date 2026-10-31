@@ -34,7 +34,8 @@ namespace perlin::ui {
     };
 
     inline bool Joinable(const ServerEntry& e) {
-        return e.kind == ServerEntry::Kind::Header ? false : (e.kind == ServerEntry::Kind::Friend ? e.hosting : true);
+        return e.kind == ServerEntry::Kind::Header ? false
+                                                   : (e.kind == ServerEntry::Kind::Friend ? e.hosting : true);
     }
 
     struct ReplayEntry {
@@ -45,7 +46,19 @@ namespace perlin::ui {
         unsigned durationMs = 0;
     };
 
-    enum class TitlePage { Main, Servers, Edit, Direct, AddRealm, Accounts, AccountName, AccountSignIn, Replays, ReplayRename, ReplayDelete };
+    enum class TitlePage {
+        Main,
+        Servers,
+        Edit,
+        Direct,
+        AddRealm,
+        Accounts,
+        AccountName,
+        AccountSignIn,
+        Replays,
+        ReplayRename,
+        ReplayDelete
+    };
 
     struct TitleModel {
         TitlePage page = TitlePage::Main;
@@ -58,10 +71,14 @@ namespace perlin::ui {
         std::string joinMessage;
         std::vector<ServerEntry>& Shown() {
             switch (tab) {
-                case ServerTab::Lan: return lan;
-                case ServerTab::Realms: return realms;
-                case ServerTab::Friends: return friends;
-                default: return savedView.empty() ? servers : savedView;
+            case ServerTab::Lan:
+                return lan;
+            case ServerTab::Realms:
+                return realms;
+            case ServerTab::Friends:
+                return friends;
+            default:
+                return savedView.empty() ? servers : savedView;
             }
         }
         const std::vector<ServerEntry>& Shown() const { return const_cast<TitleModel*>(this)->Shown(); }
@@ -69,7 +86,9 @@ namespace perlin::ui {
         int savedOffset = 0;
         int SavedIndex() const {
             const int i = selected - savedOffset;
-            return tab == ServerTab::Saved && selected >= 0 && i >= 0 && i < static_cast<int>(servers.size()) ? i : -1;
+            return tab == ServerTab::Saved && selected >= 0 && i >= 0 && i < static_cast<int>(servers.size())
+                       ? i
+                       : -1;
         }
         int scroll = 0;
         bool adding = false;
@@ -108,7 +127,8 @@ namespace perlin::ui {
     inline constexpr const char* kTitleMulti = "title_multi";
     inline constexpr const char* kTitleSingle = "title_single";
     // shown on hover over the singleplayer buttons
-    inline constexpr const char* kSingleplayerTip = "Singleplayer is in very early development and is not playable yet.";
+    inline constexpr const char* kSingleplayerTip =
+        "Singleplayer is in very early development and is not playable yet.";
     inline constexpr const char* kTitleQuit = "title_quit";
     inline constexpr const char* kTitleOptions = "title_options";
     inline constexpr const char* kTitleMods = "title_mods";

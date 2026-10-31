@@ -7,9 +7,9 @@
 #include <cmath>
 
 namespace perlin::physics::bds {
-    template<class Trigonometry>
+    template <class Trigonometry>
     inline Float3 RelativeMovementWithTrig(Float3 velocity, float yaw, Float3 intent, float speed,
-                                         Trigonometry trigonometry) {
+                                           Trigonometry trigonometry) {
         const auto mul = detail::SseMultiply;
         const auto add = detail::SseAdd;
         const float square =

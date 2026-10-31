@@ -23,11 +23,14 @@ namespace perlin::ui {
     namespace {
         const char* kScreenTemplate =
             "<rml>\n<head>\n<title>screen</title>\n<style>\n"
-            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }\n"
+            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; "
+            "padding: 0; background: transparent; }\n"
             "mcimg, mcitem { display: block; position: absolute; }\n"
             "{{chat_style}}{{rcss}}\n</style>\n</head>\n<body>\n{{chat}}{{hud}}</body>\n</rml>\n";
 
-        std::string Digest(const Json& v) { return v.Dump(); }
+        std::string Digest(const Json& v) {
+            return v.Dump();
+        }
 
         // our patches over vanilla, in ui_defaults (below every pack, above vanilla); "modifications" merge into
         // vanilla controls instead of replacing; a pack redefining the same control wins
@@ -46,7 +49,8 @@ namespace perlin::ui {
         out.index = -1;
         if (const size_t colon = rest.rfind(':'); colon != std::string::npos) {
             const std::string tail = rest.substr(colon + 1);
-            if (!tail.empty() && std::all_of(tail.begin(), tail.end(), [](unsigned char c) { return std::isdigit(c); })) {
+            if (!tail.empty() &&
+                std::all_of(tail.begin(), tail.end(), [](unsigned char c) { return std::isdigit(c); })) {
                 out.index = std::stoi(tail);
                 rest.resize(colon);
             }
@@ -68,7 +72,8 @@ namespace perlin::ui {
         return it == collections.end() ? 0 : static_cast<int>(it->second.size());
     }
 
-    bool ScreenData::CollectionValue(const std::string& collection, int index, const std::string& binding, Json& out) const {
+    bool ScreenData::CollectionValue(const std::string& collection, int index, const std::string& binding,
+                                     Json& out) const {
         auto it = collections.find(collection);
         if (it == collections.end() || index < 0 || index >= static_cast<int>(it->second.size()))
             return false;
@@ -89,22 +94,28 @@ namespace perlin::ui {
         // ordered: digest independent of hash map iteration order
         std::string out;
         std::map<std::string, const Json*> g;
-        for (const auto& [k, v] : globals) g[k] = &v;
-        for (const auto& [k, v] : g) out += k + "=" + Digest(*v) + ";";
+        for (const auto& [k, v] : globals)
+            g[k] = &v;
+        for (const auto& [k, v] : g)
+            out += k + "=" + Digest(*v) + ";";
         std::map<std::string, const std::vector<Row>*> c;
-        for (const auto& [k, v] : collections) c[k] = &v;
+        for (const auto& [k, v] : collections)
+            c[k] = &v;
         for (const auto& [k, rows] : c) {
             out += "[" + k + "]";
             for (const Row& row : *rows) {
                 std::map<std::string, const Json*> r;
-                for (const auto& [rk, rv] : row) r[rk] = &rv;
-                for (const auto& [rk, rv] : r) out += rk + "=" + Digest(*rv) + ",";
+                for (const auto& [rk, rv] : row)
+                    r[rk] = &rv;
+                for (const auto& [rk, rv] : r)
+                    out += rk + "=" + Digest(*rv) + ",";
                 out += "|";
             }
         }
         for (const auto& [k, items] : factories) {
             out += "{" + k + "}";
-            for (const FactoryItem& f : items) out += f.id + "/" + f.collection + "/" + std::to_string(f.index) + ",";
+            for (const FactoryItem& f : items)
+                out += f.id + "/" + f.collection + "/" + std::to_string(f.index) + ",";
         }
         return out;
     }
@@ -121,7 +132,9 @@ namespace perlin::ui {
         services.lineHeight = [](float s, bool ten) {
             return ten ? TenFont::Instance().LineHeight(s) : static_cast<float>(McFont::kLineHeight) * s;
         };
-        services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
+        services.textureSize = [](const std::string& tex, int& w, int& h) {
+            return UiAssets::Instance().ImageSize(tex, w, h);
+        };
         services.localize = [](const std::string& k) { return UiAssets::Instance().Localize(k); };
         services.anim = &anim;
         services.animDef = [this](const std::string& ref, const std::string& ns) -> Json {
@@ -196,7 +209,8 @@ namespace perlin::ui {
         std::string wanted;
         for (const std::string& d : serverPackDirs)
             wanted += d + "|";
-        wanted += data + "|" + UiAssets::Instance().VanillaRoot() + "|" + std::to_string(TexturePack::Instance().Generation());
+        wanted += data + "|" + UiAssets::Instance().VanillaRoot() + "|" +
+                  std::to_string(TexturePack::Instance().Generation());
         // hot reload: rescan when a json ui file in the stack is edited, added or removed (checked every 2 s)
         if (state.load() == 2 && wanted == key) {
             static auto lastProbe = std::chrono::steady_clock::now();
@@ -231,7 +245,8 @@ namespace perlin::ui {
         {
             std::error_code ec;
             std::filesystem::create_directories(data + "/ui_defaults", ec);
-            std::ofstream(data + "/ui_defaults/_perlin_screens.json", std::ios::binary | std::ios::trunc) << kScreenDefaults;
+            std::ofstream(data + "/ui_defaults/_perlin_screens.json", std::ios::binary | std::ios::trunc)
+                << kScreenDefaults;
         }
 
         worker = std::thread([this, roots]() {
@@ -248,7 +263,8 @@ namespace perlin::ui {
             }
             generation++;
             state = 2;
-            Log("screens", "ui stack ready: {} files, {} namespaces, {} roots", library.FileCount(), library.NamespaceCount(), roots.size());
+            Log("screens", "ui stack ready: {} files, {} namespaces, {} roots", library.FileCount(),
+                library.NamespaceCount(), roots.size());
         });
     }
 
@@ -277,10 +293,10 @@ namespace perlin::ui {
         }
         if (auto it = trees.find(key); it != trees.end())
             return it->second.get();
-        if (failed.count(key))
+        if (failed.contains(key))
             return nullptr;
         if (trees.size() > 64)
-            trees.clear();  // titles change per container; keep the cache bounded
+            trees.clear(); // titles change per container; keep the cache bounded
         BuildReport report;
         auto built = BuildTree(library, reference, vars, report);
         if (!built) {
@@ -311,8 +327,8 @@ namespace perlin::ui {
         void DumpTreeText(const LNode& n, int depth, std::string& out);
     }
 
-    bool JsonScreens::Build(const std::string& reference, const ScreenData& data, int guiW, int guiH, float scroll, std::string& rml,
-                            const Vars* rootVars) {
+    bool JsonScreens::Build(const std::string& reference, const ScreenData& data, int guiW, int guiH,
+                            float scroll, std::string& rml, const Vars* rootVars) {
         if (state.load() != 2)
             return false;
         std::lock_guard lock(mutex);
@@ -322,13 +338,15 @@ namespace perlin::ui {
         using Clock = std::chrono::steady_clock;
         static const auto start = Clock::now();
         anim.now = std::chrono::duration<double>(Clock::now() - start).count();
-        const auto root = EvaluateTree(*tree, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
+        const auto root =
+            EvaluateTree(*tree, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
         if (!root)
             return false;
         emitter.SetScroll(scroll);
         dollW = 0;
         if (std::getenv("PERLIN_TEST_TREE"))
-            std::printf("[build] t=%.2f animating=%d rootAlpha=%.2f kids=%zu\n", anim.now, anim.animating ? 1 : 0, root->alpha, root->kids.size());
+            std::printf("[build] t=%.2f animating=%d rootAlpha=%.2f kids=%zu\n", anim.now,
+                        anim.animating ? 1 : 0, root->alpha, root->kids.size());
         // dev hook: PERLIN_TEST_TREE=<file> writes the laid-out control tree (same shape as screen_dump's)
         if (const char* treeDump = std::getenv("PERLIN_TEST_TREE")) {
             std::string text;
@@ -344,8 +362,8 @@ namespace perlin::ui {
         void DumpTreeText(const LNode& n, int depth, std::string& out) {
             const std::string pad(static_cast<size_t>(depth) * 2, ' ');
             char line[512];
-            std::snprintf(line, sizeof(line), "%s%s [%s] abs=(%.1f,%.1f) %.1fx%.1f%s%s\n", pad.c_str(), n.id.c_str(), n.type.c_str(),
-                          n.ax, n.ay, n.w, n.h, n.visible ? "" : " HIDDEN",
+            std::snprintf(line, sizeof(line), "%s%s [%s] abs=(%.1f,%.1f) %.1fx%.1f%s%s\n", pad.c_str(),
+                          n.id.c_str(), n.type.c_str(), n.ax, n.ay, n.w, n.h, n.visible ? "" : " HIDDEN",
                           n.text.empty() ? "" : (" text=" + n.text).c_str());
             out += line;
             for (const auto& k : n.kids)

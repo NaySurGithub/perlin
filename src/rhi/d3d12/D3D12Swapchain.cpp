@@ -31,21 +31,25 @@ namespace rhi::d3d12 {
                 sd.Height = (std::max)(1u, height);
                 sd.Format = desc.hdr ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_B8G8R8A8_UNORM;
                 sd.SampleDesc.Count = 1;
-                sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | (desc.allowSampling ? DXGI_USAGE_SHADER_INPUT : 0);
+                sd.BufferUsage =
+                    DXGI_USAGE_RENDER_TARGET_OUTPUT | (desc.allowSampling ? DXGI_USAGE_SHADER_INPUT : 0);
                 sd.BufferCount = imageCount;
                 sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
                 sd.Scaling = DXGI_SCALING_STRETCH;
                 sd.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
-                sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | (tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
+                sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT |
+                           (tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
                 flags = sd.Flags;
 
                 winrt::com_ptr<IDXGISwapChain1> sc1;
-                if (FAILED(device.inst->factory->CreateSwapChainForHwnd(device.queues[0].queue.get(), hwnd, &sd, nullptr, nullptr, sc1.put()))) {
+                if (FAILED(device.inst->factory->CreateSwapChainForHwnd(device.queues[0].queue.get(), hwnd,
+                                                                        &sd, nullptr, nullptr, sc1.put()))) {
                     if (!desc.hdr)
                         return false;
                     // hdr format refused: fall back to the 8-bit chain
                     sd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-                    if (FAILED(device.inst->factory->CreateSwapChainForHwnd(device.queues[0].queue.get(), hwnd, &sd, nullptr, nullptr, sc1.put())))
+                    if (FAILED(device.inst->factory->CreateSwapChainForHwnd(
+                            device.queues[0].queue.get(), hwnd, &sd, nullptr, nullptr, sc1.put())))
                         return false;
                 }
                 format = sd.Format;
@@ -53,12 +57,14 @@ namespace rhi::d3d12 {
                     return false;
                 // alt+enter fullscreen switching is the game's job, not dxgi's
                 device.inst->factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
-                chain->SetMaximumFrameLatency(std::min(imageCount - 1, (std::max)(1u, device.options.framesInFlight)));
+                chain->SetMaximumFrameLatency(
+                    std::min(imageCount - 1, (std::max)(1u, device.options.framesInFlight)));
                 waitable.attach(chain->GetFrameLatencyWaitableObject());
 
                 if (format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
                     UINT support = 0;
-                    if (SUCCEEDED(chain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, &support)) &&
+                    if (SUCCEEDED(chain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,
+                                                                &support)) &&
                         (support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT)) {
                         hdr = SUCCEEDED(chain->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709));
                     }
@@ -119,7 +125,9 @@ namespace rhi::d3d12 {
             }
 
             void SetPresentMode(PresentMode mode) override { presentMode = mode; }
-            Format GetFormat() const override { return format == DXGI_FORMAT_R16G16B16A16_FLOAT ? Format::RGBA16Float : Format::BGRA8Unorm; }
+            Format GetFormat() const override {
+                return format == DXGI_FORMAT_R16G16B16A16_FLOAT ? Format::RGBA16Float : Format::BGRA8Unorm;
+            }
             uint32_t Width() const override { return width; }
             uint32_t Height() const override { return height; }
             PresentMode GetPresentMode() const override { return presentMode; }
@@ -141,7 +149,8 @@ namespace rhi::d3d12 {
                 ReleaseBuffers();
                 const HRESULT hr = chain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, flags);
                 if (FAILED(hr)) {
-                    device.ReportError("swapchain ResizeBuffers failed (0x" + HexString(static_cast<uint32_t>(hr)) + "); building a new swapchain");
+                    device.ReportError("swapchain ResizeBuffers failed (0x" +
+                                       HexString(static_cast<uint32_t>(hr)) + "); building a new swapchain");
                     // a chain that refuses to resize is replaced rather than left dead
                     chain = nullptr;
                     waitable.close();
@@ -166,7 +175,9 @@ namespace rhi::d3d12 {
                     td.width = width;
                     td.height = height;
                     td.format = GetFormat();
-                    td.usage = TextureUsage::ColorTarget | (desc.allowSampling ? TextureUsage::Sampled : TextureUsage::None) | TextureUsage::CopyDst;
+                    td.usage = TextureUsage::ColorTarget |
+                               (desc.allowSampling ? TextureUsage::Sampled : TextureUsage::None) |
+                               TextureUsage::CopyDst;
                     textures[i] = device.WrapSwapchainImage(res.get(), td);
                 }
                 return true;

@@ -32,7 +32,8 @@ int main() {
     std::vector<ChunkColumn> cols(pos.size());
     const auto start = std::chrono::steady_clock::now();
     backend->Generate(pos, cols);
-    std::printf("%zu chunks in %.0f ms\n", pos.size(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    std::printf("%zu chunks in %.0f ms\n", pos.size(),
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 
     // block id -> [count, lowest y, highest y]
     struct Stat {
@@ -40,7 +41,8 @@ int main() {
     };
     std::map<std::string, Stat> stats;
     std::map<uint16_t, std::string> names;
-    for (const char* n : {"coal_ore", "iron_ore", "copper_ore", "gold_ore", "lapis_ore", "redstone_ore", "diamond_ore", "deepslate_iron_ore", "deepslate_diamond_ore",
+    for (const char* n : {"coal_ore", "iron_ore", "copper_ore", "gold_ore", "lapis_ore", "redstone_ore",
+                          "diamond_ore", "deepslate_iron_ore", "deepslate_diamond_ore",
                           "deepslate_redstone_ore", "gravel", "granite", "diorite", "andesite", "tuff"})
         names[cat.DefaultBlock(n)] = n;
     for (auto& col : cols)
@@ -57,7 +59,8 @@ int main() {
                 }
     for (auto& [n, s] : stats)
         std::printf("%-24s %6d  y %d..%d\n", n.c_str(), s.count, s.lo, s.hi);
-    for (const char* n : {"coal_ore", "iron_ore", "copper_ore", "gold_ore", "lapis_ore", "redstone_ore", "diamond_ore", "granite", "diorite", "andesite", "tuff", "gravel"})
+    for (const char* n : {"coal_ore", "iron_ore", "copper_ore", "gold_ore", "lapis_ore", "redstone_ore",
+                          "diamond_ore", "granite", "diorite", "andesite", "tuff", "gravel"})
         CHECK(stats[n].count > 0);
     // the rules' height ranges (blobs reach a few blocks past the start)
     CHECK(stats["diamond_ore"].hi <= 16 + 8);

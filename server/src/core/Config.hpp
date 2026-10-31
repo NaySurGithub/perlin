@@ -50,7 +50,8 @@ namespace perlin::server {
         // "flat", or "vanilla" for the terrain port (its data is compiled in)
         std::string generator = "vanilla";
         // bottom to top from the dimension floor
-        std::vector<FlatLayer> flatLayers = {{"minecraft:bedrock", 1}, {"minecraft:dirt", 2}, {"minecraft:grass_block", 1}};
+        std::vector<FlatLayer> flatLayers = {
+            {"minecraft:bedrock", 1}, {"minecraft:dirt", 2}, {"minecraft:grass_block", 1}};
         // auto = gpu when a device starts and passes its self check, else cpu
         std::string terrainBackend = "auto";
 

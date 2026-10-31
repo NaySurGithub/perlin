@@ -22,14 +22,22 @@ namespace rhi {
 
     const char* VendorName(uint32_t vendorId) {
         switch (vendorId) {
-        case vendor_id::kNvidia: return "NVIDIA";
-        case vendor_id::kAmd: return "AMD";
-        case vendor_id::kIntel: return "Intel";
-        case vendor_id::kApple: return "Apple";
-        case vendor_id::kQualcomm: return "Qualcomm";
-        case vendor_id::kArm: return "ARM";
-        case vendor_id::kMicrosoft: return "Microsoft";
-        default: return "Unknown";
+        case vendor_id::kNvidia:
+            return "NVIDIA";
+        case vendor_id::kAmd:
+            return "AMD";
+        case vendor_id::kIntel:
+            return "Intel";
+        case vendor_id::kApple:
+            return "Apple";
+        case vendor_id::kQualcomm:
+            return "Qualcomm";
+        case vendor_id::kArm:
+            return "ARM";
+        case vendor_id::kMicrosoft:
+            return "Microsoft";
+        default:
+            return "Unknown";
         }
     }
 
@@ -74,22 +82,29 @@ namespace rhi {
     bool ApiCompiledIn(Api api) {
         switch (api) {
 #if RHI_HAS_VULKAN
-        case Api::Vulkan: return true;
+        case Api::Vulkan:
+            return true;
 #endif
 #if RHI_HAS_D3D12
-        case Api::D3D12: return true;
+        case Api::D3D12:
+            return true;
 #endif
 #if RHI_HAS_D3D11
-        case Api::D3D11: return true;
+        case Api::D3D11:
+            return true;
 #endif
 #if RHI_HAS_METAL
-        case Api::Metal: return true;
+        case Api::Metal:
+            return true;
 #endif
 #if RHI_HAS_WEBGPU
-        case Api::WebGPU: return true;
+        case Api::WebGPU:
+            return true;
 #endif
-        case Api::None: return true;
-        default: return false;
+        case Api::None:
+            return true;
+        default:
+            return false;
         }
     }
 
@@ -103,23 +118,30 @@ namespace rhi {
 
     std::unique_ptr<Instance> CreateInstance(Api api, const InstanceOptions& options) {
         switch (api) {
-        case Api::None: return backends::CreateNullInstance(options);
+        case Api::None:
+            return backends::CreateNullInstance(options);
 #if RHI_HAS_VULKAN
-        case Api::Vulkan: return backends::CreateVulkanInstance(options);
+        case Api::Vulkan:
+            return backends::CreateVulkanInstance(options);
 #endif
 #if RHI_HAS_D3D12
-        case Api::D3D12: return backends::CreateD3D12Instance(options);
+        case Api::D3D12:
+            return backends::CreateD3D12Instance(options);
 #endif
 #if RHI_HAS_D3D11
-        case Api::D3D11: return backends::CreateD3D11Instance(options);
+        case Api::D3D11:
+            return backends::CreateD3D11Instance(options);
 #endif
 #if RHI_HAS_METAL
-        case Api::Metal: return backends::CreateMetalInstance(options);
+        case Api::Metal:
+            return backends::CreateMetalInstance(options);
 #endif
 #if RHI_HAS_WEBGPU
-        case Api::WebGPU: return backends::CreateWebGpuInstance(options);
+        case Api::WebGPU:
+            return backends::CreateWebGpuInstance(options);
 #endif
-        default: return nullptr;
+        default:
+            return nullptr;
         }
     }
 }

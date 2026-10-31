@@ -17,6 +17,7 @@
 
 namespace perlin {
     using abi::AimKind;
+    using abi::Area;
     using abi::ChatType;
     using abi::Difficulty;
     using abi::Dimension;
@@ -29,7 +30,6 @@ namespace perlin {
     using abi::Permission;
     using abi::PermissionLevel;
     using abi::Permissions;
-    using abi::Area;
     using abi::Screen;
 
     using meta::enum_cast;
@@ -37,7 +37,9 @@ namespace perlin {
 
     using Ticks = std::chrono::duration<int64_t, std::ratio<1, 20>>;
     inline namespace literals {
-        constexpr Ticks operator""_ticks(unsigned long long n) { return Ticks(static_cast<int64_t>(n)); }
+        constexpr Ticks operator""_ticks(unsigned long long n) {
+            return Ticks(static_cast<int64_t>(n));
+        }
     }
 
     struct Vec3 {
@@ -51,12 +53,24 @@ namespace perlin {
         constexpr Vec3 operator*(double s) const { return {x * s, y * s, z * s}; }
         constexpr Vec3 operator/(double s) const { return {x / s, y / s, z / s}; }
         constexpr Vec3 operator-() const { return {-x, -y, -z}; }
-        constexpr Vec3& operator+=(const Vec3& o) { x += o.x; y += o.y; z += o.z; return *this; }
-        constexpr Vec3& operator-=(const Vec3& o) { x -= o.x; y -= o.y; z -= o.z; return *this; }
+        constexpr Vec3& operator+=(const Vec3& o) {
+            x += o.x;
+            y += o.y;
+            z += o.z;
+            return *this;
+        }
+        constexpr Vec3& operator-=(const Vec3& o) {
+            x -= o.x;
+            y -= o.y;
+            z -= o.z;
+            return *this;
+        }
         constexpr bool operator==(const Vec3&) const = default;
 
         constexpr double dot(const Vec3& o) const { return x * o.x + y * o.y + z * o.z; }
-        constexpr Vec3 cross(const Vec3& o) const { return {y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x}; }
+        constexpr Vec3 cross(const Vec3& o) const {
+            return {y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x};
+        }
         constexpr double length_squared() const { return dot(*this); }
         double length() const { return std::sqrt(length_squared()); }
         double horizontal_length() const { return std::sqrt(x * x + z * z); }
@@ -66,14 +80,18 @@ namespace perlin {
             return l > 0 ? *this / l : Vec3{};
         }
     };
-    constexpr Vec3 operator*(double s, const Vec3& v) { return v * s; }
+    constexpr Vec3 operator*(double s, const Vec3& v) {
+        return v * s;
+    }
 
     struct BlockPos {
         int x = 0, y = 0, z = 0;
 
         constexpr BlockPos() = default;
         constexpr BlockPos(int ax, int ay, int az) : x(ax), y(ay), z(az) {}
-        explicit BlockPos(const Vec3& v) : x(static_cast<int>(std::floor(v.x))), y(static_cast<int>(std::floor(v.y))), z(static_cast<int>(std::floor(v.z))) {}
+        explicit BlockPos(const Vec3& v)
+            : x(static_cast<int>(std::floor(v.x))), y(static_cast<int>(std::floor(v.y))),
+              z(static_cast<int>(std::floor(v.z))) {}
 
         constexpr auto operator<=>(const BlockPos&) const = default;
         constexpr BlockPos operator+(const BlockPos& o) const { return {x + o.x, y + o.y, z + o.z}; }
@@ -100,7 +118,8 @@ namespace perlin {
     }
 
     constexpr Face opposite(Face face) {
-        constexpr std::array<Face, 6> table{{Face::Up, Face::Down, Face::South, Face::North, Face::East, Face::West}};
+        constexpr std::array<Face, 6> table{
+            {Face::Up, Face::Down, Face::South, Face::North, Face::East, Face::West}};
         return table[static_cast<size_t>(face)];
     }
 
@@ -110,7 +129,8 @@ namespace perlin {
     }
 
     constexpr std::array<BlockPos, 6> BlockPos::neighbors() const {
-        return {offset(Face::Down), offset(Face::Up), offset(Face::North), offset(Face::South), offset(Face::West), offset(Face::East)};
+        return {offset(Face::Down),  offset(Face::Up),   offset(Face::North),
+                offset(Face::South), offset(Face::West), offset(Face::East)};
     }
 
     class Identifier {
@@ -119,8 +139,7 @@ namespace perlin {
 
         constexpr Identifier() = default;
 
-        template <size_t N>
-        consteval Identifier(const char (&literal)[N]) {
+        template <size_t N> consteval Identifier(const char (&literal)[N]) {
             if (!assign(std::string_view(literal, N - 1)))
                 invalid_identifier_literal();
         }
@@ -143,8 +162,12 @@ namespace perlin {
             return other && *other == *this;
         }
 
-        friend constexpr bool operator==(const Identifier& a, const Identifier& b) { return a.view() == b.view(); }
-        friend constexpr auto operator<=>(const Identifier& a, const Identifier& b) { return a.view() <=> b.view(); }
+        friend constexpr bool operator==(const Identifier& a, const Identifier& b) {
+            return a.view() == b.view();
+        }
+        friend constexpr auto operator<=>(const Identifier& a, const Identifier& b) {
+            return a.view() <=> b.view();
+        }
 
     private:
         static void invalid_identifier_literal();
@@ -158,7 +181,9 @@ namespace perlin {
             }
             if (ns.empty() || path_part.empty() || ns.size() + 1 + path_part.size() > kMaxLength)
                 return false;
-            const auto ok_ns = [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.'; };
+            const auto ok_ns = [](char c) {
+                return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+            };
             const auto ok_path = [&](char c) { return ok_ns(c) || c == '/'; };
             for (char c : ns)
                 if (!ok_ns(c))
@@ -186,18 +211,23 @@ namespace perlin {
         uint8_t r = 255, g = 255, b = 255, a = 255;
 
         constexpr Rgba() = default;
-        constexpr Rgba(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = 255) : r(red), g(green), b(blue), a(alpha) {}
+        constexpr Rgba(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = 255)
+            : r(red), g(green), b(blue), a(alpha) {}
         static constexpr Rgba hex(uint32_t rgb, uint8_t alpha = 255) {
-            return {static_cast<uint8_t>(rgb >> 16), static_cast<uint8_t>(rgb >> 8), static_cast<uint8_t>(rgb), alpha};
+            return {static_cast<uint8_t>(rgb >> 16), static_cast<uint8_t>(rgb >> 8),
+                    static_cast<uint8_t>(rgb), alpha};
         }
         constexpr Rgba with_alpha(uint8_t alpha) const { return {r, g, b, alpha}; }
         constexpr uint32_t packed() const {
-            return (static_cast<uint32_t>(r) << 24) | (static_cast<uint32_t>(g) << 16) | (static_cast<uint32_t>(b) << 8) | a;
+            return (static_cast<uint32_t>(r) << 24) | (static_cast<uint32_t>(g) << 16) |
+                   (static_cast<uint32_t>(b) << 8) | a;
         }
         constexpr bool operator==(const Rgba&) const = default;
 
         constexpr Rgba mix(const Rgba& to, double t) const {
-            const auto lerp = [t](uint8_t from, uint8_t target) { return static_cast<uint8_t>(from + (static_cast<double>(target) - from) * t + 0.5); };
+            const auto lerp = [t](uint8_t from, uint8_t target) {
+                return static_cast<uint8_t>(from + (static_cast<double>(target) - from) * t + 0.5);
+            };
             return {lerp(r, to.r), lerp(g, to.g), lerp(b, to.b), lerp(a, to.a)};
         }
 
@@ -216,7 +246,9 @@ namespace perlin {
     inline constexpr Rgba Rgba::transparent{0, 0, 0, 0};
 
     inline namespace literals {
-        constexpr Rgba operator""_rgb(unsigned long long hex) { return Rgba::hex(static_cast<uint32_t>(hex)); }
+        constexpr Rgba operator""_rgb(unsigned long long hex) {
+            return Rgba::hex(static_cast<uint32_t>(hex));
+        }
     }
 
     using Item = abi::Item;
@@ -255,7 +287,9 @@ namespace perlin {
             const auto [ptr, ec] = std::from_chars(v->data(), v->data() + v->size(), out);
             return ec == std::errc{} ? out : fallback;
         }
-        bool state_bool(std::string_view key, bool fallback = false) const { return state_int(key, fallback ? 1 : 0) != 0; }
+        bool state_bool(std::string_view key, bool fallback = false) const {
+            return state_int(key, fallback ? 1 : 0) != 0;
+        }
     };
 
     using BlockProps = abi::BlockProps;
@@ -271,8 +305,7 @@ namespace perlin {
     }
 }
 
-template <>
-struct std::hash<perlin::BlockPos> {
+template <> struct std::hash<perlin::BlockPos> {
     size_t operator()(const perlin::BlockPos& p) const noexcept {
         uint64_t h = static_cast<uint32_t>(p.x);
         h = h * 0x9E3779B97F4A7C15ull ^ static_cast<uint32_t>(p.y);
@@ -281,23 +314,20 @@ struct std::hash<perlin::BlockPos> {
     }
 };
 
-template <>
-struct std::hash<perlin::Identifier> {
-    size_t operator()(const perlin::Identifier& id) const noexcept { return std::hash<std::string_view>{}(id.view()); }
+template <> struct std::hash<perlin::Identifier> {
+    size_t operator()(const perlin::Identifier& id) const noexcept {
+        return std::hash<std::string_view>{}(id.view());
+    }
 };
 
-template <>
-struct std::formatter<perlin::Identifier> : std::formatter<std::string_view> {
-    template <class FormatContext>
-    auto format(const perlin::Identifier& id, FormatContext& ctx) const {
+template <> struct std::formatter<perlin::Identifier> : std::formatter<std::string_view> {
+    template <class FormatContext> auto format(const perlin::Identifier& id, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(id.view(), ctx);
     }
 };
 
-template <>
-struct std::formatter<perlin::Vec3> : std::formatter<double> {
-    template <class FormatContext>
-    auto format(const perlin::Vec3& v, FormatContext& ctx) const {
+template <> struct std::formatter<perlin::Vec3> : std::formatter<double> {
+    template <class FormatContext> auto format(const perlin::Vec3& v, FormatContext& ctx) const {
         auto out = ctx.out();
         out = std::format_to(out, "(");
         out = std::formatter<double>::format(v.x, ctx);
@@ -309,18 +339,14 @@ struct std::formatter<perlin::Vec3> : std::formatter<double> {
     }
 };
 
-template <>
-struct std::formatter<perlin::BlockPos> : std::formatter<int> {
-    template <class FormatContext>
-    auto format(const perlin::BlockPos& p, FormatContext& ctx) const {
+template <> struct std::formatter<perlin::BlockPos> : std::formatter<int> {
+    template <class FormatContext> auto format(const perlin::BlockPos& p, FormatContext& ctx) const {
         return std::format_to(ctx.out(), "[{}, {}, {}]", p.x, p.y, p.z);
     }
 };
 
-template <perlin::meta::FormattableEnum E>
-struct std::formatter<E> : std::formatter<std::string_view> {
-    template <class FormatContext>
-    auto format(E value, FormatContext& ctx) const {
+template <perlin::meta::FormattableEnum E> struct std::formatter<E> : std::formatter<std::string_view> {
+    template <class FormatContext> auto format(E value, FormatContext& ctx) const {
         const std::string_view name = perlin::meta::enum_name(value);
         if (!name.empty())
             return std::formatter<std::string_view>::format(name, ctx);

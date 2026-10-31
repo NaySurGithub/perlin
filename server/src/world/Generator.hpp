@@ -21,11 +21,24 @@ namespace perlin::server {
         // Generate may be called from several threads at once (cpu backends); the gpu backend owns a device queue and is not
         virtual bool ThreadSafe() const { return false; }
         // the world spawn: the dry land nearest the origin, y being the first block above the ground. false = the backend has no opinion (flat worlds: the origin)
-        virtual bool FindSpawn(int& x, int& y, int& z) { (void)x; (void)y; (void)z; return false; }
+        virtual bool FindSpawn(int& x, int& y, int& z) {
+            (void)x;
+            (void)y;
+            (void)z;
+            return false;
+        }
         // the nearest place within `radius` blocks of (fromX, fromZ) whose biome is table index `biome` (see world/vanilla/BiomeData.hpp), searched in rings and stopped
         // by `cancel`. false when there is none, the search was cancelled, or this backend has no biomes
-        virtual bool LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel, int& x, int& y, int& z) {
-            (void)biome; (void)fromX; (void)fromZ; (void)radius; (void)cancel; (void)x; (void)y; (void)z;
+        virtual bool LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel,
+                                 int& x, int& y, int& z) {
+            (void)biome;
+            (void)fromX;
+            (void)fromZ;
+            (void)radius;
+            (void)cancel;
+            (void)x;
+            (void)y;
+            (void)z;
             return false;
         }
         // whether LocateBiome can answer at all

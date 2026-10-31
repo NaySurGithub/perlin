@@ -50,7 +50,7 @@ namespace perlin::json {
         }
 
         std::string str(std::string fallback = {}) const {
-            return isString() ? node->get<std::string>() : std::move(fallback);
+            return isString() ? node->get<std::string>() : fallback;
         }
         std::string text() const {
             if (isString())

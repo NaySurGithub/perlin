@@ -45,46 +45,85 @@ namespace perlin {
             if (depth > 32)
                 return false;
             switch (type) {
-                case 1: { uint8_t v; return r.ReadByte(v); }
-                case 2: { uint16_t v; return r.ReadLE16(v); }
-                case 3: { int32_t v; return r.ReadZigzag32(v); }
-                case 4: { int64_t v; return r.ReadZigzag64(v); }
-                case 5: { float v; return r.ReadLEFloat(v); }
-                case 6: { for (int i = 0; i < 8; i++) { uint8_t b; if (!r.ReadByte(b)) return false; } return true; }
-                case 7: {
-                    int32_t n;
-                    if (!r.ReadZigzag32(n) || n < 0)
+            case 1: {
+                uint8_t v;
+                return r.ReadByte(v);
+            }
+            case 2: {
+                uint16_t v;
+                return r.ReadLE16(v);
+            }
+            case 3: {
+                int32_t v;
+                return r.ReadZigzag32(v);
+            }
+            case 4: {
+                int64_t v;
+                return r.ReadZigzag64(v);
+            }
+            case 5: {
+                float v;
+                return r.ReadLEFloat(v);
+            }
+            case 6: {
+                for (int i = 0; i < 8; i++) {
+                    uint8_t b;
+                    if (!r.ReadByte(b))
                         return false;
-                    for (int32_t i = 0; i < n; i++) { uint8_t b; if (!r.ReadByte(b)) return false; }
-                    return true;
                 }
-                case 8: { std::string s; return NbtString(r, s); }
-                case 9: {
-                    uint8_t e;
-                    int32_t n;
-                    if (!r.ReadByte(e) || !r.ReadZigzag32(n) || n < 0 || (n > 0 && e == 0))
+                return true;
+            }
+            case 7: {
+                int32_t n;
+                if (!r.ReadZigzag32(n) || n < 0)
+                    return false;
+                for (int32_t i = 0; i < n; i++) {
+                    uint8_t b;
+                    if (!r.ReadByte(b))
                         return false;
-                    for (int32_t i = 0; i < n; i++)
-                        if (!SkipPayload(r, e, depth + 1))
-                            return false;
-                    return true;
                 }
-                case 10: return SkipCompound(r, depth);
-                case 11: {
-                    int32_t n;
-                    if (!r.ReadZigzag32(n) || n < 0)
+                return true;
+            }
+            case 8: {
+                std::string s;
+                return NbtString(r, s);
+            }
+            case 9: {
+                uint8_t e;
+                int32_t n;
+                if (!r.ReadByte(e) || !r.ReadZigzag32(n) || n < 0 || (n > 0 && e == 0))
+                    return false;
+                for (int32_t i = 0; i < n; i++)
+                    if (!SkipPayload(r, e, depth + 1))
                         return false;
-                    for (int32_t i = 0; i < n; i++) { int32_t v; if (!r.ReadZigzag32(v)) return false; }
-                    return true;
-                }
-                case 12: {
-                    int32_t n;
-                    if (!r.ReadZigzag32(n) || n < 0)
+                return true;
+            }
+            case 10:
+                return SkipCompound(r, depth);
+            case 11: {
+                int32_t n;
+                if (!r.ReadZigzag32(n) || n < 0)
+                    return false;
+                for (int32_t i = 0; i < n; i++) {
+                    int32_t v;
+                    if (!r.ReadZigzag32(v))
                         return false;
-                    for (int32_t i = 0; i < n; i++) { int64_t v; if (!r.ReadZigzag64(v)) return false; }
-                    return true;
                 }
-                default: return false;
+                return true;
+            }
+            case 12: {
+                int32_t n;
+                if (!r.ReadZigzag32(n) || n < 0)
+                    return false;
+                for (int32_t i = 0; i < n; i++) {
+                    int64_t v;
+                    if (!r.ReadZigzag64(v))
+                        return false;
+                }
+                return true;
+            }
+            default:
+                return false;
             }
         }
 
@@ -210,7 +249,9 @@ namespace perlin {
 
     }
 
-    void SetPersistentResolver(PersistentResolver resolver) { gResolver = resolver; }
+    void SetPersistentResolver(PersistentResolver resolver) {
+        gResolver = resolver;
+    }
 
     namespace {
         DimensionInfo gDimensions[3] = {{0, -64, 24}, {1, 0, 8}, {2, 0, 16}};
@@ -347,15 +388,15 @@ namespace perlin {
         WriteStorage(out, cells);
     }
 
-    bool ChunkCodec::ParseColumn(const uint8_t* data, size_t size, uint32_t count,
-                                 int firstSubY, int slots,
-                                 std::vector<std::pair<int, SubChunkData>>& out,
-                                 size_t& consumed, const char** err) {
+    bool ChunkCodec::ParseColumn(const uint8_t* data, size_t size, uint32_t count, int firstSubY, int slots,
+                                 std::vector<std::pair<int, SubChunkData>>& out, size_t& consumed,
+                                 const char** err) {
         out.clear();
         consumed = 0;
         // some servers send fewer in the count than the payload holds: read the payload, not the count
         if (slots < 0 || (count != 0 && (!data || size == 0))) {
-            if (err) *err = "inline subchunk count exceeds dimension height";
+            if (err)
+                *err = "inline subchunk count exceeds dimension height";
             return false;
         }
         std::vector<std::pair<int, SubChunkData>> parsed;
@@ -397,12 +438,14 @@ namespace perlin {
             // some proxies repeat or overshoot heights: skip the entry, keep the column
             if (y > std::numeric_limits<int>::max() || y < loY || y >= static_cast<int64_t>(hiY))
                 continue;
-            if (std::any_of(parsed.begin(), parsed.end(), [y](const auto& entry) { return entry.first == y; }))
+            if (std::any_of(parsed.begin(), parsed.end(),
+                            [y](const auto& entry) { return entry.first == y; }))
                 continue;
             parsed.emplace_back(static_cast<int>(y), std::move(sc));
         }
         if (parsed.empty() && count > 0) {
-            if (err) *err = "inline subchunk count exceeds dimension height";
+            if (err)
+                *err = "inline subchunk count exceeds dimension height";
             return false;
         }
         out = std::move(parsed);

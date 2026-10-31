@@ -21,7 +21,8 @@ template <class P> static bool SendPacket(Transport& t, server::BatchCodec& code
     return t.SendReliable(codec.Seal(content));
 }
 
-static bool WaitFor(Transport& t, server::BatchCodec& codec, uint32_t id, std::vector<std::pair<uint32_t, std::vector<uint8_t>>>& seen) {
+static bool WaitFor(Transport& t, server::BatchCodec& codec, uint32_t id,
+                    std::vector<std::pair<uint32_t, std::vector<uint8_t>>>& seen) {
     for (int i = 0; i < 200; i++) {
         std::vector<uint8_t> wire;
         while (t.TryReceive(wire)) {
@@ -58,7 +59,8 @@ int main(int argc, char** argv) {
     std::string error;
     // a library that is not there is an error, not a crash
     CHECK(!embedded.Start((dir / "missing.so").string(), dir.string(), "", error) && !error.empty());
-    CHECK(embedded.Start(argv[1], dir.string(), "{\"terrain_backend\":\"cpu\",\"generator\":\"flat\",\"view_distance\":4}", error));
+    CHECK(embedded.Start(argv[1], dir.string(),
+                         "{\"terrain_backend\":\"cpu\",\"generator\":\"flat\",\"view_distance\":4}", error));
     if (!embedded.Running()) {
         std::fprintf(stderr, "start: %s\n", error.c_str());
         return 1;

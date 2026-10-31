@@ -11,7 +11,8 @@
 namespace perlin::ui {
     bool LooksLikeBan(const std::string& text) {
         std::string lower = text;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
         return lower.contains("ban");
     }
 
@@ -61,7 +62,8 @@ mcimg { display: block; position: absolute; }
 )PERLINRML";
     }
 
-    std::string BuildDisconnectScreenRml(const std::string& templateText, const DisconnectScreenText& t, int guiW, int guiH) {
+    std::string BuildDisconnectScreenRml(const std::string& templateText, const DisconnectScreenText& t,
+                                         int guiW, int guiH) {
         const int textW = std::min(guiW - 40, 320);
         const int perLine = std::max(8, textW / 5);
         int lines = 0;
@@ -74,7 +76,8 @@ mcimg { display: block; position: absolute; }
                 if (end == std::string::npos)
                     end = text.size();
                 const std::string line = text.substr(start, end - start);
-                lines += std::max(1, static_cast<int>((StripFormatCodes(line).size() + perLine - 1) / perLine));
+                lines +=
+                    std::max(1, static_cast<int>((StripFormatCodes(line).size() + perLine - 1) / perLine));
                 if (!body.empty())
                     body += "<br/>";
                 body += FormatCodesToRml(line);

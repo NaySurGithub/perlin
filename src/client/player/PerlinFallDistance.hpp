@@ -9,8 +9,8 @@ namespace perlin::physics::bds {
             distance = 0.0f;
     }
 
-    inline float FallDistanceAfterMove(float distance, float resolvedY, bool onGround,
-                                       bool wasInWater, bool disabled = false, bool fallingBlock = false) {
+    inline float FallDistanceAfterMove(float distance, float resolvedY, bool onGround, bool wasInWater,
+                                       bool disabled = false, bool fallingBlock = false) {
         if (disabled)
             return 0.0f;
         if (wasInWater && !fallingBlock)

@@ -40,12 +40,14 @@ int main(int argc, char** argv) {
                                               flags & 1, flags & 2, flags & 4, flags & 8, rest);
         const auto impulse = rest.value_or(Float3{});
         const auto velocity = rest ? ApplyRestitution(result.velocity, *rest) : result.velocity;
-        const std::array<float, 6> actual{impulse.x, impulse.y, impulse.z, velocity.x, velocity.y, velocity.z};
+        const std::array<float, 6> actual{impulse.x,  impulse.y,  impulse.z,
+                                          velocity.x, velocity.y, velocity.z};
         for (int i = 0; i < 6; ++i) {
             const auto got = std::bit_cast<uint32_t>(actual[i]);
             if (got != words[11 + i]) {
                 if (failures < 20)
-                    std::fprintf(stderr, "Case %d field %d: %08x != BDS %08x\n", cases, i, got, words[11 + i]);
+                    std::fprintf(stderr, "Case %d field %d: %08x != BDS %08x\n", cases, i, got,
+                                 words[11 + i]);
                 ++failures;
             }
         }

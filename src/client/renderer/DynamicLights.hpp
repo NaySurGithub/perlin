@@ -6,7 +6,9 @@
 #include <glm/glm.hpp>
 
 namespace perlin {
-    namespace entity { struct Entity; }
+    namespace entity {
+        struct Entity;
+    }
 
     namespace dynlight {
         int ItemLevel(const std::string& name);

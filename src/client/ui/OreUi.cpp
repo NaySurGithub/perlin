@@ -4,14 +4,20 @@
 
 namespace perlin::ui::ore {
     namespace {
-        std::string N(int v) { return std::to_string(v); }
+        std::string N(int v) {
+            return std::to_string(v);
+        }
 
         const char* KindClass(Kind k) {
             switch (k) {
-            case Kind::Primary: return "op";
-            case Kind::Secondary: return "os";
-            case Kind::Destructive: return "od";
-            case Kind::Neutral: break;
+            case Kind::Primary:
+                return "op";
+            case Kind::Secondary:
+                return "os";
+            case Kind::Destructive:
+                return "od";
+            case Kind::Neutral:
+                break;
             }
             return "on";
         }
@@ -73,30 +79,38 @@ namespace perlin::ui::ore {
         return css;
     }
 
-    std::string Button(const std::string& id, int x, int y, int w, int h, const std::string& label, Kind kind, bool big, bool disabled) {
-        std::string cls = std::string("ob ") + KindClass(kind) + (big ? " big" : "") + (disabled ? " off" : "");
-        std::string out = "<div class=\"" + cls + "\"" + (id.empty() || disabled ? std::string() : " id=\"" + EscapeRml(id) + "\"") +
-                          " style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:" + N(h) + "px;\">";
+    std::string Button(const std::string& id, int x, int y, int w, int h, const std::string& label, Kind kind,
+                       bool big, bool disabled) {
+        std::string cls =
+            std::string("ob ") + KindClass(kind) + (big ? " big" : "") + (disabled ? " off" : "");
+        std::string out = "<div class=\"" + cls + "\"" +
+                          (id.empty() || disabled ? std::string() : " id=\"" + EscapeRml(id) + "\"") +
+                          " style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) +
+                          "px;height:" + N(h) + "px;\">";
         out += "<div class=\"ol\"></div><div class=\"lp\"></div><div class=\"fc\"></div>";
         out += "<div class=\"lb\">" + EscapeRml(label) + "</div></div>\n";
         return out;
     }
 
-    std::string IconButton(const std::string& id, int x, int y, int size, const std::string& iconSrc, Kind kind) {
-        std::string out = std::string("<div class=\"ob ") + KindClass(kind) + "\"" + (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") +
-                          " style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(size) + "px;height:" + N(size) + "px;\">";
+    std::string IconButton(const std::string& id, int x, int y, int size, const std::string& iconSrc,
+                           Kind kind) {
+        std::string out = std::string("<div class=\"ob ") + KindClass(kind) + "\"" +
+                          (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") +
+                          " style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(size) +
+                          "px;height:" + N(size) + "px;\">";
         out += "<div class=\"ol\"></div><div class=\"lp\"></div><div class=\"fc\"></div>";
         out += "<mcimg class=\"ic\" src=\"" + EscapeRml(iconSrc) + "\"/></div>\n";
         return out;
     }
 
     std::string Card(int x, int y, int w, int h, int z) {
-        return "<div class=\"ocard\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:" + N(h) + "px;z-index:" + N(z) +
-               ";\"><div class=\"in\"></div></div>\n";
+        return "<div class=\"ocard\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) +
+               "px;height:" + N(h) + "px;z-index:" + N(z) + ";\"><div class=\"in\"></div></div>\n";
     }
 
     std::string Label(int x, int y, int w, const std::string& text, const char* align, bool muted, bool big) {
-        return std::string("<div class=\"olbl") + (muted ? " mut" : "") + (big ? " big" : "") + "\" style=\"left:" + N(x) + "px;top:" + N(y) +
-               "px;width:" + N(w) + "px;text-align:" + align + ";\">" + EscapeRml(text) + "</div>\n";
+        return std::string("<div class=\"olbl") + (muted ? " mut" : "") + (big ? " big" : "") +
+               "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;text-align:" + align +
+               ";\">" + EscapeRml(text) + "</div>\n";
     }
 }

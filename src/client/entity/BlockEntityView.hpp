@@ -6,5 +6,6 @@
 #include <vector>
 
 namespace perlin::entity {
-    void BuildBlockEntityDraws(const std::vector<SpecialBlock>& specials, const BlockEntityStore& store, std::vector<BlockEntityDraw>& out);
+    void BuildBlockEntityDraws(const std::vector<SpecialBlock>& specials, const BlockEntityStore& store,
+                               std::vector<BlockEntityDraw>& out);
 }

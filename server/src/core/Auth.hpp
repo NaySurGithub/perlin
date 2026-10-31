@@ -24,12 +24,14 @@ namespace perlin::server::auth {
     };
 
     // `identity` is the login packet's identity json {Certificate, AuthenticationType, Token}, `clientToken` the client data jwt
-    Login VerifyLogin(const std::string& identity, const std::string& clientToken, const std::vector<std::string>& rootKeys);
+    Login VerifyLogin(const std::string& identity, const std::string& clientToken,
+                      const std::vector<std::string>& rootKeys);
 
     // nethernet binds the account to the data channel: the offer carries an a=identity assertion whose signature covers the
     // dtls fingerprints. true when it is signed by `clientKey` and covers exactly the fingerprints in `offerSdp`
     bool VerifyOfferBinding(const std::string& offerSdp, const std::string& clientKey, std::string& error);
 
     // exposed for tests
-    bool VerifyEs384(const std::string& signingInput, const std::string& rawSignature, const std::string& publicKeyB64);
+    bool VerifyEs384(const std::string& signingInput, const std::string& rawSignature,
+                     const std::string& publicKeyB64);
 }

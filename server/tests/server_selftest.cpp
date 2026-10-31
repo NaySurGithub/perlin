@@ -50,8 +50,10 @@ static void TestBlockHash() {
     CHECK(dirt != 0 && r.Intern("minecraft:dirt") == dirt);
     CHECK(r.Name(dirt) == "minecraft:dirt" && r.Hash(dirt) == BlockNetworkHash("minecraft:dirt", {}));
     // state order must not matter: the registry sorts before hashing
-    const uint16_t a = r.Intern("minecraft:log", {{"pillar_axis", std::string("y")}, {"stripped_bit", false}});
-    const uint16_t b = r.Intern("minecraft:log", {{"stripped_bit", false}, {"pillar_axis", std::string("y")}});
+    const uint16_t a =
+        r.Intern("minecraft:log", {{"pillar_axis", std::string("y")}, {"stripped_bit", false}});
+    const uint16_t b =
+        r.Intern("minecraft:log", {{"stripped_bit", false}, {"pillar_axis", std::string("y")}});
     CHECK(a == b);
     CHECK(r.Find("minecraft:nope") == 0);
 }
@@ -97,7 +99,8 @@ static void TestChunkEncodingDecodesWithClientCodec() {
     std::vector<std::pair<int, perlin::SubChunkData>> subs;
     size_t used = 0;
     const char* why = nullptr;
-    const bool ok = perlin::ChunkCodec::ParseColumn(payload.data(), payload.size(), kSections, kMinY >> 4, kSections, subs, used, &why);
+    const bool ok = perlin::ChunkCodec::ParseColumn(payload.data(), payload.size(), kSections, kMinY >> 4,
+                                                    kSections, subs, used, &why);
     CHECK(ok);
     if (!ok) {
         std::fprintf(stderr, "ParseColumn: %s\n", why ? why : "?");
@@ -113,7 +116,8 @@ static void TestChunkEncodingDecodesWithClientCodec() {
         if (y == kMinY >> 4) {
             // section 0 holds y -64..-49
             CHECK(cells[perlin::server::CellIndex(2, 3, 3)] == r.Hash(r.Find("minecraft:stone")));
-            CHECK(cells[perlin::server::CellIndex(0, 0, 0)] == r.Hash(BlockCatalog::Instance().DefaultBlock("minecraft:bedrock")));
+            CHECK(cells[perlin::server::CellIndex(0, 0, 0)] ==
+                  r.Hash(BlockCatalog::Instance().DefaultBlock("minecraft:bedrock")));
             CHECK(cells[perlin::server::CellIndex(8, 15, 8)] == r.Hash(0));
         }
     }
@@ -135,7 +139,8 @@ static void TestBatchCodec() {
         CHECK(codec->Open(wire, back));
         CHECK(back == content);
         std::vector<std::pair<uint32_t, size_t>> seen;
-        CHECK(BatchCodec::Split(back, [&](uint32_t id, std::span<const uint8_t> body) { seen.emplace_back(id, body.size()); }));
+        CHECK(BatchCodec::Split(
+            back, [&](uint32_t id, std::span<const uint8_t> body) { seen.emplace_back(id, body.size()); }));
         const std::pair<uint32_t, size_t> first{9, 3}, second{58, 5000};
         CHECK(seen.size() == 2 && seen[0] == first && seen[1] == second);
     }
@@ -175,7 +180,8 @@ static void TestConfig() {
     std::string error;
     const ServerConfig d = ServerConfig::Load(path, &error);
     CHECK(error.empty() && d.name == c.name && d.port == 24000 && d.operators.size() == 2);
-    CHECK(d.flatLayers.size() == 2 && d.flatLayers[1].block == "minecraft:stone" && d.flatLayers[1].count == 5);
+    CHECK(d.flatLayers.size() == 2 && d.flatLayers[1].block == "minecraft:stone" &&
+          d.flatLayers[1].count == 5);
     std::filesystem::remove(path);
     // a broken file is reported and the defaults stay
     std::ofstream(path) << "{ not json";
@@ -184,34 +190,42 @@ static void TestConfig() {
     std::filesystem::remove(path);
 }
 
-
 static void TestProperties() {
     namespace fs = std::filesystem;
     const std::string path = (fs::temp_directory_path() / "perlin_server.properties").string();
     {
         std::ofstream out(path);
-        out << "# comment\nserver-name=My Server\ngamemode=creative\ndifficulty=hard\nmax-players=7\nonline-mode=false\nallow-list=true\n"
-               "server-port=20000\nserver-udp-ports=21200-21300:19400-19500\nview-distance=16\nlevel-seed=Perlin\n"
-               "default-player-permission-level=visitor\ncompression-threshold=1\ncompression-algorithm=snappy\n"
-               "chat-restriction=disabled\nmax-players-bogus=1\nplayer-idle-timeout=5\ntick-distance=nope\nlevel-name=\n"
+        out << "# comment\nserver-name=My "
+               "Server\ngamemode=creative\ndifficulty=hard\nmax-players=7\nonline-mode=false\nallow-list="
+               "true\n"
+               "server-port=20000\nserver-udp-ports=21200-21300:19400-19500\nview-distance=16\nlevel-seed="
+               "Perlin\n"
+               "default-player-permission-level=visitor\ncompression-threshold=1\ncompression-algorithm="
+               "snappy\n"
+               "chat-restriction=disabled\nmax-players-bogus=1\nplayer-idle-timeout=5\ntick-distance="
+               "nope\nlevel-name=\n"
                "persistent-ticking-area-max-count=11\n";
     }
     std::string error;
     ServerConfig c = ServerConfig::Load(path, &error);
     CHECK(error.empty());
-    CHECK(c.name == "My Server" && c.motd == "My Server" && c.gameMode == 1 && c.difficulty == 3 && c.maxPlayers == 7);
+    CHECK(c.name == "My Server" && c.motd == "My Server" && c.gameMode == 1 && c.difficulty == 3 &&
+          c.maxPlayers == 7);
     CHECK(!c.xboxAuth && c.whitelist && c.port == 20000 && c.viewDistance == 16);
-    CHECK(c.udpPortsSet && c.udpPortBegin == 19400 && c.udpPortEnd == 19500 && c.udpPublicBegin == 21200 && c.udpPublicEnd == 21300);
+    CHECK(c.udpPortsSet && c.udpPortBegin == 19400 && c.udpPortEnd == 19500 && c.udpPublicBegin == 21200 &&
+          c.udpPublicEnd == 21300);
     // java: "Perlin".hashCode() as an int
     CHECK(!c.randomSeed && static_cast<int64_t>(c.seed) == -1907856268LL);
-    CHECK(c.defaultPermission == "visitor" && c.compressionThreshold == 1 && c.compressionAlgorithm == "snappy");
+    CHECK(c.defaultPermission == "visitor" && c.compressionThreshold == 1 &&
+          c.compressionAlgorithm == "snappy");
     CHECK(c.chatRestriction == "Disabled" && c.idleTimeoutMinutes == 5);
     // a bad value keeps the default; an empty level-name falls back
     CHECK(c.tickDistance == 4 && c.levelName == "Bedrock level");
     // unknown and not-acted-on keys survive a rewrite
     CHECK(c.SaveProperties(path));
     const ServerConfig d = ServerConfig::Load(path, &error);
-    CHECK(d.name == c.name && d.gameMode == 1 && d.udpPortBegin == 19400 && d.udpPublicBegin == 21200 && d.maxPlayers == 7);
+    CHECK(d.name == c.name && d.gameMode == 1 && d.udpPortBegin == 19400 && d.udpPublicBegin == 21200 &&
+          d.maxPlayers == 7);
     CHECK(static_cast<int64_t>(d.seed) == -1907856268LL && d.levelSeedText == "Perlin");
     bool keptBogus = false, keptTicking = false;
     for (const auto& [k, v] : d.extraProperties) {
@@ -223,8 +237,10 @@ static void TestProperties() {
         std::ifstream in(path);
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         // every bds key is written, in bds's spelling
-        for (const char* key : {"server-name=", "allow-list=", "server-udp-ports=21200-21300:19400-19500", "enable-lan-visibility=true", "transport=nethernet",
-                                "compression-threshold=1", "block-network-ids-are-hashes=true", "server-build-radius-ratio=Disabled"})
+        for (const char* key :
+             {"server-name=", "allow-list=", "server-udp-ports=21200-21300:19400-19500",
+              "enable-lan-visibility=true", "transport=nethernet", "compression-threshold=1",
+              "block-network-ids-are-hashes=true", "server-build-radius-ratio=Disabled"})
             CHECK(text.contains(key));
     }
 
@@ -241,7 +257,8 @@ static void TestProperties() {
     p = ports("12.19.20.18:19489:19489");
     CHECK(p.udpPublicAddress == "12.19.20.18" && p.udpPortBegin == 19489 && p.udpPublicBegin == 19489);
     p = ports("[2001:db8::2021:26:03]:21200-21300:19400-19500");
-    CHECK(p.udpPublicAddress == "2001:db8::2021:26:03" && p.udpPortBegin == 19400 && p.udpPortEnd == 19500 && p.udpPublicBegin == 21200);
+    CHECK(p.udpPublicAddress == "2001:db8::2021:26:03" && p.udpPortBegin == 19400 && p.udpPortEnd == 19500 &&
+          p.udpPublicBegin == 21200);
     p = ports("");
     CHECK(p.udpPortsSet && p.udpPortBegin == 0);
     // a mapped range needs the same number of ports on both sides, and ports are 1-65535
@@ -263,15 +280,11 @@ static void TestProperties() {
     const fs::path dir = fs::temp_directory_path() / "perlin_cfg_dir";
     fs::remove_all(dir);
     fs::create_directories(dir);
-    {
-        std::ofstream(dir / "server.json") << "{\"name\": \"legacy\", \"port\": 24001}";
-    }
+    { std::ofstream(dir / "server.json") << "{\"name\": \"legacy\", \"port\": 24001}"; }
     ServerConfig legacy = ServerConfig::LoadDirectory(dir.string(), &error);
     CHECK(legacy.name == "legacy" && legacy.port == 24001);
     // server.properties wins when both exist
-    {
-        std::ofstream(dir / "server.properties") << "server-name=props\n";
-    }
+    { std::ofstream(dir / "server.properties") << "server-name=props\n"; }
     legacy = ServerConfig::LoadDirectory(dir.string(), &error);
     CHECK(legacy.name == "props" && legacy.port == 19132);
     fs::remove_all(dir);
@@ -284,14 +297,20 @@ static void TestAccessFiles() {
     fs::create_directories(dir);
     // the examples from bds's how-to, byte for byte in structure
     {
-        std::ofstream(dir / "allowlist.json") << "[\n {\n \"ignoresPlayerLimit\": false,\n \"name\": \"MyPlayer\"\n },\n {\n \"ignoresPlayerLimit\": true,\n \"name\": \"AnotherPlayer\",\n \"xuid\": \"274817248\"\n }\n]";
-        std::ofstream(dir / "permissions.json") << "[\n {\"permission\": \"operator\", \"xuid\": \"451298348\"},\n {\"permission\": \"member\", \"xuid\": \"52819329\"},\n {\"permission\": \"visitor\", \"xuid\": \"234114123\"}\n]";
+        std::ofstream(dir / "allowlist.json")
+            << "[\n {\n \"ignoresPlayerLimit\": false,\n \"name\": \"MyPlayer\"\n },\n {\n "
+               "\"ignoresPlayerLimit\": true,\n \"name\": \"AnotherPlayer\",\n \"xuid\": \"274817248\"\n "
+               "}\n]";
+        std::ofstream(dir / "permissions.json")
+            << "[\n {\"permission\": \"operator\", \"xuid\": \"451298348\"},\n {\"permission\": \"member\", "
+               "\"xuid\": \"52819329\"},\n {\"permission\": \"visitor\", \"xuid\": \"234114123\"}\n]";
     }
     AccessList allow(AccessList::Kind::Allowlist);
     allow.Load((dir / "allowlist.json").string());
     CHECK(allow.Entries().size() == 2);
     CHECK(allow.Contains("myplayer", "") && allow.Contains("", "274817248"));
-    CHECK(allow.Find("AnotherPlayer", "")->ignoresPlayerLimit && !allow.Find("MyPlayer", "")->ignoresPlayerLimit);
+    CHECK(allow.Find("AnotherPlayer", "")->ignoresPlayerLimit &&
+          !allow.Find("MyPlayer", "")->ignoresPlayerLimit);
     // an entry with a name and no xuid gets it filled in on the first matching join
     CHECK(allow.Add("MyPlayer", "999"));
     CHECK(allow.Find("", "999") != nullptr);
@@ -322,15 +341,23 @@ static void TestAccessFiles() {
 struct MockApi final : PluginApi {
     std::vector<std::string> broadcasts, messages, commands;
     void Broadcast(const std::string& t) override { broadcasts.push_back(t); }
-    bool Message(uint64_t p, const std::string& t) override { messages.push_back(std::to_string(p) + ":" + t); return true; }
+    bool Message(uint64_t p, const std::string& t) override {
+        messages.push_back(std::to_string(p) + ":" + t);
+        return true;
+    }
     bool Kick(uint64_t, const std::string&) override { return true; }
-    void RegisterCommand(const std::string& plugin, const std::string& name, const std::string&) override { commands.push_back(plugin + "/" + name); }
+    void RegisterCommand(const std::string& plugin, const std::string& name, const std::string&) override {
+        commands.push_back(plugin + "/" + name);
+    }
     std::vector<PlayerInfo> Players() override { return {{7, "Alice", 1, 2, 3}, {8, "Bob", 4, 5, 6}}; }
     bool Teleport(uint64_t, double, double, double) override { return true; }
-    int SetBlock(int, int, int, const std::string&) override { return 0; }
-    int GetBlock(int, int, int, std::string& b) override { b = "minecraft:stone"; return 0; }
+    abi::Status SetBlock(int, int, int, const std::string&) override { return abi::Status::Ok; }
+    abi::Status GetBlock(int, int, int, std::string& b) override {
+        b = "minecraft:stone";
+        return abi::Status::Ok;
+    }
     Status GetStatus() override { return {"mock", 2, 10, 99, "cpu"}; }
-    int GiveItem(uint64_t, const std::string&, int) override { return 0; }
+    std::expected<int, abi::Status> GiveItem(uint64_t, const std::string&, int) override { return 0; }
 };
 
 static void TestPluginHost(const char* wasm) {
@@ -353,28 +380,17 @@ static void TestPluginHost(const char* wasm) {
     CHECK(list.size() == 1 && list[0].name == "hello_server" && list[0].enabled);
     CHECK(api.commands.size() == 1 && api.commands[0] == "hello_server/hello");
 
-    PayloadWriter join;
-    join.U64(7);
-    join.Str("Alice");
-    host.Dispatch(PS_EVENT_PLAYER_JOIN, join.bytes);
+    host.Dispatch<abi::Event::PlayerJoin>({7, "Alice"});
     CHECK(api.messages.size() == 1 && api.messages[0] == "7:Welcome, Alice!");
 
-    PayloadWriter chat;
-    chat.U64(7);
-    chat.Str("Alice");
-    chat.Str("look a Creeper!");
-    CHECK((host.Dispatch(PS_EVENT_CHAT, chat.bytes) & 1u) == 1u);
-    PayloadWriter fine;
-    fine.U64(7);
-    fine.Str("Alice");
-    fine.Str("hello everyone");
-    CHECK((host.Dispatch(PS_EVENT_CHAT, fine.bytes) & 1u) == 0u);
+    CHECK(host.Dispatch<abi::Event::PlayerChat>({7, "Alice", "look a Creeper!"}));
+    CHECK(!host.Dispatch<abi::Event::PlayerChat>({7, "Alice", "hello everyone"}));
 
     api.messages.clear();
     CHECK(host.DispatchCommand("hello_server", 7, "hello", ""));
     CHECK(api.messages.size() == 1 && api.messages[0] == "7:Hello! Players online: 2");
-    CHECK(!host.AnyoneListens(PS_EVENT_TICK));
-    CHECK(host.AnyoneListens(PS_EVENT_CHAT));
+    CHECK(!host.AnyoneListens(abi::Event::Tick));
+    CHECK(host.AnyoneListens(abi::Event::PlayerChat));
     host.UnloadAll();
     fs::remove_all(dir);
 }
@@ -397,9 +413,12 @@ static void TestBlockCatalog() {
         StateList list;
         for (const auto& [k, v] : e[2].members) {
             const std::string t = v[0].String();
-            if (t == "b") list.emplace_back(k, StateValue(v[1].Int() != 0));
-            else if (t == "i") list.emplace_back(k, StateValue(static_cast<int32_t>(v[1].Int())));
-            else list.emplace_back(k, StateValue(v[1].String()));
+            if (t == "b")
+                list.emplace_back(k, StateValue(v[1].Int() != 0));
+            else if (t == "i")
+                list.emplace_back(k, StateValue(static_cast<int32_t>(v[1].Int())));
+            else
+                list.emplace_back(k, StateValue(v[1].String()));
         }
         if (BlockNetworkHash(e[1].String(), list) != static_cast<int32_t>(e[0].Int()))
             bad++;
@@ -413,8 +432,9 @@ static void TestBlockCatalog() {
     CHECK(c.RegistryId(12345) == 0);
 }
 
-static perlin::proto2225::ItemStackRequestActionsEntry Act(perlin::proto2225::ItemStackRequestActionsEntryTypeId type, perlin::proto2225::ContainerSlotType from, int fromSlot,
-                                                          perlin::proto2225::ContainerSlotType to, int toSlot, int count) {
+static perlin::proto2225::ItemStackRequestActionsEntry
+Act(perlin::proto2225::ItemStackRequestActionsEntryTypeId type, perlin::proto2225::ContainerSlotType from,
+    int fromSlot, perlin::proto2225::ContainerSlotType to, int toSlot, int count) {
     perlin::proto2225::ItemStackRequestActionsEntry a;
     a.typeId = type;
     a.count = static_cast<uint8_t>(count);
@@ -439,14 +459,16 @@ static void TestInventory() {
     r.requestId = -1;
     auto craft = Act(T::CraftCreative, C::HotbarAndInventory, 0, C::HotbarAndInventory, 0, 0);
     craft.itemId = static_cast<uint32_t>(stone->networkId);
-    r.actions = {craft, Act(T::Take, C::CreativeOutput, 50, C::Cursor, 0, 64), Act(T::Place, C::Cursor, 0, C::HotbarAndInventory, 2, 40)};
+    r.actions = {craft, Act(T::Take, C::CreativeOutput, 50, C::Cursor, 0, 64),
+                 Act(T::Place, C::Cursor, 0, C::HotbarAndInventory, 2, 40)};
     RequestResult res = ApplyStackRequest(inv, r, true);
     CHECK(res.ok);
     CHECK(inv.main[2].networkId == stone->networkId && inv.main[2].count == 40);
     CHECK(inv.cursor.count == 24 && inv.output.Empty());
     CHECK(inv.main[2].stackId > 0);
     const auto response = MakeResponse(inv, r.requestId, res);
-    CHECK(response.status == p::ItemStackResponsesEntryStatus::Ok && response.containers && response.containers->size() == 2);
+    CHECK(response.status == p::ItemStackResponsesEntryStatus::Ok && response.containers &&
+          response.containers->size() == 2);
 
     // survival menu has no creative craft
     PlayerInventory survival;
@@ -456,7 +478,8 @@ static void TestInventory() {
     PlayerInventory before = inv;
     p::ItemStackRequest bad;
     bad.requestId = -3;
-    bad.actions = {Act(T::Place, C::Cursor, 0, C::HotbarAndInventory, 5, 10), Act(T::Take, C::HotbarAndInventory, 30, C::Cursor, 0, 1)};
+    bad.actions = {Act(T::Place, C::Cursor, 0, C::HotbarAndInventory, 5, 10),
+                   Act(T::Take, C::HotbarAndInventory, 30, C::Cursor, 0, 1)};
     CHECK(!ApplyStackRequest(inv, bad, true).ok);
     CHECK(inv.cursor.count == before.cursor.count && inv.main[5].Empty());
 
@@ -476,7 +499,8 @@ static void TestInventory() {
     p::ItemStackRequest swap;
     swap.requestId = -7;
     swap.actions = {Act(T::Swap, C::HotbarAndInventory, 3, C::HotbarAndInventory, 4, 0)};
-    CHECK(ApplyStackRequest(inv, swap, true).ok && inv.main[3].networkId == dirt->networkId && inv.main[4].networkId == stone->networkId);
+    CHECK(ApplyStackRequest(inv, swap, true).ok && inv.main[3].networkId == dirt->networkId &&
+          inv.main[4].networkId == stone->networkId);
     inv.main[4].count = 60;
     p::ItemStackRequest merge;
     merge.requestId = -9;
@@ -510,7 +534,8 @@ static void TestAuth() {
     testauth::Account alice("Alice", "2535400000000001");
     const std::vector<std::string> roots = {alice.root.spki};
     auto login = auth::VerifyLogin(alice.Identity(alice.Chain()), alice.ClientToken(), roots);
-    CHECK(login.chainValid && login.xboxVerified && login.name == "Alice" && login.xuid == "2535400000000001" && login.clientKey == alice.player.spki);
+    CHECK(login.chainValid && login.xboxVerified && login.name == "Alice" &&
+          login.xuid == "2535400000000001" && login.clientKey == alice.player.spki);
     CHECK(login.clientDataValid && login.clientData["SkinId"].String() == "s");
 
     // a different root: the chain is still well formed, it is just not Xbox
@@ -525,8 +550,10 @@ static void TestAuth() {
     // an xuid written into the self signed link ahead of the root's signature is not believed
     {
         testauth::Account mallory("Mallory", "999");
-        const std::string lie = "{\"displayName\":\"Victim\",\"XUID\":\"42\",\"identity\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\"}";
-        std::vector<std::string> chain = {testauth::Link(mallory.player, mallory.root, lie), testauth::Link(mallory.root, mallory.intermediate),
+        const std::string lie = "{\"displayName\":\"Victim\",\"XUID\":\"42\",\"identity\":\"aaaaaaaa-bbbb-"
+                                "cccc-dddd-eeeeeeeeeeee\"}";
+        std::vector<std::string> chain = {testauth::Link(mallory.player, mallory.root, lie),
+                                          testauth::Link(mallory.root, mallory.intermediate),
                                           testauth::Link(mallory.intermediate, mallory.player)};
         login = auth::VerifyLogin(mallory.Identity(chain), mallory.ClientToken(), {mallory.root.spki});
         CHECK(login.chainValid && !login.xboxVerified && login.xuid != "42");
@@ -537,11 +564,16 @@ static void TestAuth() {
         std::vector<std::string> chain = alice.Chain();
         std::string forged = chain[2];
         forged[forged.find('.') + 5] ^= 1;
-        CHECK(!auth::VerifyLogin(alice.Identity({chain[0], chain[1], forged}), alice.ClientToken(), roots).chainValid);
-        CHECK(!auth::VerifyLogin(alice.Identity({chain[0], chain[2], chain[1]}), alice.ClientToken(), roots).chainValid);
+        CHECK(!auth::VerifyLogin(alice.Identity({chain[0], chain[1], forged}), alice.ClientToken(), roots)
+                   .chainValid);
+        CHECK(!auth::VerifyLogin(alice.Identity({chain[0], chain[2], chain[1]}), alice.ClientToken(), roots)
+                   .chainValid);
         testauth::Key other;
-        CHECK(!auth::VerifyLogin(alice.Identity({chain[0], chain[1], testauth::Link(other, alice.player, "{\"displayName\":\"X\",\"XUID\":\"1\"}")}),
-                                 alice.ClientToken(), roots).chainValid);
+        CHECK(!auth::VerifyLogin(alice.Identity({chain[0], chain[1],
+                                                 testauth::Link(other, alice.player,
+                                                                "{\"displayName\":\"X\",\"XUID\":\"1\"}")}),
+                                 alice.ClientToken(), roots)
+                   .chainValid);
         // client data signed by some other key
         testauth::Key thief;
         const std::string badClient = testauth::Jwt(thief, "{\"ThirdPartyName\":\"Alice\"}");
@@ -553,12 +585,15 @@ static void TestAuth() {
     // expired link
     {
         const int64_t now = testauth::Now();
-        const std::string old = testauth::Jwt(alice.player, "{\"identityPublicKey\":\"" + alice.player.spki + "\",\"exp\":" + std::to_string(now - 7200) + "}");
+        const std::string old =
+            testauth::Jwt(alice.player, "{\"identityPublicKey\":\"" + alice.player.spki +
+                                            "\",\"exp\":" + std::to_string(now - 7200) + "}");
         CHECK(!auth::VerifyLogin(alice.Identity({old}), alice.ClientToken(), roots).chainValid);
     }
 
     // the offer binding: fingerprints signed by the player's key
-    const std::string sdp = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=fingerprint:sha-256 AB:CD:EF:01\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
+    const std::string sdp = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=fingerprint:sha-256 "
+                            "AB:CD:EF:01\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
     const std::string offer = testauth::AssertOffer(sdp, alice.player);
     std::string why;
     CHECK(auth::VerifyOfferBinding(offer, alice.player.spki, why));

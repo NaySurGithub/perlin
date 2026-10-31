@@ -29,7 +29,8 @@ namespace perlin::ui {
         }
 
         bool Looks(const std::string& key) {
-            static const char* kPrefix[] = {"entity.", "item.", "tile.", "block.", "death.", "commands.", "chat.", "multiplayer.",
+            static const char* kPrefix[] = {"entity.",   "item.",        "tile.",   "block.",
+                                            "death.",    "commands.",    "chat.",   "multiplayer.",
                                             "gameMode.", "enchantment.", "effect.", "potion."};
             for (const char* p : kPrefix)
                 if (key.starts_with(p))
@@ -131,13 +132,15 @@ namespace perlin::ui {
         if (!key.empty() && key[0] == '%')
             key.erase(0, 1);
         std::vector<std::string> args;
+        args.reserve(parameters.size());
         for (const std::string& a : parameters)
             args.push_back(Param(a));
         std::string pattern;
         if (i18n::Lang::Get().Find(key, pattern))
             return prefix + Substitute(pattern, args);
-        if (Looks(key) && (key.starts_with("entity.") || key.starts_with("item.") || key.starts_with("tile.") ||
-                           key.starts_with("block.") || key.starts_with("effect.") || key.starts_with("enchantment.")))
+        if (Looks(key) &&
+            (key.starts_with("entity.") || key.starts_with("item.") || key.starts_with("tile.") ||
+             key.starts_with("block.") || key.starts_with("effect.") || key.starts_with("enchantment.")))
             return prefix + Pretty(key);
         if (!parameters.empty() && !key.contains(' ') && Looks(key)) {
             std::string out = key;
@@ -159,15 +162,16 @@ namespace perlin::ui {
         return RawNode(v);
     }
 
-    std::string FormatTextPacket(int type, bool needsTranslation, const std::string& source, const std::string& message,
-                                 const std::vector<std::string>& parameters) {
+    std::string FormatTextPacket(int type, bool needsTranslation, const std::string& source,
+                                 const std::string& message, const std::vector<std::string>& parameters) {
         switch (type) {
         case 1:
             return Translate("chat.type.text", {source, message});
         case 7:
             return Translate("commands.message.display.incoming", {source, message});
         case 8:
-            return Translate("chat.type.announcement", {source.empty() ? i18n::Tr("perlin.chat.server") : source, message});
+            return Translate("chat.type.announcement",
+                             {source.empty() ? i18n::Tr("perlin.chat.server") : source, message});
         case 9:
         case 10:
         case 11:
@@ -179,10 +183,13 @@ namespace perlin::ui {
         }
     }
 
-    std::string FormatCommandOutput(const std::string& messageId, bool success, const std::vector<std::string>& parameters) {
+    std::string FormatCommandOutput(const std::string& messageId, bool success,
+                                    const std::vector<std::string>& parameters) {
         std::string out = Translate(messageId, parameters);
         if (!success && !out.starts_with("\xC2\xA7"))
-            out = "\xC2\xA7" "c" + out;
+            out = "\xC2\xA7"
+                  "c" +
+                  out;
         return out;
     }
 }

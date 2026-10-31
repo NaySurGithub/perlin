@@ -152,7 +152,8 @@ namespace perlin {
         if (complete) {
             if (blocks.ApplyCustom(options.bedrockSamplesDir + "/repo/resource_pack")) {
                 uploadedTiles = blocks.TilesLoaded();
-                context.UploadAtlas(blocks.AtlasPixels().data(), BlockLibrary::TilePx(), blocks.TilesLoaded());
+                context.UploadAtlas(blocks.AtlasPixels().data(), BlockLibrary::TilePx(),
+                                    blocks.TilesLoaded());
                 InvalidateMeshes();
             }
             return;
@@ -173,7 +174,8 @@ namespace perlin {
         if (!texturePackResolved) {
             texturePackResolved = true;
             std::string error;
-            TexturePack::Instance().OpenStack(paths::DataDir() + "/texturepacks", options.texturePacks, error);
+            TexturePack::Instance().OpenStack(paths::DataDir() + "/texturepacks", options.texturePacks,
+                                              error);
             if (!error.empty())
                 Log("textures", "{} (using default textures)", error);
             blocks.SetTexturePack(TexturePack::Instance().Active());
@@ -186,7 +188,9 @@ namespace perlin {
         const bool tintsOk = blocksOk && biomeTints.EnsureLoaded(vanillaDir);
         {
             const auto end = std::chrono::steady_clock::now();
-            Log("startup", "asset pass: blocks {} ms, tints {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(blocksDone - loadStart).count(), std::chrono::duration_cast<std::chrono::milliseconds>(end - blocksDone).count());
+            Log("startup", "asset pass: blocks {} ms, tints {} ms",
+                std::chrono::duration_cast<std::chrono::milliseconds>(blocksDone - loadStart).count(),
+                std::chrono::duration_cast<std::chrono::milliseconds>(end - blocksDone).count());
         }
         if (PERLIN_ENV("PERLIN_PREVIEW"))
             Log("preview", "blocksOk={} tintsOk={}", blocksOk, tintsOk);
@@ -217,11 +221,12 @@ namespace perlin {
         const auto uploadStart = std::chrono::steady_clock::now();
         size_t consumed = 0;
         for (MeshResult& r : finished) {
-            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::microseconds(1500))
+            if (consumed > 0 &&
+                std::chrono::steady_clock::now() - uploadStart > std::chrono::microseconds(1500))
                 break;
             consumed++;
             inFlight.erase(r.pos);
-            if (!meshKey.count(r.pos))
+            if (!meshKey.contains(r.pos))
                 continue;
             if (r.generation == current) {
                 context.UpdateChunkMesh(r.pos.x, r.pos.z, *r.mesh, r.key);
@@ -267,7 +272,10 @@ namespace perlin {
         for (int dz = -1; dz <= 1; dz++)
             for (int dx = -1; dx <= 1; dx++) {
                 const auto n = info.find(ChunkPos{pos.x + dx, pos.z + dz});
-                key = (key ^ (n == info.end() ? 0 : (dx == 0 && dz == 0 ? n->second.version : n->second.borderVersion) + 1)) * 1099511628211ull;
+                key = (key ^ (n == info.end()
+                                  ? 0
+                                  : (dx == 0 && dz == 0 ? n->second.version : n->second.borderVersion) + 1)) *
+                      1099511628211ull;
             }
         const auto built = meshKey.find(pos);
         if (built != meshKey.end() && built->second == key)
@@ -348,15 +356,19 @@ namespace perlin {
         const uint64_t now = Level::NowMs();
         pending.clear();
         pending.reserve(wantKey.size());
-        static const int debugNear = PERLIN_ENV("PERLIN_LOD_NEAR") ? std::atoi(PERLIN_ENV("PERLIN_LOD_NEAR")) : -1;
-        const int meshRadius = std::max(3, std::min(options.renderDistance, static_cast<int>(LodStore::kRealChunks))) + 3;
-        const int camChunkX = static_cast<int>(std::floor(camX / 16.0f)), camChunkZ = static_cast<int>(std::floor(camZ / 16.0f));
+        static const int debugNear =
+            PERLIN_ENV("PERLIN_LOD_NEAR") ? std::atoi(PERLIN_ENV("PERLIN_LOD_NEAR")) : -1;
+        const int meshRadius =
+            std::max(3, std::min(options.renderDistance, static_cast<int>(LodStore::kRealChunks))) + 3;
+        const int camChunkX = static_cast<int>(std::floor(camX / 16.0f)),
+                  camChunkZ = static_cast<int>(std::floor(camZ / 16.0f));
         for (const auto& [pos, key] : wantKey) {
-            if (debugNear >= 0 && std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > debugNear)
+            if (debugNear >= 0 &&
+                std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > debugNear)
                 continue;
             if (std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > meshRadius)
                 continue;
-            if (inFlight.count(pos) || !Ready(pos, now))
+            if (inFlight.contains(pos) || !Ready(pos, now))
                 continue;
             const float dx = pos.x * 16.0f + 8.0f - camX;
             const float dz = pos.z * 16.0f + 8.0f - camZ;
@@ -414,10 +426,11 @@ namespace perlin {
                 BuildChunkMesh(*target, job.pos, *mesh, &blocks, &biomeTints);
                 mesh->End();
                 const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now() - t0).count();
+                                    std::chrono::steady_clock::now() - t0)
+                                    .count();
                 if (ms > 60)
-                    std::printf("[perf] slow chunk mesh (%d,%d): %lld ms, %zu vertices\n", job.pos.x, job.pos.z,
-                                static_cast<long long>(ms), mesh->Vertices().size());
+                    std::printf("[perf] slow chunk mesh (%d,%d): %lld ms, %zu vertices\n", job.pos.x,
+                                job.pos.z, static_cast<long long>(ms), mesh->Vertices().size());
                 std::lock_guard lock(doneMutex);
                 done.push_back({job.pos, job.key, gen, std::move(mesh)});
             });
@@ -456,7 +469,9 @@ namespace perlin {
             return;
         using Clock = std::chrono::steady_clock;
         const auto start = Clock::now();
-        auto elapsed = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
+        auto elapsed = [&] {
+            return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+        };
 
         size_t taken = 0;
         const double captureBudget = capQueue.size() > 200 ? 5.0 : 2.0;
@@ -472,14 +487,16 @@ namespace perlin {
         if (taken && PERLIN_ENV("PERLIN_STATS")) {
             captureMs += elapsed();
             if (captured >= 100) {
-                std::printf("[lod] %zu captures, %.3f ms each\n", captured, captureMs / static_cast<double>(captured));
+                std::printf("[lod] %zu captures, %.3f ms each\n", captured,
+                            captureMs / static_cast<double>(captured));
                 captured = 0;
                 captureMs = 0;
             }
         }
 
         const int radius = std::max(2, options.renderDistance);
-        const int ccx = static_cast<int>(std::floor(camX / 16.0f)), ccz = static_cast<int>(std::floor(camZ / 16.0f));
+        const int ccx = static_cast<int>(std::floor(camX / 16.0f)),
+                  ccz = static_cast<int>(std::floor(camZ / 16.0f));
         const int scanStep = radius > 128 ? 4 : 2;
         if (lodScanForced || std::abs(ccx - lodScanX) >= scanStep || std::abs(ccz - lodScanZ) >= scanStep) {
             lodScanForced = false;
@@ -495,8 +512,10 @@ namespace perlin {
                 const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
                 const int a = tx * LodStore::kTileChunks, b = a + LodStore::kTileChunks - 1;
                 const int c0 = tz * LodStore::kTileChunks, c1 = c0 + LodStore::kTileChunks - 1;
-                const int nearest = std::max(a > ccx ? a - ccx : (b < ccx ? ccx - b : 0), c0 > ccz ? c0 - ccz : (c1 < ccz ? ccz - c1 : 0));
-                const int farthest = std::max(std::max(std::abs(a - ccx), std::abs(b - ccx)), std::max(std::abs(c0 - ccz), std::abs(c1 - ccz)));
+                const int nearest = std::max(a > ccx ? a - ccx : (b < ccx ? ccx - b : 0),
+                                             c0 > ccz ? c0 - ccz : (c1 < ccz ? ccz - c1 : 0));
+                const int farthest = std::max(std::max(std::abs(a - ccx), std::abs(b - ccx)),
+                                              std::max(std::abs(c0 - ccz), std::abs(c1 - ccz)));
                 if (nearest > radius + 2 || farthest <= LodStore::kRealChunks)
                     continue;
                 wanted[key] = LodStride(tx, tz, ccx, ccz);
@@ -511,13 +530,15 @@ namespace perlin {
                 int xl, xh, zl, zh;
                 span(tx, ccx, xl, xh);
                 span(tz, ccz, zl, zh);
-                if (std::max(xl, zl) <= LodStore::kRealChunks + 3 && std::max(xh, zh) >= LodStore::kRealChunks - 3 &&
-                    lodTiles.count(key) && lodTiles[key] != 0)
+                if (std::max(xl, zl) <= LodStore::kRealChunks + 3 &&
+                    std::max(xh, zh) >= LodStore::kRealChunks - 3 && lodTiles.contains(key) &&
+                    lodTiles[key] != 0)
                     lodDirty.insert(key);
             }
             for (auto it = lodTiles.begin(); it != lodTiles.end();) {
-                if (!wanted.count(it->first)) {
-                    context.RemoveLodTile(static_cast<int>(it->first >> 32), static_cast<int>(static_cast<uint32_t>(it->first)));
+                if (!wanted.contains(it->first)) {
+                    context.RemoveLodTile(static_cast<int>(it->first >> 32),
+                                          static_cast<int>(static_cast<uint32_t>(it->first)));
                     lodDirty.erase(it->first);
                     it = lodTiles.erase(it);
                 } else {
@@ -542,7 +563,7 @@ namespace perlin {
         for (int64_t key : lodDirty) {
             const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
             const float dx = tx * 64.0f + 32.0f - camX, dz = tz * 64.0f + 32.0f - camZ;
-            order.push_back({dx * dx + dz * dz, key});
+            order.emplace_back(dx * dx + dz * dz, key);
         }
         const size_t budget = std::min<size_t>(order.size(), 192);
         std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(budget), order.end());
@@ -555,8 +576,8 @@ namespace perlin {
             const bool drawn = lod.BuildTile(
                 tx, tz, stride,
                 [&](const ChunkPos& p) {
-                    return shown.count(p) > 0 ||
-                           std::max(std::abs(p.x - lodScanX), std::abs(p.z - lodScanZ)) <= LodStore::kRealChunks;
+                    return shown.contains(p) || std::max(std::abs(p.x - lodScanX),
+                                                         std::abs(p.z - lodScanZ)) <= LodStore::kRealChunks;
                 },
                 lodScratch);
             if (drawn)
@@ -590,7 +611,8 @@ namespace perlin {
                     lodScanForced = true;
                 } else {
                     for (const auto& tile : lodTiles)
-                        context.RemoveLodTile(static_cast<int>(tile.first >> 32), static_cast<int>(static_cast<uint32_t>(tile.first)));
+                        context.RemoveLodTile(static_cast<int>(tile.first >> 32),
+                                              static_cast<int>(static_cast<uint32_t>(tile.first)));
                     lodTiles.clear();
                     lodDirty.clear();
                     lod.Clear();
@@ -603,9 +625,11 @@ namespace perlin {
         ProcessLod(*level, camX, camZ);
     }
 
-    void LevelRenderer::CollectSpecials(float camX, float camZ, float range, std::vector<SpecialBlock>& out) const {
+    void LevelRenderer::CollectSpecials(float camX, float camZ, float range,
+                                        std::vector<SpecialBlock>& out) const {
         const int reach = static_cast<int>(std::ceil(range / 16.0f)) + 1;
-        const int cx = static_cast<int>(std::floor(camX / 16.0f)), cz = static_cast<int>(std::floor(camZ / 16.0f));
+        const int cx = static_cast<int>(std::floor(camX / 16.0f)),
+                  cz = static_cast<int>(std::floor(camZ / 16.0f));
         for (int dz = -reach; dz <= reach; dz++)
             for (int dx = -reach; dx <= reach; dx++) {
                 const auto it = specials.find(ChunkPos{cx + dx, cz + dz});
@@ -615,7 +639,8 @@ namespace perlin {
     }
 
     void LevelRenderer::Render(const Frustum& frustum, float camX, float camZ) {
-        context.SetChunkCullRadius(std::max(3, std::min(options.renderDistance, static_cast<int>(LodStore::kRealChunks))) + 2);
+        context.SetChunkCullRadius(
+            std::max(3, std::min(options.renderDistance, static_cast<int>(LodStore::kRealChunks))) + 2);
         context.DrawChunkMeshes(frustum, camX, camZ);
     }
 
@@ -630,16 +655,17 @@ namespace perlin {
                 mesh.End();
                 quads += mesh.Vertices().size();
             }
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-        std::printf("[meshbench] %d rounds x %zu chunks: %.1f ms total, %.3f ms/chunk, %zu vertices\n", rounds, meshKey.size(), ms,
+        const double ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        std::printf("[meshbench] %d rounds x %zu chunks: %.1f ms total, %.3f ms/chunk, %zu vertices\n",
+                    rounds, meshKey.size(), ms,
                     ms / std::max<size_t>(1, static_cast<size_t>(rounds) * meshKey.size()), quads);
     }
 
     void LevelRenderer::TickAnimation(uint64_t step) {
         if (!atlasUploaded)
             return;
-        blocks.PollAnimation(step, [&](int tile, const uint8_t* rgba) {
-            context.UpdateAtlasRegion(tile, rgba);
-        });
+        blocks.PollAnimation(step,
+                             [&](int tile, const uint8_t* rgba) { context.UpdateAtlasRegion(tile, rgba); });
     }
 }

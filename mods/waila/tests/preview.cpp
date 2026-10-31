@@ -40,10 +40,19 @@ namespace {
     }
 
     const std::map<std::string, std::string> kNames = {
-        {"minecraft:stone", "Stone"}, {"minecraft:wheat", "Wheat Seeds"}, {"minecraft:chest", "Chest"}, {"minecraft:noteblock", "Note Block"},
-        {"minecraft:cow", "Cow"}, {"minecraft:horse", "Horse"}, {"minecraft:bedrock", "Bedrock"}, {"minecraft:diamond", "Diamond"},
-        {"minecraft:iron_ingot", "Iron Ingot"}, {"minecraft:apple", "Apple"}, {"minecraft:cobblestone", "Cobblestone"},
-        {"minecraft:oak_log", "Oak Log"}, {"minecraft:dirt", "Dirt"},
+        {"minecraft:stone", "Stone"},
+        {"minecraft:wheat", "Wheat Seeds"},
+        {"minecraft:chest", "Chest"},
+        {"minecraft:noteblock", "Note Block"},
+        {"minecraft:cow", "Cow"},
+        {"minecraft:horse", "Horse"},
+        {"minecraft:bedrock", "Bedrock"},
+        {"minecraft:diamond", "Diamond"},
+        {"minecraft:iron_ingot", "Iron Ingot"},
+        {"minecraft:apple", "Apple"},
+        {"minecraft:cobblestone", "Cobblestone"},
+        {"minecraft:oak_log", "Oak Log"},
+        {"minecraft:dirt", "Dirt"},
     };
 
     abi::BlockProps props_for(const std::string& name) {
@@ -51,11 +60,20 @@ namespace {
         p.known = true;
         const auto it = kNames.find(name);
         p.displayName = it == kNames.end() ? name : it->second;
-        if (name == "minecraft:stone" || name == "minecraft:cobblestone") { p.hardness = 1.5f; p.tool = abi::Tool::Pickaxe; p.harvestLevel = 1; }
-        else if (name == "minecraft:bedrock") p.hardness = -1;
-        else if (name == "minecraft:chest" || name == "minecraft:oak_log") { p.hardness = 2.0f; p.tool = abi::Tool::Axe; }
-        else if (name == "minecraft:dirt") { p.hardness = 0.5f; p.tool = abi::Tool::Shovel; }
-        else p.hardness = 0.0f;
+        if (name == "minecraft:stone" || name == "minecraft:cobblestone") {
+            p.hardness = 1.5f;
+            p.tool = abi::Tool::Pickaxe;
+            p.harvestLevel = 1;
+        } else if (name == "minecraft:bedrock")
+            p.hardness = -1;
+        else if (name == "minecraft:chest" || name == "minecraft:oak_log") {
+            p.hardness = 2.0f;
+            p.tool = abi::Tool::Axe;
+        } else if (name == "minecraft:dirt") {
+            p.hardness = 0.5f;
+            p.tool = abi::Tool::Shovel;
+        } else
+            p.hardness = 0.0f;
         return p;
     }
 }
@@ -74,7 +92,9 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
                 if (id.empty())
                     continue;
                 const json::Value& d = s["default"];
-                std::string value = d.is_bool() ? (d.boolean() ? "true" : "false") : d.is_string() ? std::string(d.string()) : std::format("{}", d.number());
+                std::string value = d.is_bool()     ? (d.boolean() ? "true" : "false")
+                                    : d.is_string() ? std::string(d.string())
+                                                    : std::format("{}", d.number());
                 if (setting_values.count(id))
                     value = setting_values[id];
                 list.push_back({id, value});
@@ -107,7 +127,11 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
             a.kind = abi::AimKind::Block;
             a.block.hit = true;
             a.block.x = 10, a.block.y = 64, a.block.z = -3;
-            a.block.block = scenario == "wheat" ? "minecraft:wheat" : scenario == "chest" ? "minecraft:chest" : scenario == "noteblock" ? "minecraft:noteblock" : scenario == "bedrock" ? "minecraft:bedrock" : "minecraft:stone";
+            a.block.block = scenario == "wheat"       ? "minecraft:wheat"
+                            : scenario == "chest"     ? "minecraft:chest"
+                            : scenario == "noteblock" ? "minecraft:noteblock"
+                            : scenario == "bedrock"   ? "minecraft:bedrock"
+                                                      : "minecraft:stone";
             a.distance = 3.2;
         }
         w.write(a);
@@ -116,7 +140,11 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
     case Op::Block: {
         abi::BlockInfo b;
         b.loaded = true;
-        const std::string n = scenario == "wheat" ? "minecraft:wheat" : scenario == "chest" ? "minecraft:chest" : scenario == "noteblock" ? "minecraft:noteblock" : scenario == "bedrock" ? "minecraft:bedrock" : "minecraft:stone";
+        const std::string n = scenario == "wheat"       ? "minecraft:wheat"
+                              : scenario == "chest"     ? "minecraft:chest"
+                              : scenario == "noteblock" ? "minecraft:noteblock"
+                              : scenario == "bedrock"   ? "minecraft:bedrock"
+                                                        : "minecraft:stone";
         b.name = n;
         if (scenario == "wheat")
             b.states.emplace_back("growth", "3");
@@ -133,7 +161,8 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
         if (scenario == "chest") {
             be.present = true;
             be.id = "Chest";
-            be.nbt = R"({"id":"Chest","Items":[{"Name":"minecraft:diamond","Count":12,"Slot":0},{"Name":"minecraft:iron_ingot","Count":64,"Slot":1},{"Name":"minecraft:apple","Count":3,"Slot":4},{"Name":"minecraft:cobblestone","Count":1,"Slot":5}]})";
+            be.nbt =
+                R"({"id":"Chest","Items":[{"Name":"minecraft:diamond","Count":12,"Slot":0},{"Name":"minecraft:iron_ingot","Count":64,"Slot":1},{"Name":"minecraft:apple","Count":3,"Slot":4},{"Name":"minecraft:cobblestone","Count":1,"Slot":5}]})";
         } else if (scenario == "noteblock") {
             be.present = true;
             be.nbt = R"({"id":"Music","note":9})";
@@ -187,8 +216,12 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
         submitted.assign(bytes.begin(), bytes.end());
         break;
     }
-    case Op::Clock: w.put<int64_t>(clock_ms); break;
-    case Op::InputDown: w.boolean(false); break;
+    case Op::Clock:
+        w.put<int64_t>(clock_ms);
+        break;
+    case Op::InputDown:
+        w.boolean(false);
+        break;
     case Op::BreakProgress: {
         abi::BreakState b;
         b.active = scenario == "stone";
@@ -197,7 +230,8 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
         w.write(b);
         break;
     }
-    default: break;
+    default:
+        break;
     }
     if (w.Size() > outCap)
         return -(abi::kNeedMoreBase + static_cast<int32_t>(w.Size()));
@@ -206,9 +240,12 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
 }
 
 int main(int argc, char** argv) {
-    if (argc > 1) scenario = argv[1];
-    if (argc > 2) out_path = argv[2];
-    for (int i = 3; i + 1 < argc; i += 2) setting_values[argv[i]] = argv[i + 1];
+    if (argc > 1)
+        scenario = argv[1];
+    if (argc > 2)
+        out_path = argv[2];
+    for (int i = 3; i + 1 < argc; i += 2)
+        setting_values[argv[i]] = argv[i + 1];
 
     perlin_event(static_cast<uint32_t>(abi::Event::Load), nullptr, 0);
     abi::Writer w;

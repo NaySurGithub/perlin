@@ -29,8 +29,9 @@ namespace perlin::entity {
             e.skin = it->second;
     }
 
-    void EntityTracker::AddPlayer(uint64_t rid, int64_t uid, const std::string& uuid, const std::string& name, glm::dvec3 feetPos,
-                                  float pitch, float yaw, float headYaw, uint64_t flags, const std::string& mainHand) {
+    void EntityTracker::AddPlayer(uint64_t rid, int64_t uid, const std::string& uuid, const std::string& name,
+                                  glm::dvec3 feetPos, float pitch, float yaw, float headYaw, uint64_t flags,
+                                  const std::string& mainHand) {
         std::lock_guard lock(mutex);
         Entity& e = entities[rid];
         const bool fresh = e.runtimeId == 0;
@@ -53,8 +54,9 @@ namespace perlin::entity {
         AttachSkinLocked(e);
     }
 
-    void EntityTracker::AddEntity(uint64_t rid, int64_t uid, const std::string& type, glm::dvec3 feetPos, float pitch, float yaw,
-                                  float headYaw, uint64_t flags, float scale, int variant, int markVariant, int color) {
+    void EntityTracker::AddEntity(uint64_t rid, int64_t uid, const std::string& type, glm::dvec3 feetPos,
+                                  float pitch, float yaw, float headYaw, uint64_t flags, float scale,
+                                  int variant, int markVariant, int color) {
         std::lock_guard lock(mutex);
         Entity& e = entities[rid];
         e.runtimeId = rid;
@@ -74,8 +76,8 @@ namespace perlin::entity {
         byUnique[uid] = rid;
     }
 
-    void EntityTracker::AddItem(uint64_t rid, int64_t uid, glm::dvec3 pos, const std::string& name, int count, int aux,
-                                uint32_t blockRuntimeId, bool enchanted) {
+    void EntityTracker::AddItem(uint64_t rid, int64_t uid, glm::dvec3 pos, const std::string& name, int count,
+                                int aux, uint32_t blockRuntimeId, bool enchanted) {
         std::lock_guard lock(mutex);
         Entity& e = entities[rid];
         e.runtimeId = rid;
@@ -129,7 +131,8 @@ namespace perlin::entity {
         }
     }
 
-    void EntityTracker::Move(uint64_t rid, glm::dvec3 pos, float pitch, float yaw, float headYaw, bool onGround) {
+    void EntityTracker::Move(uint64_t rid, glm::dvec3 pos, float pitch, float yaw, float headYaw,
+                             bool onGround) {
         std::lock_guard lock(mutex);
         const auto it = entities.find(rid);
         if (it == entities.end())
@@ -150,8 +153,8 @@ namespace perlin::entity {
         e.moveSerial++;
     }
 
-    void EntityTracker::MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch,
-                                  const float* yaw, const float* headYaw, bool onGround) {
+    void EntityTracker::MoveDelta(uint64_t rid, const double* x, const double* y, const double* z,
+                                  const float* pitch, const float* yaw, const float* headYaw, bool onGround) {
         std::lock_guard lock(mutex);
         const auto it = entities.find(rid);
         if (it == entities.end())
@@ -161,12 +164,18 @@ namespace perlin::entity {
             ItemServerUpdate(e, glm::dvec3(x ? *x : e.pos.x, y ? *y : e.pos.y, z ? *z : e.pos.z), onGround);
             return;
         }
-        if (x) e.pos.x = *x;
-        if (y) e.pos.y = e.isPlayer ? *y - kPlayerEye : *y;
-        if (z) e.pos.z = *z;
-        if (pitch) e.pitch = SignedPitch(*pitch);
-        if (yaw) e.yaw = *yaw;
-        if (headYaw) e.headYaw = *headYaw;
+        if (x)
+            e.pos.x = *x;
+        if (y)
+            e.pos.y = e.isPlayer ? *y - kPlayerEye : *y;
+        if (z)
+            e.pos.z = *z;
+        if (pitch)
+            e.pitch = SignedPitch(*pitch);
+        if (yaw)
+            e.yaw = *yaw;
+        if (headYaw)
+            e.headYaw = *headYaw;
         e.onGround = onGround;
         e.moveSerial++;
     }
@@ -181,37 +190,43 @@ namespace perlin::entity {
             it->second.vehicleUid = vehicleUid;
     }
 
-#define PERLIN_ENTITY_SET(name, body)                                                                                  \
-    void EntityTracker::name {                                                                                         \
-        std::lock_guard lock(mutex);                                                                                   \
-        const auto it = entities.find(rid);                                                                            \
-        if (it == entities.end())                                                                                      \
-            return;                                                                                                    \
-        Entity& e = it->second;                                                                                        \
-        body;                                                                                                          \
+#define PERLIN_ENTITY_SET(name, body)                                                                        \
+    void EntityTracker::name {                                                                               \
+        std::lock_guard lock(mutex);                                                                         \
+        const auto it = entities.find(rid);                                                                  \
+        if (it == entities.end())                                                                            \
+            return;                                                                                          \
+        Entity& e = it->second;                                                                              \
+        body;                                                                                                \
     }
     PERLIN_ENTITY_SET(SetFlags(uint64_t rid, uint64_t flags), e.flags = flags)
     PERLIN_ENTITY_SET(SetFlagsExtended(uint64_t rid, uint64_t flags), e.flagsExtended = flags)
     PERLIN_ENTITY_SET(SetCrawling(uint64_t rid, bool crawling), e.crawling = crawling)
     PERLIN_ENTITY_SET(SetScale(uint64_t rid, float scale), e.scale = scale)
     // server hitbox: draw/collide with what it simulates
-    PERLIN_ENTITY_SET(SetBoundingBox(uint64_t rid, float width, float height), e.boxWidth = width; e.boxHeight = height)
+    PERLIN_ENTITY_SET(SetBoundingBox(uint64_t rid, float width, float height), e.boxWidth = width;
+                      e.boxHeight = height)
     PERLIN_ENTITY_SET(SetNameTag(uint64_t rid, const std::string& nameTag), e.nameTag = nameTag)
-    PERLIN_ENTITY_SET(SetVariant(uint64_t rid, int variant, int markVariant, int color),
-                      e.variant = variant; e.markVariant = markVariant; e.color = color)
-    PERLIN_ENTITY_SET(SetHealth(uint64_t rid, float health), e.health = health; if (health <= 0.0f && !e.isItem) e.dying = true; else if (health > 0.0f) e.dying = false)
+    PERLIN_ENTITY_SET(SetVariant(uint64_t rid, int variant, int markVariant, int color), e.variant = variant;
+                      e.markVariant = markVariant; e.color = color)
+    PERLIN_ENTITY_SET(SetHealth(uint64_t rid, float health), e.health = health;
+                      if (health <= 0.0f && !e.isItem) e.dying = true;
+                      else if (health > 0.0f) e.dying = false)
     PERLIN_ENTITY_SET(SetAttribute(uint64_t rid, const std::string& name, float min, float value, float max),
-                      if (e.attributes.size() < 64 || e.attributes.count(name)) (e.attributes[name] = Entity::Attribute{min, value, max}))
+                      if (e.attributes.size() < 64 ||
+                          e.attributes.count(name))(e.attributes[name] = Entity::Attribute{min, value, max}))
     PERLIN_ENTITY_SET(SetTarget(uint64_t rid, int64_t targetUid), e.targetUid = targetUid)
     PERLIN_ENTITY_SET(SetOwner(uint64_t rid, int64_t ownerUid), e.ownerUid = ownerUid)
     PERLIN_ENTITY_SET(Die(uint64_t rid), e.dying = true)
     PERLIN_ENTITY_SET(SetHeld(uint64_t rid, const std::string& item), e.mainHand = item)
     PERLIN_ENTITY_SET(SetOffHand(uint64_t rid, const std::string& item), e.offHand = item)
-    PERLIN_ENTITY_SET(SetArmor(uint64_t rid, int slot, const std::string& item), if (slot >= 0 && slot < 4) e.armor[slot] = item)
+    PERLIN_ENTITY_SET(SetArmor(uint64_t rid, int slot, const std::string& item),
+                      if (slot >= 0 && slot < 4) e.armor[slot] = item)
     PERLIN_ENTITY_SET(Hurt(uint64_t rid), e.hurtSerial++)
     PERLIN_ENTITY_SET(Swing(uint64_t rid), e.swingSerial++)
     PERLIN_ENTITY_SET(SetProperty(uint64_t rid, const std::string& key, float value), e.props[key] = value)
-    PERLIN_ENTITY_SET(SetPropertyText(uint64_t rid, const std::string& key, const std::string& text), e.propText[key] = text)
+    PERLIN_ENTITY_SET(SetPropertyText(uint64_t rid, const std::string& key, const std::string& text),
+                      e.propText[key] = text)
 #undef PERLIN_ENTITY_SET
 
     void EntityTracker::SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin, bool listed) {
@@ -260,7 +275,9 @@ namespace perlin::entity {
 
     namespace {
         double NowMs() {
-            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            return std::chrono::duration<double, std::milli>(
+                       std::chrono::steady_clock::now().time_since_epoch())
+                .count();
         }
         constexpr double kPickupMs = 160.0;
     }
@@ -276,7 +293,7 @@ namespace perlin::entity {
         const auto it = entities.find(rid);
         if (it == entities.end())
             return;
-        if (!it->second.isItem || pickups.count(rid)) {
+        if (!it->second.isItem || pickups.contains(rid)) {
             if (!it->second.isItem) {
                 byUnique.erase(it->second.uniqueId);
                 entities.erase(it);
@@ -351,9 +368,12 @@ namespace perlin::entity {
         std::lock_guard lock(mutex);
         constexpr double kHalf = 0.125, kHeight = 0.25;
         const auto blocked = [&](double x, double y, double z) {
-            for (int bx = static_cast<int>(std::floor(x - kHalf)); bx <= static_cast<int>(std::floor(x + kHalf)); bx++)
-                for (int by = static_cast<int>(std::floor(y)); by <= static_cast<int>(std::floor(y + kHeight)); by++)
-                    for (int bz = static_cast<int>(std::floor(z - kHalf)); bz <= static_cast<int>(std::floor(z + kHalf)); bz++)
+            for (int bx = static_cast<int>(std::floor(x - kHalf));
+                 bx <= static_cast<int>(std::floor(x + kHalf)); bx++)
+                for (int by = static_cast<int>(std::floor(y));
+                     by <= static_cast<int>(std::floor(y + kHeight)); by++)
+                    for (int bz = static_cast<int>(std::floor(z - kHalf));
+                         bz <= static_cast<int>(std::floor(z + kHalf)); bz++)
                         if (solid(bx, by, bz))
                             return true;
             return false;
@@ -361,7 +381,8 @@ namespace perlin::entity {
         for (auto& [rid, e] : entities) {
             if (!e.isItem || !e.simulated)
                 continue;
-            if (e.haveServerPos && std::chrono::steady_clock::now() - e.lastServerAt < std::chrono::milliseconds(70))
+            if (e.haveServerPos &&
+                std::chrono::steady_clock::now() - e.lastServerAt < std::chrono::milliseconds(70))
                 continue;
             e.vel.y -= 0.04;
             glm::dvec3 p = e.pos;
@@ -379,9 +400,15 @@ namespace perlin::entity {
                 p.y = ny;
             }
             const double nx = p.x + e.vel.x;
-            if (blocked(nx, p.y, p.z)) e.vel.x = 0.0; else p.x = nx;
+            if (blocked(nx, p.y, p.z))
+                e.vel.x = 0.0;
+            else
+                p.x = nx;
             const double nz = p.z + e.vel.z;
-            if (blocked(p.x, p.y, nz)) e.vel.z = 0.0; else p.z = nz;
+            if (blocked(p.x, p.y, nz))
+                e.vel.z = 0.0;
+            else
+                p.z = nz;
             const double friction = grounded ? 0.98 * 0.6 : 0.98;
             e.vel.x *= friction;
             e.vel.z *= friction;

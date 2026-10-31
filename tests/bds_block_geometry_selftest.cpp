@@ -23,8 +23,8 @@ int main(int argc, char** argv) {
         std::istringstream row(line);
         char kind;
         uint32_t mode, count, hasQuery;
-        if (!(row >> kind >> std::hex >> mode >> count >> hasQuery) || kind != 'G' ||
-            mode > 2 || count > 32 || hasQuery > 1)
+        if (!(row >> kind >> std::hex >> mode >> count >> hasQuery) || kind != 'G' || mode > 2 ||
+            count > 32 || hasQuery > 1)
             return 1;
         std::array<uint32_t, 18> words{};
         for (auto& word : words)
@@ -61,12 +61,14 @@ int main(int argc, char** argv) {
             return 1;
         const auto emit = [&](const CollisionBox& box) { actual.push_back(box); };
         const auto filter = hasQuery ? &query : nullptr;
-        const bool returned = mode ? CollectBlockComponentShapes(mode == 2, offset, position, shapes, filter, emit)
-                                   : CollectFallbackBlockShape(fallback, filter, emit);
+        const bool returned =
+            mode ? CollectBlockComponentShapes(mode == 2, offset, position, shapes, filter, emit)
+                 : CollectFallbackBlockShape(fallback, filter, emit);
         bool equal = actual.size() == expected.size() && returned == bool(expectedReturn);
         for (size_t i = 0; i < actual.size() && i < expected.size(); ++i)
             for (int axis = 0; axis < 6; ++axis)
-                equal &= std::bit_cast<uint32_t>(actual[i][axis]) == std::bit_cast<uint32_t>(expected[i][axis]);
+                equal &=
+                    std::bit_cast<uint32_t>(actual[i][axis]) == std::bit_cast<uint32_t>(expected[i][axis]);
         if (!equal) {
             if (failures < 20)
                 std::fprintf(stderr, "Block geometry case %d differs from BDS\n", cases);

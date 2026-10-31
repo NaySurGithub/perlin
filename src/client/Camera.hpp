@@ -31,6 +31,8 @@ namespace perlin {
         }
 
         float thirdPersonDistance = 5.0f;
+        // CameraAvoidanceComponent runtime spring velocity (+0x38); thirdPersonDistance is its current distance (+0x3C)
+        float avoidanceVelocity = 0.0f;
 
         glm::vec3 EyePosition() const {
             const glm::vec3 dir = Direction();
@@ -42,13 +44,16 @@ namespace perlin {
             return eye;
         }
 
-        glm::vec3 ViewDirection() const { return mode == PerspectiveMode::ThirdPersonFront ? -Direction() : Direction(); }
+        glm::vec3 ViewDirection() const {
+            return mode == PerspectiveMode::ThirdPersonFront ? -Direction() : Direction();
+        }
 
         glm::vec3 Up() const { return {0.0f, 1.0f, 0.0f}; }
 
         glm::mat4 SkyViewProjection() const {
             const glm::vec3 dir = ViewDirection();
-            const glm::mat4 view = glm::mat4(glm::mat3(viewEffect)) * glm::mat4(glm::mat3(glm::lookAt(glm::vec3(0.0f), dir, Up())));
+            const glm::mat4 view = glm::mat4(glm::mat3(viewEffect)) *
+                                   glm::mat4(glm::mat3(glm::lookAt(glm::vec3(0.0f), dir, Up())));
             return glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane) * view;
         }
 

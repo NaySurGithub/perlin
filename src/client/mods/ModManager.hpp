@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "perlin/abi.hpp"
+#include "perlin/host.hpp"
 
 namespace perlin::mods {
     struct ModInfo {
@@ -30,7 +31,7 @@ namespace perlin::mods {
         bool hasSettings = false;
         uint32_t requested = 0;
         bool needsApproval = false;
-        int priority = 0;  // manifest "priority": higher runs first
+        int priority = 0; // manifest "priority": higher runs first
     };
 
     struct PluginCommand {
@@ -39,7 +40,7 @@ namespace perlin::mods {
 
     struct PluginKey {
         std::string plugin, id, label, binding;
-        bool ctrl = false, shift = false, alt = false;  // required held modifiers (KeyRegisterEx)
+        bool ctrl = false, shift = false, alt = false; // required held modifiers (KeyRegisterEx)
         abi::KeyContext context = abi::KeyContext::InGame;
     };
 
@@ -90,13 +91,25 @@ namespace perlin::mods {
         void SetAutoReload(bool value) { autoReload = value; }
 
         void SetEnvironment(const std::string& gameVersion, const std::string& platform);
-        void Register(abi::Op op, OpHandler handler, uint32_t permission = 0);
+        // the permission a call needs comes from abi_table.h
+        void Register(abi::Op op, OpHandler handler);
+        // typed: fn(CallContext&, const Request&) -> Response; encoding from the op's table entry
+        template <abi::Op O, class Fn> void Handle(Fn&& fn) {
+            Register(O, abi::host::Typed<O, CallContext>(std::forward<Fn>(fn)));
+        }
+        // typed event: the payload type comes from the event's table entry
+        template <abi::Event E> bool Dispatch(const abi::payload_t<E>& payload, double budgetMs = 250.0) {
+            return Dispatch(E, abi::host::Encode<E>(payload), budgetMs);
+        }
         void Update();
 
         bool Dispatch(abi::Event event, const abi::Writer& payload, double budgetMs = 250.0);
-        bool Dispatch(abi::Event event, double budgetMs = 250.0) { return Dispatch(event, abi::Writer{}, budgetMs); }
+        bool Dispatch(abi::Event event, double budgetMs = 250.0) {
+            return Dispatch(event, abi::Writer{}, budgetMs);
+        }
         bool WantsEvent(abi::Event event) const;
-        void DispatchTo(const std::string& plugin, abi::Event event, const abi::Writer& payload, double budgetMs = 250.0);
+        void DispatchTo(const std::string& plugin, abi::Event event, const abi::Writer& payload,
+                        double budgetMs = 250.0);
 
         std::vector<PluginCommand> Commands() const;
         std::vector<PluginKey> Keys() const;
@@ -144,8 +157,10 @@ namespace perlin::mods {
         void ReadMeta(Plugin& mod);
         void ApplyApproval(Plugin& mod);
         std::map<std::string, uint32_t> approved;
-        bool Call(Plugin& mod, abi::Event event, const abi::Writer& payload, double budgetMs, bool& cancelled);
-        int32_t HostCall(Plugin& mod, uint32_t op, const uint8_t* in, uint32_t inLen, uint8_t* out, uint32_t outCap);
+        bool Call(Plugin& mod, abi::Event event, const abi::Writer& payload, double budgetMs,
+                  bool& cancelled);
+        int32_t HostCall(Plugin& mod, uint32_t op, const uint8_t* in, uint32_t inLen, uint8_t* out,
+                         uint32_t outCap);
         void Revoke(Plugin& mod, const char* why);
         void Retire(Plugin& mod);
         std::string KeysFile(const Plugin& mod) const;
@@ -180,9 +195,9 @@ namespace perlin::mods {
         void RefreshGrabs();
         std::atomic<uint64_t> commandVersion{1};
         std::atomic<uint64_t> tickCounter{0};
-        std::chrono::steady_clock::time_point lastScan{};
+        std::chrono::steady_clock::time_point lastScan;
         std::vector<std::function<void()>> mainQueue;
-        std::chrono::steady_clock::time_point lastFlush{};
+        std::chrono::steady_clock::time_point lastFlush;
         friend struct HostBridge;
     };
 }

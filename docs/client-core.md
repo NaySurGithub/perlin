@@ -29,6 +29,22 @@ A phase starts by naming the context fields it uses (`auto& dt = f.dt;`), so its
 
 ## Screens
 
+Full-screen and overlay screens are registered once, in priority order, with the `ScreenManager`
+(`src/client/ScreenManager.hpp`) in `Perlin::RegisterScreens()` (`PerlinScreens.cpp`). Each frame
+`screens.Update(frame)` walks them; the first one whose `Update` returns true has taken the frame and the rest are
+skipped. A screen is either a `Screen` subclass (`Name`, `Update`, `IsOpen`, `CoversGame`) or a `Callbacks` record
+of lambdas for screens that live as `Perlin` members:
+
+```cpp
+screens.Add({.name = "title",
+             .update = [this](ScreenFrame& f) { return UpdateTitleScreen(f.hud, f.fbW, f.fbH); },
+             .isOpen = [this] { return titleScreen.shown; }});
+```
+
+`screens.TookFrame("title")`, `IsOpen(name)` and `AnyCoveringOpen()` replace the per-screen flags the frame code
+used to test (the crosshair, for example, is hidden while any screen that covers the game is open). A new screen is
+one `Add` call; nothing else in the frame needs to change.
+
 Every rml overlay screen keeps an `OverlayState` (`shown`, `leftDown`, `signature`, `openedAt`); a screen with a
 user-editable template adds a `ui::TemplateSlot`, which re-reads `<data>/ui/<file>` when it changes on disk.
 `detail::OverlayViewport` gives a screen its gui size; `str::Key(...)` builds the signature that decides when the

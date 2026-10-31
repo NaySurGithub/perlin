@@ -23,7 +23,8 @@ namespace perlin::render {
         static PackedQuad Make(int x, int y, int z, int w, int h, int face, uint16_t tile, uint16_t extra) {
             PackedQuad q;
             q.a = static_cast<uint32_t>(x) | static_cast<uint32_t>(y) << 5 | static_cast<uint32_t>(z) << 10 |
-                  static_cast<uint32_t>(w - 1) << 15 | static_cast<uint32_t>(h - 1) << 19 | static_cast<uint32_t>(face) << 23;
+                  static_cast<uint32_t>(w - 1) << 15 | static_cast<uint32_t>(h - 1) << 19 |
+                  static_cast<uint32_t>(face) << 23;
             q.b = static_cast<uint32_t>(tile) | static_cast<uint32_t>(extra) << 16;
             return q;
         }
@@ -40,8 +41,8 @@ namespace perlin::render {
 
     // binary greedy mesher over the visibility bit columns: slices are merged along the first in-plane axis, then
     // extended along the second while whole runs match
-    MeshStats GreedyMesh(const SectionBlocks& section, const FaceMask& mask, const BlockTable& table, const FaceKeyFn& extra,
-                         std::vector<PackedQuad>& out);
+    MeshStats GreedyMesh(const SectionBlocks& section, const FaceMask& mask, const BlockTable& table,
+                         const FaceKeyFn& extra, std::vector<PackedQuad>& out);
 
     // the section-local positions of a quad's four corners in counter-clockwise order seen from outside, and the
     // uv extent in blocks (u along the first in-plane axis, v along the second)
@@ -52,6 +53,6 @@ namespace perlin::render {
     QuadCorners CornersOf(const PackedQuad& quad);
 
     // 4 vertices, 6 indices per quad for the plain triangle path
-    void AppendTriangles(const PackedQuad& quad, uint32_t baseIndex, std::vector<float>& positions, std::vector<float>& uvs,
-                         std::vector<uint32_t>& indices);
+    void AppendTriangles(const PackedQuad& quad, uint32_t baseIndex, std::vector<float>& positions,
+                         std::vector<float>& uvs, std::vector<uint32_t>& indices);
 }

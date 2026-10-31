@@ -25,16 +25,21 @@ namespace rhi::d3d12 {
                 lib.dxgi = LoadLibraryW(L"dxgi.dll");
                 if (!lib.d3d12 || !lib.dxgi)
                     return false;
-                lib.createDevice = reinterpret_cast<PFN_D3D12_CREATE_DEVICE>(GetProcAddress(lib.d3d12, "D3D12CreateDevice"));
-                lib.getDebugInterface = reinterpret_cast<PFN_D3D12_GET_DEBUG_INTERFACE>(GetProcAddress(lib.d3d12, "D3D12GetDebugInterface"));
+                lib.createDevice =
+                    reinterpret_cast<PFN_D3D12_CREATE_DEVICE>(GetProcAddress(lib.d3d12, "D3D12CreateDevice"));
+                lib.getDebugInterface = reinterpret_cast<PFN_D3D12_GET_DEBUG_INTERFACE>(
+                    GetProcAddress(lib.d3d12, "D3D12GetDebugInterface"));
                 lib.serializeRootSignature = reinterpret_cast<PFN_D3D12_SERIALIZE_VERSIONED_ROOT_SIGNATURE>(
                     GetProcAddress(lib.d3d12, "D3D12SerializeVersionedRootSignature"));
-                lib.createFactory2 = reinterpret_cast<decltype(lib.createFactory2)>(GetProcAddress(lib.dxgi, "CreateDXGIFactory2"));
+                lib.createFactory2 = reinterpret_cast<decltype(lib.createFactory2)>(
+                    GetProcAddress(lib.dxgi, "CreateDXGIFactory2"));
                 // an interposer (frame generation layer) supplies its own entry point
                 if (options.hooks.dxgiCreateFactory)
-                    lib.createFactory2 = reinterpret_cast<decltype(lib.createFactory2)>(options.hooks.dxgiCreateFactory);
+                    lib.createFactory2 =
+                        reinterpret_cast<decltype(lib.createFactory2)>(options.hooks.dxgiCreateFactory);
                 if (options.hooks.d3d12CreateDevice)
-                    lib.createDevice = reinterpret_cast<PFN_D3D12_CREATE_DEVICE>(options.hooks.d3d12CreateDevice);
+                    lib.createDevice =
+                        reinterpret_cast<PFN_D3D12_CREATE_DEVICE>(options.hooks.d3d12CreateDevice);
                 if (!lib.createDevice || !lib.serializeRootSignature || !lib.createFactory2)
                     return false;
 
@@ -47,12 +52,15 @@ namespace rhi::d3d12 {
                         factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
                     }
                 }
-                if (FAILED(lib.createFactory2(factoryFlags, winrt::guid_of<IDXGIFactory4>(), state->factory.put_void())))
+                if (FAILED(lib.createFactory2(factoryFlags, winrt::guid_of<IDXGIFactory4>(),
+                                              state->factory.put_void())))
                     return false;
 
                 winrt::com_ptr<IDXGIFactory5> f5;
                 BOOL tearing = FALSE;
-                if ((f5 = state->factory.try_as<IDXGIFactory5>()) && SUCCEEDED(f5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing, sizeof(tearing))))
+                if ((f5 = state->factory.try_as<IDXGIFactory5>()) &&
+                    SUCCEEDED(f5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing,
+                                                      sizeof(tearing))))
                     state->tearing = tearing != FALSE;
 
                 EnumerateAdapters();
@@ -63,9 +71,11 @@ namespace rhi::d3d12 {
             const std::vector<AdapterInfo>& Adapters() const override { return adapters; }
 
             std::unique_ptr<rhi::Device> CreateDevice(const DeviceOptions& deviceOptions) override {
-                if (deviceOptions.adapterIndex >= adapters.size() || !adapters[deviceOptions.adapterIndex].usable)
+                if (deviceOptions.adapterIndex >= adapters.size() ||
+                    !adapters[deviceOptions.adapterIndex].usable)
                     return nullptr;
-                auto device = std::make_unique<Device>(state, native[deviceOptions.adapterIndex], adapters[deviceOptions.adapterIndex], deviceOptions);
+                auto device = std::make_unique<Device>(state, native[deviceOptions.adapterIndex],
+                                                       adapters[deviceOptions.adapterIndex], deviceOptions);
                 std::string error;
                 if (!device->Init(error)) {
                     std::fprintf(stderr, "[d3d12] device creation failed: %s\n", error.c_str());
@@ -89,25 +99,30 @@ namespace rhi::d3d12 {
                 a.sharedMemory = d.SharedSystemMemory;
                 a.luid = (static_cast<uint64_t>(d.AdapterLuid.HighPart) << 32) | d.AdapterLuid.LowPart;
                 const bool software = (d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
-                a.type = software ? AdapterType::Cpu : (d.DedicatedVideoMemory > (512ull << 20) ? AdapterType::Discrete : AdapterType::Integrated);
+                a.type = software ? AdapterType::Cpu
+                                  : (d.DedicatedVideoMemory > (512ull << 20) ? AdapterType::Discrete
+                                                                             : AdapterType::Integrated);
 
                 LARGE_INTEGER umd{};
                 if (SUCCEEDED(adapter->CheckInterfaceSupport(winrt::guid_of<IDXGIDevice>(), &umd)))
                     a.driverVersion = static_cast<uint64_t>(umd.QuadPart);
 
                 winrt::com_ptr<ID3D12Device> probe;
-                if (FAILED(state->lib.createDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0, winrt::guid_of<ID3D12Device>(), probe.put_void()))) {
+                if (FAILED(state->lib.createDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0,
+                                                   winrt::guid_of<ID3D12Device>(), probe.put_void()))) {
                     a.usable = false;
                     a.unusableReason = "no Direct3D 12 feature level 12_0";
                 } else {
-                    static const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_12_2, D3D_FEATURE_LEVEL_12_1, D3D_FEATURE_LEVEL_12_0};
+                    static const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_12_2, D3D_FEATURE_LEVEL_12_1,
+                                                               D3D_FEATURE_LEVEL_12_0};
                     D3D12_FEATURE_DATA_FEATURE_LEVELS fl{};
                     fl.NumFeatureLevels = static_cast<UINT>(std::size(levels));
                     fl.pFeatureLevelsRequested = levels;
                     if (SUCCEEDED(probe->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &fl, sizeof(fl))))
                         a.apiVersion = fl.MaxSupportedFeatureLevel;
                     D3D12_FEATURE_DATA_SHADER_MODEL sm{D3D_SHADER_MODEL_6_0};
-                    if (FAILED(probe->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &sm, sizeof(sm))) || sm.HighestShaderModel < D3D_SHADER_MODEL_6_0) {
+                    if (FAILED(probe->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &sm, sizeof(sm))) ||
+                        sm.HighestShaderModel < D3D_SHADER_MODEL_6_0) {
                         a.usable = false;
                         a.unusableReason = "needs shader model 6.0";
                     }
@@ -132,7 +147,9 @@ namespace rhi::d3d12 {
                 if ((f6 = state->factory.try_as<IDXGIFactory6>())) {
                     for (UINT i = 0;; i++) {
                         winrt::com_ptr<IDXGIAdapter1> a;
-                        if (FAILED(f6->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, winrt::guid_of<IDXGIAdapter1>(), a.put_void())))
+                        if (FAILED(f6->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                                                                  winrt::guid_of<IDXGIAdapter1>(),
+                                                                  a.put_void())))
                             break;
                         handle(a);
                     }
@@ -155,7 +172,8 @@ namespace rhi::d3d12 {
         };
     }
 
-    Device::Device(std::shared_ptr<InstanceState> instance, winrt::com_ptr<IDXGIAdapter1> adapterIn, const AdapterInfo& info, const DeviceOptions& opts)
+    Device::Device(std::shared_ptr<InstanceState> instance, winrt::com_ptr<IDXGIAdapter1> adapterIn,
+                   const AdapterInfo& info, const DeviceOptions& opts)
         : adapter(std::move(adapterIn)), inst(std::move(instance)), options(opts) {
         caps.adapter = info;
         options.framesInFlight = std::clamp(options.framesInFlight, 1u, 4u);
@@ -171,7 +189,8 @@ namespace rhi::d3d12 {
     }
 
     bool Device::Init(std::string& error) {
-        const HRESULT hr = inst->lib.createDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0, winrt::guid_of<ID3D12Device>(), device.put_void());
+        const HRESULT hr = inst->lib.createDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0,
+                                                  winrt::guid_of<ID3D12Device>(), device.put_void());
         if (FAILED(hr)) {
             error = "D3D12CreateDevice failed";
             return false;
@@ -181,9 +200,10 @@ namespace rhi::d3d12 {
 
         if (inst->validation && (infoQueue = device.try_as<ID3D12InfoQueue>())) {
             D3D12_MESSAGE_SEVERITY severities[] = {D3D12_MESSAGE_SEVERITY_INFO};
-            D3D12_MESSAGE_ID noise[] = {D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
-                                        D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE,
-                                        D3D12_MESSAGE_ID_EXECUTECOMMANDLISTS_GPU_WRITTEN_READBACK_RESOURCE_MAPPED};
+            D3D12_MESSAGE_ID noise[] = {
+                D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
+                D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE,
+                D3D12_MESSAGE_ID_EXECUTECOMMANDLISTS_GPU_WRITTEN_READBACK_RESOURCE_MAPPED};
             D3D12_INFO_QUEUE_FILTER filter{};
             filter.DenyList.NumSeverities = 1;
             filter.DenyList.pSeverityList = severities;
@@ -192,18 +212,21 @@ namespace rhi::d3d12 {
             infoQueue->PushStorageFilter(&filter);
         }
 
-        const D3D12_COMMAND_LIST_TYPE types[kQueueCount] = {D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_TYPE_COMPUTE, D3D12_COMMAND_LIST_TYPE_COPY};
+        const D3D12_COMMAND_LIST_TYPE types[kQueueCount] = {
+            D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_TYPE_COMPUTE, D3D12_COMMAND_LIST_TYPE_COPY};
         for (size_t i = 0; i < kQueueCount; i++) {
             if (i == 1 && !options.allowAsyncCompute)
                 continue;
             D3D12_COMMAND_QUEUE_DESC qd{};
             qd.Type = types[i];
             qd.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-            if (FAILED(device->CreateCommandQueue(&qd, winrt::guid_of<ID3D12CommandQueue>(), queues[i].queue.put_void()))) {
+            if (FAILED(device->CreateCommandQueue(&qd, winrt::guid_of<ID3D12CommandQueue>(),
+                                                  queues[i].queue.put_void()))) {
                 error = "CreateCommandQueue failed";
                 return false;
             }
-            device->CreateFence(0, D3D12_FENCE_FLAG_NONE, winrt::guid_of<ID3D12Fence>(), queues[i].fence.put_void());
+            device->CreateFence(0, D3D12_FENCE_FLAG_NONE, winrt::guid_of<ID3D12Fence>(),
+                                queues[i].fence.put_void());
         }
 
         D3D12MA::ALLOCATOR_DESC ad{};
@@ -215,7 +238,8 @@ namespace rhi::d3d12 {
             return false;
         }
 
-        if (!rtvPool.Init(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2048) || !dsvPool.Init(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 512) ||
+        if (!rtvPool.Init(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2048) ||
+            !dsvPool.Init(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 512) ||
             !resourceHeap.Init(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 400000) ||
             !samplerHeap.Init(device.get(), D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 2048)) {
             error = "descriptor heap creation failed";
@@ -224,11 +248,13 @@ namespace rhi::d3d12 {
 
         winrt::com_ptr<ID3D12Device1> device1;
         if ((device1 = device.try_as<ID3D12Device1>())) {
-            HRESULT lr = device1->CreatePipelineLibrary(options.pipelineCacheData.data(), options.pipelineCacheData.size(),
-                                                        winrt::guid_of<ID3D12PipelineLibrary>(), pipelineLibrary.put_void());
+            HRESULT lr = device1->CreatePipelineLibrary(
+                options.pipelineCacheData.data(), options.pipelineCacheData.size(),
+                winrt::guid_of<ID3D12PipelineLibrary>(), pipelineLibrary.put_void());
             // a blob from another driver version is rejected: start with an empty library
             if (FAILED(lr) && !options.pipelineCacheData.empty())
-                device1->CreatePipelineLibrary(nullptr, 0, winrt::guid_of<ID3D12PipelineLibrary>(), pipelineLibrary.put_void());
+                device1->CreatePipelineLibrary(nullptr, 0, winrt::guid_of<ID3D12PipelineLibrary>(),
+                                               pipelineLibrary.put_void());
         }
 
         frameGroups.resize(options.framesInFlight);
@@ -256,7 +282,8 @@ namespace rhi::d3d12 {
             f.rayTracing = o5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
         D3D12_FEATURE_DATA_D3D12_OPTIONS6 o6{};
         if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6, &o6, sizeof(o6))))
-            f.variableRateShading = o6.VariableShadingRateTier != D3D12_VARIABLE_SHADING_RATE_TIER_NOT_SUPPORTED;
+            f.variableRateShading =
+                o6.VariableShadingRateTier != D3D12_VARIABLE_SHADING_RATE_TIER_NOT_SUPPORTED;
         D3D12_FEATURE_DATA_D3D12_OPTIONS7 o7{};
         if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &o7, sizeof(o7))))
             f.meshShaders = o7.MeshShaderTier != D3D12_MESH_SHADER_TIER_NOT_SUPPORTED;
@@ -288,7 +315,8 @@ namespace rhi::d3d12 {
         f.bindless = o.ResourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_3;
         f.tearing = inst->tearing;
         f.hdrOutput = true;
-        f.conservativeRaster = o.ConservativeRasterizationTier != D3D12_CONSERVATIVE_RASTERIZATION_TIER_NOT_SUPPORTED;
+        f.conservativeRaster =
+            o.ConservativeRasterizationTier != D3D12_CONSERVATIVE_RASTERIZATION_TIER_NOT_SUPPORTED;
 
         l.maxTexture2D = 16384;
         l.maxTextureLayers = 2048;
@@ -307,14 +335,17 @@ namespace rhi::d3d12 {
         l.maxMsaaSamples = 1;
         for (UINT samples : {2u, 4u, 8u}) {
             D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS ms{DXGI_FORMAT_R8G8B8A8_UNORM, samples};
-            if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &ms, sizeof(ms))) && ms.NumQualityLevels > 0)
+            if (SUCCEEDED(
+                    device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &ms, sizeof(ms))) &&
+                ms.NumQualityLevels > 0)
                 l.maxMsaaSamples = samples;
         }
 
         for (size_t i = 1; i < static_cast<size_t>(Format::Count); i++) {
             const FormatMap fm = MapFormat(static_cast<Format>(i));
             D3D12_FEATURE_DATA_FORMAT_SUPPORT fs{fm.dsv != DXGI_FORMAT_UNKNOWN ? fm.dsv : fm.view};
-            if (fs.Format == DXGI_FORMAT_UNKNOWN || FAILED(device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &fs, sizeof(fs))))
+            if (fs.Format == DXGI_FORMAT_UNKNOWN ||
+                FAILED(device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &fs, sizeof(fs))))
                 continue;
             FormatUse use = FormatUse::None;
             const UINT s1 = fs.Support1;
@@ -322,7 +353,10 @@ namespace rhi::d3d12 {
             UINT sampleBits = s1;
             if (fm.dsv != DXGI_FORMAT_UNKNOWN) {
                 D3D12_FEATURE_DATA_FORMAT_SUPPORT vs{fm.view};
-                sampleBits = SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &vs, sizeof(vs))) ? vs.Support1 : 0;
+                sampleBits =
+                    SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &vs, sizeof(vs)))
+                        ? vs.Support1
+                        : 0;
             }
             if (sampleBits & D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE)
                 use = use | FormatUse::Sampled | FormatUse::SampledLinear;
@@ -375,8 +409,10 @@ namespace rhi::d3d12 {
     }
 
     void Device::CheckRemoved(HRESULT hr, const char* what) {
-        if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET || hr == DXGI_ERROR_DEVICE_HUNG) {
-            ReportError(std::string(what) + ": device removed (reason " + std::to_string(device->GetDeviceRemovedReason()) + ")");
+        if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET ||
+            hr == DXGI_ERROR_DEVICE_HUNG) {
+            ReportError(std::string(what) + ": device removed (reason " +
+                        std::to_string(device->GetDeviceRemovedReason()) + ")");
         } else if (FAILED(hr)) {
             ReportError(std::string(what) + " failed (" + std::to_string(static_cast<long>(hr)) + ")");
         }
@@ -415,7 +451,8 @@ namespace rhi::d3d12 {
                 infoQueue->GetMessage(i, nullptr, &len);
                 std::vector<uint8_t> raw(len);
                 auto* msg = reinterpret_cast<D3D12_MESSAGE*>(raw.data());
-                if (SUCCEEDED(infoQueue->GetMessage(i, msg, &len)) && msg->Severity <= D3D12_MESSAGE_SEVERITY_WARNING)
+                if (SUCCEEDED(infoQueue->GetMessage(i, msg, &len)) &&
+                    msg->Severity <= D3D12_MESSAGE_SEVERITY_WARNING)
                     out += std::string("d3d12: ") + msg->pDescription + "\n";
             }
             infoQueue->ClearStoredMessages();
@@ -452,7 +489,8 @@ namespace rhi::d3d12 {
         hd.Type = type;
         hd.NumDescriptors = cap;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        if (FAILED(device->CreateDescriptorHeap(&hd, winrt::guid_of<ID3D12DescriptorHeap>(), heap.put_void())))
+        if (FAILED(
+                device->CreateDescriptorHeap(&hd, winrt::guid_of<ID3D12DescriptorHeap>(), heap.put_void())))
             return false;
         cpuStart = HeapCpuStart(heap.get());
         increment = device->GetDescriptorHandleIncrementSize(type);
@@ -480,7 +518,8 @@ namespace rhi::d3d12 {
         hd.Type = type;
         hd.NumDescriptors = capacity;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        if (FAILED(device->CreateDescriptorHeap(&hd, winrt::guid_of<ID3D12DescriptorHeap>(), heap.put_void())))
+        if (FAILED(
+                device->CreateDescriptorHeap(&hd, winrt::guid_of<ID3D12DescriptorHeap>(), heap.put_void())))
             return false;
         cpuStart = HeapCpuStart(heap.get());
         gpuStart = HeapGpuStart(heap.get());

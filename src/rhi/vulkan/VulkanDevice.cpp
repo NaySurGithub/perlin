@@ -11,13 +11,15 @@ namespace rhi::vk {
     namespace {
         constexpr uint32_t kMaxFramesInFlight = 4;
 
-        template <class... Ts>
-        void Chain(void** tail, Ts*... structs) {
-            ((*tail = structs, tail = reinterpret_cast<void**>(&reinterpret_cast<VkBaseOutStructure*>(structs)->pNext)), ...);
+        template <class... Ts> void Chain(void** tail, Ts*... structs) {
+            ((*tail = structs,
+              tail = reinterpret_cast<void**>(&reinterpret_cast<VkBaseOutStructure*>(structs)->pNext)),
+             ...);
         }
     }
 
-    Device::Device(std::shared_ptr<InstanceState> instance, const PhysicalInfo& phys, const AdapterInfo& adapter, const DeviceOptions& opts)
+    Device::Device(std::shared_ptr<InstanceState> instance, const PhysicalInfo& phys,
+                   const AdapterInfo& adapter, const DeviceOptions& opts)
         : inst(std::move(instance)), phys(phys), options(opts) {
         physical = phys.device;
         caps.adapter = adapter;
@@ -39,13 +41,21 @@ namespace rhi::vk {
             if (!r.external)
                 vmaDestroyImage(allocator, r.image, r.alloc);
         });
-        samplers.ForEach([&](SamplerHandle, SamplerRec& r) { fn.vkDestroySampler(device, r.sampler, nullptr); });
-        shaders.ForEach([&](ShaderHandle, ShaderRec& r) { fn.vkDestroyShaderModule(device, r.module, nullptr); });
-        bindLayouts.ForEach([&](BindLayoutHandle, BindLayoutRec& r) { fn.vkDestroyDescriptorSetLayout(device, r.layout, nullptr); });
-        pipelineLayouts.ForEach([&](PipelineLayoutHandle, PipelineLayoutRec& r) { fn.vkDestroyPipelineLayout(device, r.layout, nullptr); });
-        pipelines.ForEach([&](PipelineHandle, PipelineRec& r) { fn.vkDestroyPipeline(device, r.pipeline, nullptr); });
+        samplers.ForEach(
+            [&](SamplerHandle, SamplerRec& r) { fn.vkDestroySampler(device, r.sampler, nullptr); });
+        shaders.ForEach(
+            [&](ShaderHandle, ShaderRec& r) { fn.vkDestroyShaderModule(device, r.module, nullptr); });
+        bindLayouts.ForEach([&](BindLayoutHandle, BindLayoutRec& r) {
+            fn.vkDestroyDescriptorSetLayout(device, r.layout, nullptr);
+        });
+        pipelineLayouts.ForEach([&](PipelineLayoutHandle, PipelineLayoutRec& r) {
+            fn.vkDestroyPipelineLayout(device, r.layout, nullptr);
+        });
+        pipelines.ForEach(
+            [&](PipelineHandle, PipelineRec& r) { fn.vkDestroyPipeline(device, r.pipeline, nullptr); });
         queries.ForEach([&](QuerySetHandle, QueryRec& r) { fn.vkDestroyQueryPool(device, r.pool, nullptr); });
-        fences.ForEach([&](FenceHandle, FenceRec& r) { fn.vkDestroySemaphore(device, r.semaphore, nullptr); });
+        fences.ForEach(
+            [&](FenceHandle, FenceRec& r) { fn.vkDestroySemaphore(device, r.semaphore, nullptr); });
 
         for (VkDescriptorPool p : persistentPools)
             fn.vkDestroyDescriptorPool(device, p, nullptr);
@@ -82,7 +92,8 @@ namespace rhi::vk {
                 gfx = static_cast<int>(i);
             if (comp < 0 && (f & VK_QUEUE_COMPUTE_BIT) && !(f & VK_QUEUE_GRAPHICS_BIT))
                 comp = static_cast<int>(i);
-            if (copy < 0 && (f & VK_QUEUE_TRANSFER_BIT) && !(f & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)))
+            if (copy < 0 && (f & VK_QUEUE_TRANSFER_BIT) &&
+                !(f & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)))
                 copy = static_cast<int>(i);
         }
         if (gfx < 0) {
@@ -93,7 +104,9 @@ namespace rhi::vk {
         struct Slot {
             uint32_t family, index;
         };
-        Slot slots[kQueueCount] = {{static_cast<uint32_t>(gfx), 0}, {static_cast<uint32_t>(gfx), 0}, {static_cast<uint32_t>(gfx), 0}};
+        Slot slots[kQueueCount] = {{static_cast<uint32_t>(gfx), 0},
+                                   {static_cast<uint32_t>(gfx), 0},
+                                   {static_cast<uint32_t>(gfx), 0}};
         if (options.allowAsyncCompute) {
             if (comp >= 0)
                 slots[1] = {static_cast<uint32_t>(comp), 0};
@@ -148,9 +161,12 @@ namespace rhi::vk {
         VkPhysicalDeviceVulkan11Features sup11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
         VkPhysicalDeviceVulkan12Features sup12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
         VkPhysicalDeviceVulkan13Features sup13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-        VkPhysicalDeviceDynamicRenderingFeaturesKHR supDr{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
-        VkPhysicalDeviceSynchronization2FeaturesKHR supS2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR};
-        VkPhysicalDeviceDepthClipEnableFeaturesEXT supClip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT};
+        VkPhysicalDeviceDynamicRenderingFeaturesKHR supDr{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
+        VkPhysicalDeviceSynchronization2FeaturesKHR supS2{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR};
+        VkPhysicalDeviceDepthClipEnableFeaturesEXT supClip{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT};
         {
             void** tail = &sup2.pNext;
             Chain(tail, &sup11);
@@ -174,9 +190,12 @@ namespace rhi::vk {
         VkPhysicalDeviceVulkan11Features en11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
         VkPhysicalDeviceVulkan12Features en12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
         VkPhysicalDeviceVulkan13Features en13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-        VkPhysicalDeviceDynamicRenderingFeaturesKHR enDr{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
-        VkPhysicalDeviceSynchronization2FeaturesKHR enS2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR};
-        VkPhysicalDeviceDepthClipEnableFeaturesEXT enClip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT};
+        VkPhysicalDeviceDynamicRenderingFeaturesKHR enDr{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
+        VkPhysicalDeviceSynchronization2FeaturesKHR enS2{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR};
+        VkPhysicalDeviceDepthClipEnableFeaturesEXT enClip{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT};
 
         VkPhysicalDeviceFeatures& ef = en2.features;
         // robustBufferAccess stays off: bounds checks cost shader time and the renderer never indexes out of range
@@ -216,7 +235,8 @@ namespace rhi::vk {
         auto enable = [&](const char* name) {
             if (!phys.Has(name))
                 return false;
-            if (std::find_if(extensions.begin(), extensions.end(), [&](const char* e) { return std::strcmp(e, name) == 0; }) == extensions.end())
+            if (std::find_if(extensions.begin(), extensions.end(),
+                             [&](const char* e) { return std::strcmp(e, name) == 0; }) == extensions.end())
                 extensions.push_back(name);
             return true;
         };
@@ -336,7 +356,8 @@ namespace rhi::vk {
         VkPipelineCacheCreateInfo pc{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
         pc.initialDataSize = options.pipelineCacheData.size();
         pc.pInitialData = options.pipelineCacheData.empty() ? nullptr : options.pipelineCacheData.data();
-        if (fn.vkCreatePipelineCache(device, &pc, nullptr, &pipelineCache) != VK_SUCCESS && pc.initialDataSize) {
+        if (fn.vkCreatePipelineCache(device, &pc, nullptr, &pipelineCache) != VK_SUCCESS &&
+            pc.initialDataSize) {
             // stale or foreign blob: start empty
             pc.initialDataSize = 0;
             pc.pInitialData = nullptr;
@@ -360,12 +381,14 @@ namespace rhi::vk {
         caps.features.shaderInt64 = ef.shaderInt64;
         caps.features.shaderFloat64 = ef.shaderFloat64;
         caps.features.depthClipControl = depthClipEnable;
-        caps.features.bindless = en12.runtimeDescriptorArray && en12.descriptorBindingPartiallyBound && en12.shaderSampledImageArrayNonUniformIndexing;
+        caps.features.bindless = en12.runtimeDescriptorArray && en12.descriptorBindingPartiallyBound &&
+                                 en12.shaderSampledImageArrayNonUniformIndexing;
         caps.features.enhancedBarriers = true;
         caps.features.timestampQueries = phys.props.limits.timestampComputeAndGraphics != 0;
         caps.features.pipelineCacheBlob = true;
         caps.features.asyncCompute = queues[1].queue != queues[0].queue;
-        caps.features.dedicatedCopyQueue = queues[2].queue != queues[0].queue && queues[2].queue != queues[1].queue;
+        caps.features.dedicatedCopyQueue =
+            queues[2].queue != queues[0].queue && queues[2].queue != queues[1].queue;
         caps.features.meshShaders = phys.Has("VK_EXT_mesh_shader");
         caps.features.rayTracing = phys.Has("VK_KHR_ray_query") && phys.Has("VK_KHR_acceleration_structure");
         caps.features.variableRateShading = phys.Has("VK_KHR_fragment_shading_rate");
@@ -384,11 +407,16 @@ namespace rhi::vk {
         caps.limits.maxSampledTexturesPerStage = l.maxPerStageDescriptorSampledImages;
         caps.limits.maxColorTargets = std::min<uint32_t>(l.maxColorAttachments, kMaxColorTargets);
         const VkSampleCountFlags msaa = l.framebufferColorSampleCounts & l.framebufferDepthSampleCounts;
-        caps.limits.maxMsaaSamples = (msaa & VK_SAMPLE_COUNT_8_BIT) ? 8 : (msaa & VK_SAMPLE_COUNT_4_BIT) ? 4 : (msaa & VK_SAMPLE_COUNT_2_BIT) ? 2 : 1;
+        caps.limits.maxMsaaSamples = (msaa & VK_SAMPLE_COUNT_8_BIT)   ? 8
+                                     : (msaa & VK_SAMPLE_COUNT_4_BIT) ? 4
+                                     : (msaa & VK_SAMPLE_COUNT_2_BIT) ? 2
+                                                                      : 1;
         caps.limits.uniformBufferAlignment = static_cast<uint32_t>(l.minUniformBufferOffsetAlignment);
         caps.limits.storageBufferAlignment = static_cast<uint32_t>(l.minStorageBufferOffsetAlignment);
-        caps.limits.copyRowPitchAlignment = static_cast<uint32_t>(std::max<VkDeviceSize>(1, l.optimalBufferCopyRowPitchAlignment));
-        caps.limits.copyOffsetAlignment = static_cast<uint32_t>(std::max<VkDeviceSize>(4, l.optimalBufferCopyOffsetAlignment));
+        caps.limits.copyRowPitchAlignment =
+            static_cast<uint32_t>(std::max<VkDeviceSize>(1, l.optimalBufferCopyRowPitchAlignment));
+        caps.limits.copyOffsetAlignment =
+            static_cast<uint32_t>(std::max<VkDeviceSize>(4, l.optimalBufferCopyOffsetAlignment));
         caps.limits.maxAnisotropy = l.maxSamplerAnisotropy;
         caps.limits.timestampPeriodNs = l.timestampPeriod;
         caps.limits.maxBufferSize = 1ull << 30;
@@ -404,7 +432,8 @@ namespace rhi::vk {
         for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
             const auto flags = memProps.memoryTypes[i].propertyFlags;
             const auto& heap = memProps.memoryHeaps[memProps.memoryTypes[i].heapIndex];
-            if ((flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) && (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+            if ((flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
+                (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
                 if (caps.adapter.type == AdapterType::Integrated || caps.adapter.type == AdapterType::Cpu)
                     caps.features.unifiedMemory = true;
                 else if (heap.size > (256ull << 20) + (64ull << 20))
@@ -520,7 +549,6 @@ namespace rhi::vk {
         retire.Push(snapshot, std::move(release));
     }
 
-
     BufferHandle Device::CreateBuffer(const BufferDesc& desc) {
         if (desc.size == 0) {
             ReportError("CreateBuffer: zero size");
@@ -543,7 +571,8 @@ namespace rhi::vk {
             usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         if (Has(desc.usage, BufferUsage::CopyDst))
             usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        if (caps.features.bufferDeviceAddress && (usage & (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)))
+        if (caps.features.bufferDeviceAddress &&
+            (usage & (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)))
             usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         bi.usage = usage;
 
@@ -568,13 +597,20 @@ namespace rhi::vk {
         auto host = [&](bool random) {
             ai.usage = VMA_MEMORY_USAGE_AUTO;
             ai.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT |
-                       (random ? VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT : VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+                       (random ? VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
+                               : VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
         };
         MemoryClass memory = desc.memory;
         switch (memory) {
-        case MemoryClass::GpuOnly: ai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE; break;
-        case MemoryClass::Upload: host(false); break;
-        case MemoryClass::Readback: host(true); break;
+        case MemoryClass::GpuOnly:
+            ai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+            break;
+        case MemoryClass::Upload:
+            host(false);
+            break;
+        case MemoryClass::Readback:
+            host(true);
+            break;
         case MemoryClass::GpuMappable:
             if (caps.features.resizableBar || caps.features.unifiedMemory) {
                 host(false);
@@ -596,7 +632,8 @@ namespace rhi::vk {
             r = vmaCreateBuffer(allocator, &bi, &ai, &rec.buffer, &rec.alloc, &info);
         }
         if (r != VK_SUCCESS) {
-            ReportError("CreateBuffer '" + std::string(desc.name ? desc.name : "") + "' failed (" + std::to_string(r) + ")");
+            ReportError("CreateBuffer '" + std::string(desc.name ? desc.name : "") + "' failed (" +
+                        std::to_string(r) + ")");
             return {};
         }
         rec.desc = desc;
@@ -697,8 +734,9 @@ namespace rhi::vk {
 
         uint64_t bytes = 0;
         for (uint32_t m = 0; m < rec.desc.mips; m++)
-            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) * RowBlocks(desc.format, MipExtent(desc.height, m)) *
-                     DepthOf(desc) * rec.layers * (std::max)(1u, desc.samples);
+            bytes += static_cast<uint64_t>(RowBytes(desc.format, MipExtent(desc.width, m))) *
+                     RowBlocks(desc.format, MipExtent(desc.height, m)) * DepthOf(desc) * rec.layers *
+                     (std::max)(1u, desc.samples);
         textureBytes += static_cast<int64_t>(bytes);
         liveTextures++;
 
@@ -737,11 +775,14 @@ namespace rhi::vk {
             fn.vkDestroyImageView(device, view, nullptr);
     }
 
-    VkImageView Device::MakeView(TextureRec& tex, const SubresourceRange& range, VkImageViewType type, VkFormat format, VkImageAspectFlags aspect) {
+    VkImageView Device::MakeView(TextureRec& tex, const SubresourceRange& range, VkImageViewType type,
+                                 VkFormat format, VkImageAspectFlags aspect) {
         const SubresourceRange r = ResolveRange(range, tex.desc);
-        const uint64_t key = (static_cast<uint64_t>(r.baseMip) & 0xF) | (static_cast<uint64_t>(r.mipCount) & 0xF) << 4 |
-                             (static_cast<uint64_t>(r.baseLayer) & 0xFFF) << 8 | (static_cast<uint64_t>(r.layerCount) & 0xFFF) << 20 |
-                             static_cast<uint64_t>(type) << 32 | static_cast<uint64_t>(format) << 36 | static_cast<uint64_t>(aspect) << 56;
+        const uint64_t key =
+            (static_cast<uint64_t>(r.baseMip) & 0xF) | (static_cast<uint64_t>(r.mipCount) & 0xF) << 4 |
+            (static_cast<uint64_t>(r.baseLayer) & 0xFFF) << 8 |
+            (static_cast<uint64_t>(r.layerCount) & 0xFFF) << 20 | static_cast<uint64_t>(type) << 32 |
+            static_cast<uint64_t>(format) << 36 | static_cast<uint64_t>(aspect) << 56;
         std::lock_guard lock(viewMutex);
         auto it = tex.views.find(key);
         if (it != tex.views.end())
@@ -750,8 +791,9 @@ namespace rhi::vk {
         vi.image = tex.image;
         vi.viewType = type;
         vi.format = format;
-        vi.subresourceRange = {aspect, r.baseMip, r.mipCount, r.baseLayer,
-                               (type == VK_IMAGE_VIEW_TYPE_2D || type == VK_IMAGE_VIEW_TYPE_3D) ? 1u : r.layerCount};
+        vi.subresourceRange = {
+            aspect, r.baseMip, r.mipCount, r.baseLayer,
+            (type == VK_IMAGE_VIEW_TYPE_2D || type == VK_IMAGE_VIEW_TYPE_3D) ? 1u : r.layerCount};
         if (type == VK_IMAGE_VIEW_TYPE_CUBE)
             vi.subresourceRange.layerCount = 6;
         VkImageView view = VK_NULL_HANDLE;
@@ -763,7 +805,8 @@ namespace rhi::vk {
         return view;
     }
 
-    VkImageView Device::View(TextureRec& tex, const SubresourceRange& range, TextureDim dim, Format format, bool stencil) {
+    VkImageView Device::View(TextureRec& tex, const SubresourceRange& range, TextureDim dim, Format format,
+                             bool stencil) {
         VkFormat vkFormat = format == Format::Unknown ? tex.format : FormatToVk(format);
         VkImageAspectFlags aspect = tex.aspect;
         if (tex.aspect & VK_IMAGE_ASPECT_DEPTH_BIT)
@@ -786,7 +829,8 @@ namespace rhi::vk {
         VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         si.magFilter = ToVk(desc.mag);
         si.minFilter = ToVk(desc.min);
-        si.mipmapMode = desc.mip == Filter::Nearest ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        si.mipmapMode =
+            desc.mip == Filter::Nearest ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
         si.addressModeU = ToVk(desc.u);
         si.addressModeV = ToVk(desc.v);
         si.addressModeW = ToVk(desc.w);
@@ -799,15 +843,16 @@ namespace rhi::vk {
         si.maxLod = desc.maxLod;
         const bool opaque = desc.border[3] > 0.5f;
         const bool white = desc.border[0] > 0.5f;
-        si.borderColor = opaque ? (white ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE : VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK)
-                                : VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+        si.borderColor =
+            opaque ? (white ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE : VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK)
+                   : VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
         SamplerRec rec;
         rec.desc = desc;
         if (fn.vkCreateSampler(device, &si, nullptr, &rec.sampler) != VK_SUCCESS) {
             ReportError("vkCreateSampler failed");
             return {};
         }
-        SamplerHandle h = samplers.Alloc(std::move(rec));
+        SamplerHandle h = samplers.Alloc(rec);
         samplerCache.emplace_back(desc, h);
         return h;
     }
@@ -843,16 +888,26 @@ namespace rhi::vk {
             b.descriptorCount = (std::max)(1u, e.count);
             b.stageFlags = ToVk(e.stages);
             switch (e.type) {
-            case BindingType::UniformBuffer: b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; break;
+            case BindingType::UniformBuffer:
+                b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                break;
             case BindingType::UniformBufferDynamic:
                 b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
                 rec.dynamicCount++;
                 break;
             case BindingType::StorageBuffer:
-            case BindingType::StorageBufferRW: b.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; break;
-            case BindingType::SampledTexture: b.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; break;
-            case BindingType::StorageTextureRW: b.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; break;
-            case BindingType::Sampler: b.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER; break;
+            case BindingType::StorageBufferRW:
+                b.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                break;
+            case BindingType::SampledTexture:
+                b.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                break;
+            case BindingType::StorageTextureRW:
+                b.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                break;
+            case BindingType::Sampler:
+                b.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                break;
             }
             bindings.push_back(b);
             rec.entries.push_back(e);
@@ -870,12 +925,9 @@ namespace rhi::vk {
 
     VkDescriptorPool Device::NewDescriptorPool(bool freeable) {
         const VkDescriptorPoolSize sizes[] = {
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2048},
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1024},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2048},
-            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8192},
-            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024},
-            {VK_DESCRIPTOR_TYPE_SAMPLER, 4096},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2048}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1024},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2048}, {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8192},
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1024},  {VK_DESCRIPTOR_TYPE_SAMPLER, 4096},
         };
         VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         pi.flags = freeable ? VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT : 0;
@@ -887,7 +939,8 @@ namespace rhi::vk {
         return pool;
     }
 
-    VkDescriptorSet Device::AllocateSet(VkDescriptorSetLayout layout, bool perFrame, VkDescriptorPool& poolOut) {
+    VkDescriptorSet Device::AllocateSet(VkDescriptorSetLayout layout, bool perFrame,
+                                        VkDescriptorPool& poolOut) {
         std::lock_guard lock(descriptorMutex);
         VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         ai.descriptorSetCount = 1;
@@ -955,7 +1008,8 @@ namespace rhi::vk {
                 if (cand.binding == e.binding)
                     le = &cand;
             if (!le) {
-                ReportError("CreateBindGroup: binding " + std::to_string(e.binding) + " is not in the layout");
+                ReportError("CreateBindGroup: binding " + std::to_string(e.binding) +
+                            " is not in the layout");
                 continue;
             }
             VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -981,11 +1035,13 @@ namespace rhi::vk {
                                                                        : State::UniformBuffer;
                     rec.bound.push_back(br);
                 }
-                bufferInfos.push_back({b->buffer, e.buffer.offset, e.buffer.size ? e.buffer.size : VK_WHOLE_SIZE});
+                bufferInfos.push_back(
+                    {b->buffer, e.buffer.offset, e.buffer.size ? e.buffer.size : VK_WHOLE_SIZE});
                 w.pBufferInfo = &bufferInfos.back();
-                w.descriptorType = le->type == BindingType::UniformBuffer          ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                   : le->type == BindingType::UniformBufferDynamic ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-                                                                                   : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                w.descriptorType = le->type == BindingType::UniformBuffer ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                   : le->type == BindingType::UniformBufferDynamic
+                                       ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+                                       : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 break;
             }
             case BindingType::SampledTexture:
@@ -999,18 +1055,22 @@ namespace rhi::vk {
                     StateValidator::BoundResource br;
                     br.texture = e.texture.texture;
                     br.range = e.texture.range;
-                    br.want = le->type == BindingType::StorageTextureRW ? State::ShaderWrite : State::DepthReadSampled;
+                    br.want = le->type == BindingType::StorageTextureRW ? State::ShaderWrite
+                                                                        : State::DepthReadSampled;
                     rec.bound.push_back(br);
                 }
-                const TextureDim dim = e.texture.viewDim != TextureDim::Tex2D ? e.texture.viewDim : le->viewDim;
+                const TextureDim dim =
+                    e.texture.viewDim != TextureDim::Tex2D ? e.texture.viewDim : le->viewDim;
                 VkImageView view = View(*t, e.texture.range, dim, e.texture.format, e.texture.stencil);
                 const bool depth = (t->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) != 0;
                 const bool storage = le->type == BindingType::StorageTextureRW;
                 imageInfos.push_back({VK_NULL_HANDLE, view,
                                       storage ? VK_IMAGE_LAYOUT_GENERAL
-                                              : (depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)});
+                                              : (depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+                                                       : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)});
                 w.pImageInfo = &imageInfos.back();
-                w.descriptorType = storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                w.descriptorType =
+                    storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                 break;
             }
             case BindingType::Sampler: {
@@ -1068,7 +1128,7 @@ namespace rhi::vk {
             return {};
         }
         NameObject(VK_OBJECT_TYPE_PIPELINE_LAYOUT, reinterpret_cast<uint64_t>(rec.layout), desc.name);
-        return pipelineLayouts.Alloc(std::move(rec));
+        return pipelineLayouts.Alloc(rec);
     }
 
     PipelineHandle Device::CreateGraphicsPipeline(const GraphicsPipelineDesc& desc) {
@@ -1081,40 +1141,66 @@ namespace rhi::vk {
         }
         VkPipelineShaderStageCreateInfo stages[2]{};
         uint32_t stageCount = 0;
-        stages[stageCount++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs->module,
-                                vs->entry.c_str(), nullptr};
+        stages[stageCount++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                nullptr,
+                                0,
+                                VK_SHADER_STAGE_VERTEX_BIT,
+                                vs->module,
+                                vs->entry.c_str(),
+                                nullptr};
         if (fs)
-            stages[stageCount++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs->module,
-                                    fs->entry.c_str(), nullptr};
+            stages[stageCount++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                    nullptr,
+                                    0,
+                                    VK_SHADER_STAGE_FRAGMENT_BIT,
+                                    fs->module,
+                                    fs->entry.c_str(),
+                                    nullptr};
 
         VkVertexInputBindingDescription bindings[kMaxVertexStreams];
         for (uint32_t i = 0; i < desc.streamCount; i++)
-            bindings[i] = {i, desc.streams[i].stride, desc.streams[i].step == VertexStep::Instance ? VK_VERTEX_INPUT_RATE_INSTANCE : VK_VERTEX_INPUT_RATE_VERTEX};
+            bindings[i] = {i, desc.streams[i].stride,
+                           desc.streams[i].step == VertexStep::Instance ? VK_VERTEX_INPUT_RATE_INSTANCE
+                                                                        : VK_VERTEX_INPUT_RATE_VERTEX};
         VkVertexInputAttributeDescription attrs[kMaxVertexAttributes];
         for (uint32_t i = 0; i < desc.attributeCount; i++)
-            attrs[i] = {desc.attributes[i].location, desc.attributes[i].stream, BaseFormat(desc.attributes[i].format), desc.attributes[i].offset};
+            attrs[i] = {desc.attributes[i].location, desc.attributes[i].stream,
+                        BaseFormat(desc.attributes[i].format), desc.attributes[i].offset};
         VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vi.vertexBindingDescriptionCount = desc.streamCount;
         vi.pVertexBindingDescriptions = bindings;
         vi.vertexAttributeDescriptionCount = desc.attributeCount;
         vi.pVertexAttributeDescriptions = attrs;
 
-        VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        VkPipelineInputAssemblyStateCreateInfo ia{
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         switch (desc.topology) {
-        case Topology::TriangleList: ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; break;
-        case Topology::TriangleStrip: ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP; break;
-        case Topology::LineList: ia.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST; break;
-        case Topology::PointList: ia.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST; break;
+        case Topology::TriangleList:
+            ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            break;
+        case Topology::TriangleStrip:
+            ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+            break;
+        case Topology::LineList:
+            ia.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            break;
+        case Topology::PointList:
+            ia.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+            break;
         }
 
         VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
         vp.viewportCount = vp.scissorCount = 1;
 
-        VkPipelineRasterizationDepthClipStateCreateInfoEXT clip{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT};
+        VkPipelineRasterizationDepthClipStateCreateInfoEXT clip{
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT};
         VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
         rs.polygonMode = desc.raster.wireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
-        rs.cullMode = desc.raster.cull == CullMode::None ? VK_CULL_MODE_NONE : desc.raster.cull == CullMode::Back ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_FRONT_BIT;
-        rs.frontFace = desc.raster.frontFace == FrontFace::CounterClockwise ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
+        rs.cullMode = desc.raster.cull == CullMode::None   ? VK_CULL_MODE_NONE
+                      : desc.raster.cull == CullMode::Back ? VK_CULL_MODE_BACK_BIT
+                                                           : VK_CULL_MODE_FRONT_BIT;
+        rs.frontFace = desc.raster.frontFace == FrontFace::CounterClockwise ? VK_FRONT_FACE_COUNTER_CLOCKWISE
+                                                                            : VK_FRONT_FACE_CLOCKWISE;
         rs.lineWidth = 1.0f;
         rs.depthBiasEnable = desc.raster.depthBiasConstant != 0.0f || desc.raster.depthBiasSlope != 0.0f;
         rs.depthBiasConstantFactor = desc.raster.depthBiasConstant;
@@ -1163,14 +1249,17 @@ namespace rhi::vk {
             s.srcAlphaBlendFactor = ToVk(t.srcAlpha);
             s.dstAlphaBlendFactor = ToVk(t.dstAlpha);
             s.alphaBlendOp = ToVk(t.alphaOp);
-            s.colorWriteMask = (Has(t.writeMask, ColorMask::R) ? VK_COLOR_COMPONENT_R_BIT : 0) | (Has(t.writeMask, ColorMask::G) ? VK_COLOR_COMPONENT_G_BIT : 0) |
-                               (Has(t.writeMask, ColorMask::B) ? VK_COLOR_COMPONENT_B_BIT : 0) | (Has(t.writeMask, ColorMask::A) ? VK_COLOR_COMPONENT_A_BIT : 0);
+            s.colorWriteMask = (Has(t.writeMask, ColorMask::R) ? VK_COLOR_COMPONENT_R_BIT : 0) |
+                               (Has(t.writeMask, ColorMask::G) ? VK_COLOR_COMPONENT_G_BIT : 0) |
+                               (Has(t.writeMask, ColorMask::B) ? VK_COLOR_COMPONENT_B_BIT : 0) |
+                               (Has(t.writeMask, ColorMask::A) ? VK_COLOR_COMPONENT_A_BIT : 0);
         }
         VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
         cb.attachmentCount = desc.colorCount;
         cb.pAttachments = blendStates;
 
-        const VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_STENCIL_REFERENCE};
+        const VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+                                                VK_DYNAMIC_STATE_STENCIL_REFERENCE};
         VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
         dyn.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates));
         dyn.pDynamicStates = dynamicStates;
@@ -1202,8 +1291,10 @@ namespace rhi::vk {
         pi.layout = layout->layout;
 
         PipelineRec rec;
-        if (fn.vkCreateGraphicsPipelines(device, pipelineCache, 1, &pi, nullptr, &rec.pipeline) != VK_SUCCESS) {
-            ReportError("vkCreateGraphicsPipelines failed for '" + std::string(desc.name ? desc.name : "") + "'");
+        if (fn.vkCreateGraphicsPipelines(device, pipelineCache, 1, &pi, nullptr, &rec.pipeline) !=
+            VK_SUCCESS) {
+            ReportError("vkCreateGraphicsPipelines failed for '" + std::string(desc.name ? desc.name : "") +
+                        "'");
             return {};
         }
         NameObject(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(rec.pipeline), desc.name);
@@ -1217,7 +1308,7 @@ namespace rhi::vk {
         rec.depthFormat = desc.depthFormat;
         rec.streamCount = desc.streamCount;
         livePipelines++;
-        return pipelines.Alloc(std::move(rec));
+        return pipelines.Alloc(rec);
     }
 
     PipelineHandle Device::CreateComputePipeline(const ComputePipelineDesc& desc) {
@@ -1228,10 +1319,17 @@ namespace rhi::vk {
             return {};
         }
         VkComputePipelineCreateInfo pi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-        pi.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, cs->module, cs->entry.c_str(), nullptr};
+        pi.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    nullptr,
+                    0,
+                    VK_SHADER_STAGE_COMPUTE_BIT,
+                    cs->module,
+                    cs->entry.c_str(),
+                    nullptr};
         pi.layout = layout->layout;
         PipelineRec rec;
-        if (fn.vkCreateComputePipelines(device, pipelineCache, 1, &pi, nullptr, &rec.pipeline) != VK_SUCCESS) {
+        if (fn.vkCreateComputePipelines(device, pipelineCache, 1, &pi, nullptr, &rec.pipeline) !=
+            VK_SUCCESS) {
             ReportError("vkCreateComputePipelines failed");
             return {};
         }
@@ -1243,7 +1341,7 @@ namespace rhi::vk {
         rec.pushStages = layout->pushStages;
         rec.pushBytes = layout->pushBytes;
         livePipelines++;
-        return pipelines.Alloc(std::move(rec));
+        return pipelines.Alloc(rec);
     }
 
     QuerySetHandle Device::CreateQuerySet(const QuerySetDesc& desc) {
@@ -1258,9 +1356,8 @@ namespace rhi::vk {
         }
         if (hostQueryReset)
             fn.vkResetQueryPool(device, rec.pool, 0, desc.count);
-        return queries.Alloc(std::move(rec));
+        return queries.Alloc(rec);
     }
-
 
     void Device::Destroy(BufferHandle h) {
         BufferRec rec;
@@ -1380,7 +1477,6 @@ namespace rhi::vk {
         return r ? r->address : 0;
     }
 
-
     FenceHandle Device::CreateFence(uint64_t initial) {
         VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
         type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
@@ -1389,7 +1485,7 @@ namespace rhi::vk {
         FenceRec rec;
         if (fn.vkCreateSemaphore(device, &si, nullptr, &rec.semaphore) != VK_SUCCESS)
             return {};
-        return fences.Alloc(std::move(rec));
+        return fences.Alloc(rec);
     }
 
     uint64_t Device::FenceValue(FenceHandle h) {
@@ -1420,7 +1516,6 @@ namespace rhi::vk {
         si.value = value;
         fn.vkSignalSemaphore(device, &si);
     }
-
 
     ThreadPools& Device::PoolsForThisThread() {
         std::lock_guard lock(poolsMutex);
@@ -1519,15 +1614,18 @@ namespace rhi::vk {
     void Device::SubmitPresent(VkSemaphore renderDone) {
         QueueInfo& q = queues[0];
         VkSemaphoreSubmitInfo signals[2]{};
-        signals[0] = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, nullptr, renderDone, 0, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0};
+        signals[0] = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, nullptr, renderDone, 0,
+                      VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,    0};
         VkSemaphoreSubmitInfo waits[1]{};
         uint32_t waitCount = 0;
         if (VkSemaphore acquire = pendingAcquire.exchange(VK_NULL_HANDLE)) {
-            waits[waitCount++] = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, nullptr, acquire, 0, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0};
+            waits[waitCount++] = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, nullptr, acquire, 0,
+                                  VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,    0};
         }
         std::lock_guard lock(*q.mutex);
         const uint64_t serial = q.serial.load() + 1;
-        signals[1] = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, nullptr, q.timeline, serial, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0};
+        signals[1] = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, nullptr, q.timeline, serial,
+                      VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,    0};
         VkSubmitInfo2 si{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
         si.waitSemaphoreInfoCount = waitCount;
         si.pWaitSemaphoreInfos = waits;
@@ -1539,8 +1637,9 @@ namespace rhi::vk {
             ReportError("present submit failed");
     }
 
-    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) { return MakeSwapchain(*this, desc); }
-
+    std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) {
+        return MakeSwapchain(*this, desc);
+    }
 
     void Device::ResetSlot(uint32_t s) {
         {
@@ -1635,7 +1734,8 @@ namespace rhi::vk {
 
     std::vector<uint8_t> Device::SerializePipelineCache() {
         size_t size = 0;
-        if (!pipelineCache || fn.vkGetPipelineCacheData(device, pipelineCache, &size, nullptr) != VK_SUCCESS || !size)
+        if (!pipelineCache ||
+            fn.vkGetPipelineCacheData(device, pipelineCache, &size, nullptr) != VK_SUCCESS || !size)
             return {};
         std::vector<uint8_t> data(size);
         if (fn.vkGetPipelineCacheData(device, pipelineCache, &size, data.data()) != VK_SUCCESS)

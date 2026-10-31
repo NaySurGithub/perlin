@@ -41,7 +41,9 @@ namespace perlin {
         static int TilePx() { return tilePxValue; }
         static constexpr int kAtlasTiles = 128;
         static int MaxTiles() { return maxTilesValue; }
-        static void SetMaxTiles(int tiles) { maxTilesValue = std::clamp(tiles, 256, kAtlasTiles * kAtlasTiles); }
+        static void SetMaxTiles(int tiles) {
+            maxTilesValue = std::clamp(tiles, 256, kAtlasTiles * kAtlasTiles);
+        }
 
         void SetTexturePack(bool active);
         bool EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot);
@@ -89,8 +91,8 @@ namespace perlin {
 
     private:
         int FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot);
-        int FetchOrSynth(const std::string& pngRelPath, const std::string& vanillaRpRoot, const std::string& label,
-                         const std::unordered_map<std::string, std::string>& stems);
+        int FetchOrSynth(const std::string& pngRelPath, const std::string& vanillaRpRoot,
+                         const std::string& label, const std::unordered_map<std::string, std::string>& stems);
         int SynthTile(const std::string& label);
         bool fetchingGeometry = false;
 

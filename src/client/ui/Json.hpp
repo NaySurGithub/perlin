@@ -16,8 +16,16 @@ namespace perlin::ui {
         explicit Json(int v) : type(Type::Number), number(v) {}
         explicit Json(std::string v) : type(Type::String), string(std::move(v)) {}
         explicit Json(const char* v) : type(Type::String), string(v) {}
-        static Json MakeArray() { Json j; j.type = Type::Array; return j; }
-        static Json MakeObject() { Json j; j.type = Type::Object; return j; }
+        static Json MakeArray() {
+            Json j;
+            j.type = Type::Array;
+            return j;
+        }
+        static Json MakeObject() {
+            Json j;
+            j.type = Type::Object;
+            return j;
+        }
 
         Type type = Type::Null;
         bool boolean = false;
@@ -42,7 +50,9 @@ namespace perlin::ui {
 
         double NumberOr(double fallback) const { return type == Type::Number ? number : fallback; }
         bool BoolOr(bool fallback) const { return type == Type::Bool ? boolean : fallback; }
-        std::string StringOr(const std::string& fallback) const { return type == Type::String ? string : fallback; }
+        std::string StringOr(const std::string& fallback) const {
+            return type == Type::String ? string : fallback;
+        }
 
         static bool Parse(std::string_view text, Json& out, std::string& error);
         std::string Dump(int indent = -1) const;

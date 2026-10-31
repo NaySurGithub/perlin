@@ -336,7 +336,7 @@ namespace perlin {
                     }
                 }
                 for (const RakNet::LanServer& f : found) {
-                    if (discoveredIps.count(f.host))
+                    if (discoveredIps.contains(f.host))
                         continue;
                     std::vector<std::string> parts;
                     size_t a = 0;
@@ -393,7 +393,7 @@ namespace perlin {
                         for (size_t i = next++; i < hosts.size(); i = next++) {
                             NetherNetServerInfo info;
                             std::string why;
-                            if (discoveredIps.count(hosts[i]))
+                            if (discoveredIps.contains(hosts[i]))
                                 continue;
                             if (!NetherNet::Probe(hosts[i], 19132, info, why, 1))
                                 continue;
@@ -412,6 +412,7 @@ namespace perlin {
                         }
                     };
                     std::vector<std::thread> pool;
+                    pool.reserve(48);
                     for (int i = 0; i < 48; i++)
                         pool.emplace_back(worker);
                     for (std::thread& t : pool)
@@ -494,6 +495,7 @@ namespace perlin {
                         }
                     };
                     std::vector<std::thread> pool;
+                    pool.reserve(6);
                     for (int i = 0; i < 6; i++)
                         pool.emplace_back(fetch);
                     for (std::thread& t : pool)

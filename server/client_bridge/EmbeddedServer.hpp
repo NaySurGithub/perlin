@@ -20,7 +20,8 @@ namespace perlin {
 
         // libraryPath: perlin_server.dll / libperlin_server.so / .dylib next to the executable
         // dataDir: world and config directory; configJson overrides config file keys (server.json names) (may be empty)
-        bool Start(const std::string& libraryPath, const std::string& dataDir, const std::string& configJson, std::string& error);
+        bool Start(const std::string& libraryPath, const std::string& dataDir, const std::string& configJson,
+                   std::string& error);
         void Stop();
         bool Running() const;
         // one tick on the caller's thread when `ownThread` was false

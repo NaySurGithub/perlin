@@ -21,8 +21,7 @@
 namespace perlin::meta {
     inline constexpr bool uses_std_meta = PERLIN_HAS_STD_META != 0;
 
-    template <size_t N>
-    struct fixed_string {
+    template <size_t N> struct fixed_string {
         char chars[N + 1]{};
 
         consteval fixed_string() = default;
@@ -34,15 +33,14 @@ namespace perlin::meta {
         constexpr std::string_view view() const { return {chars, N}; }
         static constexpr size_t size() { return N; }
         constexpr const char* c_str() const { return chars; }
-        template <size_t M>
-        constexpr bool operator==(const fixed_string<M>& other) const { return view() == other.view(); }
+        template <size_t M> constexpr bool operator==(const fixed_string<M>& other) const {
+            return view() == other.view();
+        }
     };
-    template <size_t N>
-    fixed_string(const char (&)[N]) -> fixed_string<N - 1>;
+    template <size_t N> fixed_string(const char (&)[N]) -> fixed_string<N - 1>;
 
     namespace detail {
-        template <class T>
-        constexpr std::string_view raw_type_name() {
+        template <class T> constexpr std::string_view raw_type_name() {
 #if defined(__clang__) || defined(__GNUC__)
             return __PRETTY_FUNCTION__;
 #else
@@ -50,8 +48,7 @@ namespace perlin::meta {
 #endif
         }
 
-        template <auto V>
-        constexpr std::string_view raw_value_name() {
+        template <auto V> constexpr std::string_view raw_value_name() {
 #if defined(__clang__) || defined(__GNUC__)
             return __PRETTY_FUNCTION__;
 #else
@@ -80,14 +77,14 @@ namespace perlin::meta {
             if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'))
                 return false;
             for (const char ch : name)
-                if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'))
+                if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+                      ch == '_'))
                     return false;
             return true;
         }
     }
 
-    template <class T>
-    constexpr std::string_view type_name() {
+    template <class T> constexpr std::string_view type_name() {
         std::string_view sig = detail::raw_type_name<T>();
 #if defined(__clang__)
         constexpr std::string_view key = "T = ";
@@ -108,20 +105,17 @@ namespace perlin::meta {
 #endif
     }
 
-    template <class E>
-    struct enum_range {
+    template <class E> struct enum_range {
         static constexpr int min = -16;
         static constexpr int max = 255;
     };
 
-    template <class E>
-    struct enable_flags : std::false_type {};
+    template <class E> struct enable_flags : std::false_type {};
 
     template <class E>
     concept Enumeration = std::is_enum_v<E>;
 
-    template <class E>
-    struct enable_format : std::false_type {};
+    template <class E> struct enable_format : std::false_type {};
 
     template <class E>
     concept FormattableEnum = std::is_enum_v<E> && enable_format<E>::value;
@@ -130,8 +124,7 @@ namespace perlin::meta {
     concept FlagEnum = Enumeration<E> && enable_flags<E>::value;
 
     namespace detail {
-        template <class E, int64_t I>
-        constexpr std::string_view probe() {
+        template <class E, int64_t I> constexpr std::string_view probe() {
             constexpr std::string_view name = unqualified(value_of(raw_value_name<static_cast<E>(I)>()));
             if constexpr (is_identifier(name))
                 return name;
@@ -139,22 +132,21 @@ namespace perlin::meta {
                 return {};
         }
 
-        template <class E, int64_t Base, size_t... K>
-        constexpr auto probe_run(std::index_sequence<K...>) {
+        template <class E, int64_t Base, size_t... K> constexpr auto probe_run(std::index_sequence<K...>) {
             return std::array<std::string_view, sizeof...(K)>{probe<E, Base + static_cast<int64_t>(K)>()...};
         }
 
-        template <class E, size_t... K>
-        constexpr auto probe_bits(std::index_sequence<K...>) {
-            return std::array<std::string_view, sizeof...(K)>{probe<E, static_cast<int64_t>(uint64_t{1} << K)>()...};
+        template <class E, size_t... K> constexpr auto probe_bits(std::index_sequence<K...>) {
+            return std::array<std::string_view, sizeof...(K)>{
+                probe<E, static_cast<int64_t>(uint64_t{1} << K)>()...};
         }
 
         template <class E>
-        inline constexpr int probe_min = std::is_unsigned_v<std::underlying_type_t<E>> ? (enum_range<E>::min < 0 ? 0 : enum_range<E>::min)
-                                                                                      : enum_range<E>::min;
+        inline constexpr int probe_min =
+            std::is_unsigned_v<std::underlying_type_t<E>> ? (enum_range<E>::min < 0 ? 0 : enum_range<E>::min)
+                                                          : enum_range<E>::min;
 
-        template <class E>
-        struct enum_table {
+        template <class E> struct enum_table {
             struct Entry {
                 E value;
                 std::string_view name;
@@ -166,8 +158,8 @@ namespace perlin::meta {
             static constexpr auto entries = [] {
                 std::array<Entry, count> out{};
                 size_t i = 0;
-                template for (constexpr auto e : enumerators)
-                    out[i++] = Entry{[:e:], std::meta::identifier_of(e)};
+                template for (constexpr auto e : enumerators) out[i++] =
+                    Entry{[:e:], std::meta::identifier_of(e)};
                 return out;
             }();
 #else
@@ -205,11 +197,9 @@ namespace perlin::meta {
         };
     }
 
-    template <Enumeration E>
-    inline constexpr size_t enum_count = detail::enum_table<E>::count;
+    template <Enumeration E> inline constexpr size_t enum_count = detail::enum_table<E>::count;
 
-    template <Enumeration E>
-    inline constexpr auto enum_entries = detail::enum_table<E>::entries;
+    template <Enumeration E> inline constexpr auto enum_entries = detail::enum_table<E>::entries;
 
     template <Enumeration E>
     inline constexpr auto enum_values = [] {
@@ -227,24 +217,21 @@ namespace perlin::meta {
         return out;
     }();
 
-    template <Enumeration E>
-    constexpr std::string_view enum_name(E value) {
+    template <Enumeration E> constexpr std::string_view enum_name(E value) {
         for (const auto& e : enum_entries<E>)
             if (e.value == value)
                 return e.name;
         return {};
     }
 
-    template <Enumeration E>
-    constexpr std::optional<E> enum_cast(std::string_view name) {
+    template <Enumeration E> constexpr std::optional<E> enum_cast(std::string_view name) {
         for (const auto& e : enum_entries<E>)
             if (e.name == name)
                 return e.value;
         return std::nullopt;
     }
 
-    template <Enumeration E>
-    constexpr std::optional<E> enum_cast_nocase(std::string_view name) {
+    template <Enumeration E> constexpr std::optional<E> enum_cast_nocase(std::string_view name) {
         const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
         for (const auto& e : enum_entries<E>) {
             if (e.name.size() != name.size())
@@ -258,22 +245,22 @@ namespace perlin::meta {
         return std::nullopt;
     }
 
-    template <Enumeration E>
-    constexpr std::optional<size_t> enum_index(E value) {
+    template <Enumeration E> constexpr std::optional<size_t> enum_index(E value) {
         for (size_t i = 0; i < enum_count<E>; i++)
             if (enum_entries<E>[i].value == value)
                 return i;
         return std::nullopt;
     }
 
-    template <Enumeration E>
-    constexpr bool is_enumerator(E value) { return enum_index(value).has_value(); }
+    template <Enumeration E> constexpr bool is_enumerator(E value) {
+        return enum_index(value).has_value();
+    }
 
-    template <Enumeration E>
-    constexpr auto to_underlying(E value) { return static_cast<std::underlying_type_t<E>>(value); }
+    template <Enumeration E> constexpr auto to_underlying(E value) {
+        return static_cast<std::underlying_type_t<E>>(value);
+    }
 
-    template <FlagEnum E>
-    class Flags {
+    template <FlagEnum E> class Flags {
     public:
         static constexpr bool wire_raw_tag = true;
         using Bits = std::make_unsigned_t<std::underlying_type_t<E>>;
@@ -295,18 +282,31 @@ namespace perlin::meta {
         constexpr size_t count() const { return static_cast<size_t>(std::popcount(bits_)); }
 
         constexpr Flags& set(E one, bool on = true) {
-            bits_ = on ? static_cast<Bits>(bits_ | static_cast<Bits>(one)) : static_cast<Bits>(bits_ & ~static_cast<Bits>(one));
+            bits_ = on ? static_cast<Bits>(bits_ | static_cast<Bits>(one))
+                       : static_cast<Bits>(bits_ & ~static_cast<Bits>(one));
             return *this;
         }
         constexpr Flags& reset(E one) { return set(one, false); }
         constexpr Flags& toggle(E one) { return set(one, !has(one)); }
 
-        friend constexpr Flags operator|(Flags a, Flags b) { return from_bits(static_cast<Bits>(a.bits_ | b.bits_)); }
-        friend constexpr Flags operator&(Flags a, Flags b) { return from_bits(static_cast<Bits>(a.bits_ & b.bits_)); }
-        friend constexpr Flags operator^(Flags a, Flags b) { return from_bits(static_cast<Bits>(a.bits_ ^ b.bits_)); }
+        friend constexpr Flags operator|(Flags a, Flags b) {
+            return from_bits(static_cast<Bits>(a.bits_ | b.bits_));
+        }
+        friend constexpr Flags operator&(Flags a, Flags b) {
+            return from_bits(static_cast<Bits>(a.bits_ & b.bits_));
+        }
+        friend constexpr Flags operator^(Flags a, Flags b) {
+            return from_bits(static_cast<Bits>(a.bits_ ^ b.bits_));
+        }
         friend constexpr Flags operator~(Flags a) { return from_bits(static_cast<Bits>(~a.bits_)); }
-        constexpr Flags& operator|=(Flags o) { bits_ = static_cast<Bits>(bits_ | o.bits_); return *this; }
-        constexpr Flags& operator&=(Flags o) { bits_ = static_cast<Bits>(bits_ & o.bits_); return *this; }
+        constexpr Flags& operator|=(Flags o) {
+            bits_ = static_cast<Bits>(bits_ | o.bits_);
+            return *this;
+        }
+        constexpr Flags& operator&=(Flags o) {
+            bits_ = static_cast<Bits>(bits_ & o.bits_);
+            return *this;
+        }
         friend constexpr bool operator==(Flags, Flags) = default;
 
         class iterator {
@@ -315,10 +315,20 @@ namespace perlin::meta {
             using difference_type = std::ptrdiff_t;
             constexpr iterator() = default;
             constexpr explicit iterator(Bits rest) : rest_(rest) {}
-            constexpr E operator*() const { return static_cast<E>(static_cast<Bits>(1) << std::countr_zero(rest_)); }
-            constexpr iterator& operator++() { rest_ = static_cast<Bits>(rest_ & (rest_ - 1)); return *this; }
-            constexpr iterator operator++(int) { iterator t = *this; ++*this; return t; }
+            constexpr E operator*() const {
+                return static_cast<E>(static_cast<Bits>(1) << std::countr_zero(rest_));
+            }
+            constexpr iterator& operator++() {
+                rest_ = static_cast<Bits>(rest_ & (rest_ - 1));
+                return *this;
+            }
+            constexpr iterator operator++(int) {
+                iterator t = *this;
+                ++*this;
+                return t;
+            }
             friend constexpr bool operator==(iterator, iterator) = default;
+
         private:
             Bits rest_ = 0;
         };
@@ -329,13 +339,14 @@ namespace perlin::meta {
         Bits bits_ = 0;
     };
 
-    template <FlagEnum E>
-    constexpr Flags<E> operator|(E a, E b) { return Flags<E>(a) | Flags<E>(b); }
-    template <FlagEnum E>
-    constexpr Flags<E> operator&(E a, E b) { return Flags<E>(a) & Flags<E>(b); }
+    template <FlagEnum E> constexpr Flags<E> operator|(E a, E b) {
+        return Flags<E>(a) | Flags<E>(b);
+    }
+    template <FlagEnum E> constexpr Flags<E> operator&(E a, E b) {
+        return Flags<E>(a) & Flags<E>(b);
+    }
 
-    template <Enumeration E, class Storage = uint64_t>
-    class IndexSet {
+    template <Enumeration E, class Storage = uint64_t> class IndexSet {
     public:
         static constexpr bool wire_raw_tag = true;
 
@@ -363,9 +374,17 @@ namespace perlin::meta {
             constexpr iterator() = default;
             constexpr explicit iterator(Storage rest) : rest_(rest) {}
             constexpr E operator*() const { return static_cast<E>(std::countr_zero(rest_)); }
-            constexpr iterator& operator++() { rest_ = static_cast<Storage>(rest_ & (rest_ - 1)); return *this; }
-            constexpr iterator operator++(int) { iterator t = *this; ++*this; return t; }
+            constexpr iterator& operator++() {
+                rest_ = static_cast<Storage>(rest_ & (rest_ - 1));
+                return *this;
+            }
+            constexpr iterator operator++(int) {
+                iterator t = *this;
+                ++*this;
+                return t;
+            }
             friend constexpr bool operator==(iterator, iterator) = default;
+
         private:
             Storage rest_ = 0;
         };
@@ -377,25 +396,22 @@ namespace perlin::meta {
     };
 
     template <class T>
-    concept Aggregate = std::is_aggregate_v<std::remove_cvref_t<T>> && !std::is_array_v<std::remove_cvref_t<T>> &&
-                        !std::is_union_v<std::remove_cvref_t<T>>;
+    concept Aggregate = std::is_aggregate_v<std::remove_cvref_t<T>> &&
+                        !std::is_array_v<std::remove_cvref_t<T>> && !std::is_union_v<std::remove_cvref_t<T>>;
 
     namespace detail {
         struct anything {
-            template <class U>
-            constexpr operator U() const;
+            template <class U> constexpr operator U() const;
         };
 
-        template <class T, size_t... I>
-        constexpr bool constructible_with(std::index_sequence<I...>) {
+        template <class T, size_t... I> constexpr bool constructible_with(std::index_sequence<I...>) {
             return requires { T{((void)I, anything{})...}; };
         }
 
         template <class T, size_t N>
         constexpr bool accepts_n = constructible_with<T>(std::make_index_sequence<N>{});
 
-        template <class T, size_t Lo, size_t Hi>
-        constexpr size_t count_members() {
+        template <class T, size_t Lo, size_t Hi> constexpr size_t count_members() {
             if constexpr (Lo == Hi) {
                 return Lo;
             } else {
@@ -417,33 +433,33 @@ namespace perlin::meta {
     template <Aggregate T>
     inline constexpr size_t field_count =
 #if PERLIN_HAS_STD_META
-        std::meta::nonstatic_data_members_of(^^std::remove_cvref_t<T>, std::meta::access_context::unchecked()).size();
+        std::meta::nonstatic_data_members_of(^^std::remove_cvref_t<T>, std::meta::access_context::unchecked())
+            .size();
 #else
         detail::count_members<std::remove_cvref_t<T>, 0, 64>();
 #endif
 
-    template <Aggregate T>
-    constexpr auto fields(T& value) {
+    template <Aggregate T> constexpr auto fields(T& value) {
 #if PERLIN_HAS_STD_META
-        constexpr auto members = std::define_static_array(
-            std::meta::nonstatic_data_members_of(^^std::remove_cvref_t<T>, std::meta::access_context::unchecked()));
-        return [&]<size_t... I>(std::index_sequence<I...>) { return std::tie(value.[:members[I]:]...); }(
-            std::make_index_sequence<members.size()>{});
+        constexpr auto members = std::define_static_array(std::meta::nonstatic_data_members_of(
+            ^^std::remove_cvref_t<T>, std::meta::access_context::unchecked()));
+        return [&]<size_t... I>(std::index_sequence<I...>) {
+            return std::tie(value.[:members[I]:]...);
+        }(std::make_index_sequence<members.size()>{});
 #else
         return detail::bind_fields<field_count<T>>(value);
 #endif
     }
 
-    template <Aggregate T, class Fn>
-    constexpr void for_each_field(T& value, Fn&& fn) {
+    template <Aggregate T, class Fn> constexpr void for_each_field(T& value, Fn&& fn) {
         std::apply([&](auto&... member) { (fn(member), ...); }, fields(value));
     }
 
 #if PERLIN_HAS_STD_META
     template <Aggregate T>
     inline constexpr auto field_names = [] {
-        constexpr auto members = std::define_static_array(
-            std::meta::nonstatic_data_members_of(^^std::remove_cvref_t<T>, std::meta::access_context::unchecked()));
+        constexpr auto members = std::define_static_array(std::meta::nonstatic_data_members_of(
+            ^^std::remove_cvref_t<T>, std::meta::access_context::unchecked()));
         std::array<std::string_view, members.size()> out{};
         for (size_t i = 0; i < members.size(); i++)
             out[i] = std::meta::identifier_of(members[i]);
@@ -451,54 +467,41 @@ namespace perlin::meta {
     }();
 #endif
 
-    template <class... Ts>
-    struct overloaded : Ts... {
+    template <class... Ts> struct overloaded : Ts... {
         using Ts::operator()...;
     };
-    template <class... Ts>
-    overloaded(Ts...) -> overloaded<Ts...>;
+    template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-    template <class T, template <class...> class Template>
-    inline constexpr bool is_specialization_of = false;
+    template <class T, template <class...> class Template> inline constexpr bool is_specialization_of = false;
     template <template <class...> class Template, class... Args>
     inline constexpr bool is_specialization_of<Template<Args...>, Template> = true;
 
     namespace detail {
-        template <class F>
-        struct signature;
-        template <class R, class... A>
-        struct signature<R (*)(A...)> {
+        template <class F> struct signature;
+        template <class R, class... A> struct signature<R (*)(A...)> {
             using result = R;
             using args = std::tuple<A...>;
         };
-        template <class R, class C, class... A>
-        struct signature<R (C::*)(A...)> {
+        template <class R, class C, class... A> struct signature<R (C::*)(A...)> {
             using result = R;
             using args = std::tuple<A...>;
         };
-        template <class R, class C, class... A>
-        struct signature<R (C::*)(A...) const> {
+        template <class R, class C, class... A> struct signature<R (C::*)(A...) const> {
             using result = R;
             using args = std::tuple<A...>;
         };
-        template <class R, class C, class... A>
-        struct signature<R (C::*)(A...) noexcept> {
+        template <class R, class C, class... A> struct signature<R (C::*)(A...) noexcept> {
             using result = R;
             using args = std::tuple<A...>;
         };
-        template <class R, class C, class... A>
-        struct signature<R (C::*)(A...) const noexcept> {
+        template <class R, class C, class... A> struct signature<R (C::*)(A...) const noexcept> {
             using result = R;
             using args = std::tuple<A...>;
         };
-        template <class F>
-        struct callable : signature<decltype(&F::operator())> {};
-        template <class R, class... A>
-        struct callable<R (*)(A...)> : signature<R (*)(A...)> {};
+        template <class F> struct callable : signature<decltype(&F::operator())> {};
+        template <class R, class... A> struct callable<R (*)(A...)> : signature<R (*)(A...)> {};
     }
 
-    template <class F>
-    using callable_args_t = typename detail::callable<std::remove_cvref_t<F>>::args;
-    template <class F>
-    using callable_result_t = typename detail::callable<std::remove_cvref_t<F>>::result;
+    template <class F> using callable_args_t = typename detail::callable<std::remove_cvref_t<F>>::args;
+    template <class F> using callable_result_t = typename detail::callable<std::remove_cvref_t<F>>::result;
 }

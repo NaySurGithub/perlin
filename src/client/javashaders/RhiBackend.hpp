@@ -10,7 +10,8 @@ namespace perlin::jshader {
     // what the running rhi device takes: spir-v (vulkan), hlsl source (d3d11) or dxbc (d3d12)
     enum class RhiShaderKind { SpirV, Hlsl, Dxbc };
 
-    using DxbcCompiler = std::function<bool(const std::string& hlsl, bool fragment, std::vector<uint8_t>& dxbc, std::string& error)>;
+    using DxbcCompiler = std::function<bool(const std::string& hlsl, bool fragment,
+                                            std::vector<uint8_t>& dxbc, std::string& error)>;
 
     struct RhiSampler {
         std::string name;

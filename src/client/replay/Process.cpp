@@ -135,7 +135,8 @@ namespace perlin::replay {
             cmd += Quote(Widen(argv[i]));
         }
         PROCESS_INFORMATION pi{};
-        const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+        const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
+                                       nullptr, &si, &pi);
         CloseHandle(outWrite);
         if (inRead)
             CloseHandle(inRead);
@@ -217,10 +218,16 @@ namespace perlin::replay {
         error = "starting programs is not supported on this platform";
         return false;
     }
-    bool Process::Running() { return false; }
-    bool Process::WriteStdin(const void*, size_t) { return false; }
+    bool Process::Running() {
+        return false;
+    }
+    bool Process::WriteStdin(const void*, size_t) {
+        return false;
+    }
     void Process::CloseStdin() {}
-    int Process::Wait() { return -1; }
+    int Process::Wait() {
+        return -1;
+    }
     void Process::Kill() {}
 #else
     bool Process::Start(const std::vector<std::string>& argv, bool pipeStdin, std::string& error) {
@@ -245,6 +252,7 @@ namespace perlin::replay {
             return false;
         }
         std::vector<char*> args;
+        args.reserve(argv.size());
         for (const std::string& a : argv)
             args.push_back(const_cast<char*>(a.c_str()));
         args.push_back(nullptr);
@@ -336,8 +344,7 @@ namespace perlin::replay {
             return impl->exitCode;
         CloseStdin();
         int status = 0;
-        while (waitpid(impl->pid, &status, 0) < 0 && errno == EINTR) {
-        }
+        while (waitpid(impl->pid, &status, 0) < 0 && errno == EINTR) {}
         impl->exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
         if (impl->reader.joinable())
             impl->reader.join();

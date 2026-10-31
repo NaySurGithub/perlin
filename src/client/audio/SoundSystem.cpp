@@ -54,7 +54,8 @@ namespace perlin::audio {
             return e;
         }
 
-        void ParseEvents(const Json& events, std::unordered_map<std::string, EventSound>& out, float volumeScale, float pitchScale) {
+        void ParseEvents(const Json& events, std::unordered_map<std::string, EventSound>& out,
+                         float volumeScale, float pitchScale) {
             if (!events.IsObject())
                 return;
             for (const auto& [key, value] : events.object) {
@@ -218,7 +219,8 @@ namespace perlin::audio {
         // Directories are highest priority first, as for textures and JSON UI.
         for (auto it = packRoots.rbegin(); it != packRoots.rend(); ++it)
             loadRoot(*it);
-        Log("audio", "{} sound definitions, {} block sound types, {} entities with sounds", definitions.size(), blockEvents.size(), entityEvents.size());
+        Log("audio", "{} sound definitions, {} block sound types, {} entities with sounds",
+            definitions.size(), blockEvents.size(), entityEvents.size());
     }
 
     std::string SoundSystem::BlockSoundType(const std::string& blockName) const {
@@ -228,7 +230,8 @@ namespace perlin::audio {
         return it == blockSoundType.end() ? std::string() : it->second;
     }
 
-    bool SoundSystem::FindBlockEvent(const std::string& soundType, const std::string& event, EventSound& out) const {
+    bool SoundSystem::FindBlockEvent(const std::string& soundType, const std::string& event,
+                                     EventSound& out) const {
         const auto t = blockEvents.find(soundType);
         if (t == blockEvents.end())
             return false;
@@ -239,7 +242,8 @@ namespace perlin::audio {
         return true;
     }
 
-    bool SoundSystem::FindEntityEvent(const std::string& entityType, const std::string& event, EventSound& out) const {
+    bool SoundSystem::FindEntityEvent(const std::string& entityType, const std::string& event,
+                                      EventSound& out) const {
         const std::string key = EventKey(event);
         const auto t = entityEvents.find(ShortName(entityType));
         if (t != entityEvents.end()) {
@@ -280,7 +284,8 @@ namespace perlin::audio {
                     continue;
                 found = true;
                 std::ifstream f(p, std::ios::binary);
-                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
+                                           std::istreambuf_iterator<char>());
                 auto pcm = std::make_shared<Pcm>();
                 std::string error;
                 if (DecodeSound(bytes, ext, *pcm, &error)) {
@@ -307,8 +312,8 @@ namespace perlin::audio {
         return result;
     }
 
-    bool SoundSystem::Play(const std::string& definition, float volume, float pitch, const glm::dvec3& position, bool positional,
-                           const EventSound* event) {
+    bool SoundSystem::Play(const std::string& definition, float volume, float pitch,
+                           const glm::dvec3& position, bool positional, const EventSound* event) {
         const auto it = definitions.find(definition);
         if (it == definitions.end() || it->second.entries.empty()) {
             if (!warned["def:" + definition]) {
@@ -343,9 +348,11 @@ namespace perlin::audio {
         voice.volume = std::max(0.0f, volume * eventVolume * chosen->volume);
         voice.pitch = std::clamp(pitch * eventPitch * Roll(chosen->pitchLo, chosen->pitchHi), 0.1f, 4.0f);
         voice.category = CategoryFor(def.category, definition);
-        voice.positional = positional && voice.category != Category::Music && voice.category != Category::Record;
+        voice.positional =
+            positional && voice.category != Category::Music && voice.category != Category::Record;
         voice.position = position;
-        voice.range = std::max(16.0f * std::max(volume * eventVolume * chosen->volume, 1.0f), def.maxDistance > 0 ? def.maxDistance : 0.0f);
+        voice.range = std::max(16.0f * std::max(volume * eventVolume * chosen->volume, 1.0f),
+                               def.maxDistance > 0 ? def.maxDistance : 0.0f);
         voice.loop = false;
         voice.name = definition;
         if (voice.volume <= 0.0f)
@@ -357,13 +364,15 @@ namespace perlin::audio {
         return true;
     }
 
-    bool SoundSystem::PlayNamed(const std::string& name, const glm::dvec3& position, float volume, float pitch, bool positional) {
-        if (const auto it = named.find(name); it != named.end() && definitions.count(it->second.sound))
+    bool SoundSystem::PlayNamed(const std::string& name, const glm::dvec3& position, float volume,
+                                float pitch, bool positional) {
+        if (const auto it = named.find(name); it != named.end() && definitions.contains(it->second.sound))
             return Play(it->second.sound, volume, pitch, position, positional, &it->second);
         return Play(name, volume, pitch, position, positional);
     }
 
-    bool SoundSystem::PlayBlockEvent(const std::string& blockName, const std::string& event, const glm::dvec3& position, float volumeScale) {
+    bool SoundSystem::PlayBlockEvent(const std::string& blockName, const std::string& event,
+                                     const glm::dvec3& position, float volumeScale) {
         const std::string type = BlockSoundType(blockName);
         if (type.empty())
             return false;
@@ -373,7 +382,8 @@ namespace perlin::audio {
         return Play(e.sound, volumeScale, 1.0f, position, true, &e);
     }
 
-    bool SoundSystem::PlayEntityEvent(const std::string& entityType, const std::string& event, const glm::dvec3& position, bool baby) {
+    bool SoundSystem::PlayEntityEvent(const std::string& entityType, const std::string& event,
+                                      const glm::dvec3& position, bool baby) {
         EventSound e;
         if (!FindEntityEvent(entityType, event, e))
             return false;
@@ -384,29 +394,56 @@ namespace perlin::audio {
         return Play(e.sound, 1.0f, 1.0f, position, true, &e);
     }
 
-    bool SoundSystem::PlayLevelSound(const std::string& eventId, const glm::dvec3& position, int32_t extra, const std::string& entityType,
-                                     bool baby, bool global) {
+    bool SoundSystem::PlayLevelSound(const std::string& eventId, const glm::dvec3& position, int32_t extra,
+                                     const std::string& entityType, bool baby, bool global) {
         const std::string key = EventKey(eventId);
         if (key.empty() || key == "undefined")
             return false;
         const bool positional = !global;
         static const std::unordered_map<std::string, const char*> kDirect = {
-            {"explode", "random.explode"}, {"thunder", "ambient.weather.thunder"}, {"lightningimpact", "ambient.weather.lightning.impact"},
-            {"bow", "random.bow"}, {"bowhit", "random.bowhit"}, {"levelup", "random.levelup"}, {"pop", "random.pop"},
-            {"burp", "random.burp"}, {"splash", "random.splash"}, {"swim", "random.swim"}, {"fizz", "random.fizz"},
-            {"attacknodamage", "game.player.attack.nodamage"}, {"attackstrong", "game.player.attack.strong"},
-            {"drink", "random.drink"}, {"eat", "random.eat"}, {"throw", "random.bow"}, {"glass", "random.glass"},
-            {"click", "random.click"}, {"orb", "random.orb"}, {"totemused", "random.totem"}, {"fire", "fire.fire"},
-            {"ignite", "fire.ignite"}, {"teleport", "mob.endermen.portal"}, {"portal", "portal.portal"},
-            {"pop2", "random.pop2"}, {"anvilbreak", "random.anvil_break"}, {"anvilland", "random.anvil_land"},
-            {"anvilused", "random.anvil_use"}, {"chestopen", "random.chestopen"}, {"chestclosed", "random.chestclosed"},
-            {"dooropen", "random.door_open"}, {"doorclose", "random.door_close"}, {"shulkerboxopen", "random.shulkerbox.open"},
-            {"shulkerboxclose", "random.shulkerbox.close"}, {"enderchestopen", "random.enderchestopen"},
-            {"enderchestclosed", "random.enderchestclosed"}, {"hitnodamage", "game.player.hurt"}, {"hurt", "game.player.hurt"}};
+            {"explode", "random.explode"},
+            {"thunder", "ambient.weather.thunder"},
+            {"lightningimpact", "ambient.weather.lightning.impact"},
+            {"bow", "random.bow"},
+            {"bowhit", "random.bowhit"},
+            {"levelup", "random.levelup"},
+            {"pop", "random.pop"},
+            {"burp", "random.burp"},
+            {"splash", "random.splash"},
+            {"swim", "random.swim"},
+            {"fizz", "random.fizz"},
+            {"attacknodamage", "game.player.attack.nodamage"},
+            {"attackstrong", "game.player.attack.strong"},
+            {"drink", "random.drink"},
+            {"eat", "random.eat"},
+            {"throw", "random.bow"},
+            {"glass", "random.glass"},
+            {"click", "random.click"},
+            {"orb", "random.orb"},
+            {"totemused", "random.totem"},
+            {"fire", "fire.fire"},
+            {"ignite", "fire.ignite"},
+            {"teleport", "mob.endermen.portal"},
+            {"portal", "portal.portal"},
+            {"pop2", "random.pop2"},
+            {"anvilbreak", "random.anvil_break"},
+            {"anvilland", "random.anvil_land"},
+            {"anvilused", "random.anvil_use"},
+            {"chestopen", "random.chestopen"},
+            {"chestclosed", "random.chestclosed"},
+            {"dooropen", "random.door_open"},
+            {"doorclose", "random.door_close"},
+            {"shulkerboxopen", "random.shulkerbox.open"},
+            {"shulkerboxclose", "random.shulkerbox.close"},
+            {"enderchestopen", "random.enderchestopen"},
+            {"enderchestclosed", "random.enderchestclosed"},
+            {"hitnodamage", "game.player.hurt"},
+            {"hurt", "game.player.hurt"}};
         if (!entityType.empty() && entityType != "minecraft:") {
             if (key == "step" || key == "land" || key == "jump" || key == "fall" || key == "heavystep") {
                 EventSound own;
-                if (FindEntityEvent(entityType, "step", own) && key == "step" && entityType != "minecraft:player")
+                if (FindEntityEvent(entityType, "step", own) && key == "step" &&
+                    entityType != "minecraft:player")
                     return Play(own.sound, 1.0f, baby ? 1.3f : 1.0f, position, positional, &own);
                 if (extra != 0 && blockNamer)
                     return PlayBlockEvent(blockNamer(extra), key == "heavystep" ? "step" : key, position);
@@ -414,9 +451,10 @@ namespace perlin::audio {
             if (PlayEntityEvent(entityType, key, position, baby))
                 return true;
         }
-        const bool blockEvent = key == "break" || key == "place" || key == "hit" || key == "itemuseon" || key == "step" ||
-                                key == "land" || key == "jump" || key == "fall" || key == "heavystep" || key == "dooropen" ||
-                                key == "doorclose" || key == "poweron" || key == "poweroff";
+        const bool blockEvent = key == "break" || key == "place" || key == "hit" || key == "itemuseon" ||
+                                key == "step" || key == "land" || key == "jump" || key == "fall" ||
+                                key == "heavystep" || key == "dooropen" || key == "doorclose" ||
+                                key == "poweron" || key == "poweroff";
         if (blockEvent && extra != 0 && blockNamer) {
             if (PlayBlockEvent(blockNamer(extra), key == "heavystep" ? "step" : key, position))
                 return true;

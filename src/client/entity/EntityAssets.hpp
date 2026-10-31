@@ -68,6 +68,7 @@ namespace perlin::entity {
 
     public:
         bool Seat(const std::string& identifier, float& x, float& y, float& z) const;
+
     private:
         void LoadAll();
         void LoadDirectory(const std::string& dir, bool overlay);

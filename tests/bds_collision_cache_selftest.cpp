@@ -77,7 +77,8 @@ int main(int argc, char** argv) {
             if (!readBox(expectedBox) || !readMetadata(expectedMetadata))
                 return 1;
             for (int axis = 0; axis < 6; ++axis)
-                equal &= std::bit_cast<uint32_t>(cache.shapes[i][axis]) == std::bit_cast<uint32_t>(expectedBox[axis]);
+                equal &= std::bit_cast<uint32_t>(cache.shapes[i][axis]) ==
+                         std::bit_cast<uint32_t>(expectedBox[axis]);
             equal &= cache.blocks[i].block == expectedMetadata.block &&
                      cache.blocks[i].position == expectedMetadata.position;
         }

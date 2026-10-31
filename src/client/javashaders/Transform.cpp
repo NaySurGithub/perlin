@@ -16,8 +16,12 @@ namespace perlin::jshader {
             std::string ws;
         };
 
-        bool IsIdStart(char c) { return std::isalpha(static_cast<unsigned char>(c)) || c == '_'; }
-        bool IsIdChar(char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; }
+        bool IsIdStart(char c) {
+            return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+        }
+        bool IsIdChar(char c) {
+            return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+        }
 
         std::vector<Tok> Lex(const std::string& s) {
             std::vector<Tok> out;
@@ -38,7 +42,8 @@ namespace perlin::jshader {
                     continue;
                 }
                 if (c == '/' && i + 1 < s.size() && s[i + 1] == '/') {
-                    while (i < s.size() && s[i] != '\n') i++;
+                    while (i < s.size() && s[i] != '\n')
+                        i++;
                     ws += ' ';
                     continue;
                 }
@@ -46,7 +51,8 @@ namespace perlin::jshader {
                     size_t end = s.find("*/", i + 2);
                     const size_t stop = end == std::string::npos ? s.size() : end + 2;
                     for (size_t k = i; k < stop; k++)
-                        if (s[k] == '\n') ws += '\n';
+                        if (s[k] == '\n')
+                            ws += '\n';
                     ws += ' ';
                     i = stop;
                     continue;
@@ -56,7 +62,8 @@ namespace perlin::jshader {
                     while (e < s.size() && s[e] != '\n') {
                         if (s[e] == '\\' && e + 1 < s.size() && (s[e + 1] == '\n' || s[e + 1] == '\r')) {
                             e += 2;
-                            if (e < s.size() && s[e - 1] == '\r' && s[e] == '\n') e++;
+                            if (e < s.size() && s[e - 1] == '\r' && s[e] == '\n')
+                                e++;
                             continue;
                         }
                         e++;
@@ -69,29 +76,38 @@ namespace perlin::jshader {
                 lineStart = false;
                 if (IsIdStart(c)) {
                     size_t e = i;
-                    while (e < s.size() && IsIdChar(s[e])) e++;
+                    while (e < s.size() && IsIdChar(s[e]))
+                        e++;
                     out.push_back({Tok::Ident, s.substr(i, e - i), ws});
                     ws.clear();
                     i = e;
                     continue;
                 }
-                if (std::isdigit(static_cast<unsigned char>(c)) || (c == '.' && i + 1 < s.size() && std::isdigit(static_cast<unsigned char>(s[i + 1])))) {
+                if (std::isdigit(static_cast<unsigned char>(c)) ||
+                    (c == '.' && i + 1 < s.size() && std::isdigit(static_cast<unsigned char>(s[i + 1])))) {
                     size_t e = i;
                     if (c == '0' && e + 1 < s.size() && (s[e + 1] == 'x' || s[e + 1] == 'X')) {
                         e += 2;
-                        while (e < s.size() && std::isxdigit(static_cast<unsigned char>(s[e]))) e++;
+                        while (e < s.size() && std::isxdigit(static_cast<unsigned char>(s[e])))
+                            e++;
                     } else {
-                        while (e < s.size() && (std::isdigit(static_cast<unsigned char>(s[e])) || s[e] == '.')) e++;
+                        while (e < s.size() &&
+                               (std::isdigit(static_cast<unsigned char>(s[e])) || s[e] == '.'))
+                            e++;
                         if (e < s.size() && (s[e] == 'e' || s[e] == 'E')) {
                             size_t k = e + 1;
-                            if (k < s.size() && (s[k] == '+' || s[k] == '-')) k++;
+                            if (k < s.size() && (s[k] == '+' || s[k] == '-'))
+                                k++;
                             if (k < s.size() && std::isdigit(static_cast<unsigned char>(s[k]))) {
                                 e = k;
-                                while (e < s.size() && std::isdigit(static_cast<unsigned char>(s[e]))) e++;
+                                while (e < s.size() && std::isdigit(static_cast<unsigned char>(s[e])))
+                                    e++;
                             }
                         }
                     }
-                    while (e < s.size() && (s[e] == 'f' || s[e] == 'F' || s[e] == 'u' || s[e] == 'U' || s[e] == 'l' || s[e] == 'L')) e++;
+                    while (e < s.size() && (s[e] == 'f' || s[e] == 'F' || s[e] == 'u' || s[e] == 'U' ||
+                                            s[e] == 'l' || s[e] == 'L'))
+                        e++;
                     out.push_back({Tok::Number, s.substr(i, e - i), ws});
                     ws.clear();
                     i = e;
@@ -107,27 +123,31 @@ namespace perlin::jshader {
         }
 
         bool IsOpaqueType(const std::string& t) {
-            return t.compare(0, 7, "sampler") == 0 || t.compare(0, 8, "isampler") == 0 || t.compare(0, 8, "usampler") == 0 ||
-                   t.compare(0, 5, "image") == 0 || t.compare(0, 6, "iimage") == 0 || t.compare(0, 6, "uimage") == 0 ||
-                   t == "atomic_uint";
+            return t.compare(0, 7, "sampler") == 0 || t.compare(0, 8, "isampler") == 0 ||
+                   t.compare(0, 8, "usampler") == 0 || t.compare(0, 5, "image") == 0 ||
+                   t.compare(0, 6, "iimage") == 0 || t.compare(0, 6, "uimage") == 0 || t == "atomic_uint";
         }
 
         const std::unordered_set<std::string>& BuiltinTypes() {
             static const std::unordered_set<std::string> set = {
-                "void", "bool", "int", "uint", "float", "double", "vec2", "vec3", "vec4", "ivec2", "ivec3", "ivec4", "uvec2",
-                "uvec3", "uvec4", "bvec2", "bvec3", "bvec4", "mat2", "mat3", "mat4", "mat2x2", "mat2x3", "mat2x4", "mat3x2",
-                "mat3x3", "mat3x4", "mat4x2", "mat4x3", "mat4x4", "dvec2", "dvec3", "dvec4"};
+                "void",   "bool",   "int",    "uint",   "float",  "double", "vec2",   "vec3",   "vec4",
+                "ivec2",  "ivec3",  "ivec4",  "uvec2",  "uvec3",  "uvec4",  "bvec2",  "bvec3",  "bvec4",
+                "mat2",   "mat3",   "mat4",   "mat2x2", "mat2x3", "mat2x4", "mat3x2", "mat3x3", "mat3x4",
+                "mat4x2", "mat4x3", "mat4x4", "dvec2",  "dvec3",  "dvec4"};
             return set;
         }
 
-        bool IsType(const std::string& t) { return BuiltinTypes().count(t) != 0 || IsOpaqueType(t); }
+        bool IsType(const std::string& t) {
+            return BuiltinTypes().contains(t) || IsOpaqueType(t);
+        }
 
         bool IsQualifier(const std::string& t) {
             static const std::unordered_set<std::string> set = {
-                "const", "uniform", "varying", "attribute", "in", "out", "inout", "flat", "smooth", "noperspective", "centroid",
-                "invariant", "precise", "highp", "mediump", "lowp", "buffer", "shared", "coherent", "volatile", "restrict",
-                "readonly", "writeonly", "sample", "patch"};
-            return set.count(t) != 0;
+                "const",    "uniform",   "varying",       "attribute", "in",        "out",      "inout",
+                "flat",     "smooth",    "noperspective", "centroid",  "invariant", "precise",  "highp",
+                "mediump",  "lowp",      "buffer",        "shared",    "coherent",  "volatile", "restrict",
+                "readonly", "writeonly", "sample",        "patch"};
+            return set.contains(t);
         }
 
         std::string Join(const std::vector<Tok>& t, size_t a, size_t b) {
@@ -140,17 +160,23 @@ namespace perlin::jshader {
         }
 
         int TypeSlots(const std::string& type) {
-            if (type == "mat2" || type == "mat2x2" || type == "mat2x3" || type == "mat2x4") return 2;
-            if (type == "mat3" || type == "mat3x2" || type == "mat3x3" || type == "mat3x4") return 3;
-            if (type == "mat4" || type == "mat4x2" || type == "mat4x3" || type == "mat4x4") return 4;
-            if (type == "dvec3" || type == "dvec4") return 2;
+            if (type == "mat2" || type == "mat2x2" || type == "mat2x3" || type == "mat2x4")
+                return 2;
+            if (type == "mat3" || type == "mat3x2" || type == "mat3x3" || type == "mat3x4")
+                return 3;
+            if (type == "mat4" || type == "mat4x2" || type == "mat4x3" || type == "mat4x4")
+                return 4;
+            if (type == "dvec3" || type == "dvec4")
+                return 2;
             return 1;
         }
 
         struct BuiltinUse {
             bool modelView = false, modelViewInv = false, proj = false, projInv = false, normalMat = false;
-            bool textureMat = false, fogColor = false, fogDensity = false, fogStart = false, fogEnd = false, fogScale = false;
-            bool fogCoord = false, fragCoord = false, shadow2D = false, shadow2DLod = false, shadow2DProj = false;
+            bool textureMat = false, fogColor = false, fogDensity = false, fogStart = false, fogEnd = false,
+                 fogScale = false;
+            bool fogCoord = false, fragCoord = false, shadow2D = false, shadow2DLod = false,
+                 shadow2DProj = false;
             bool vertexIndex = false;
             int fragData = 0;
             bool fragColor = false;
@@ -158,51 +184,138 @@ namespace perlin::jshader {
 
         const std::map<std::string, std::string>& TextureFunctionMap() {
             static const std::map<std::string, std::string> m = {
-                {"texture1D", "texture"}, {"texture2D", "texture"}, {"texture3D", "texture"}, {"textureCube", "texture"},
-                {"texture1DLod", "textureLod"}, {"texture2DLod", "textureLod"}, {"texture3DLod", "textureLod"},
-                {"textureCubeLod", "textureLod"}, {"texture1DProj", "textureProj"}, {"texture2DProj", "textureProj"},
-                {"texture3DProj", "textureProj"}, {"texture2DProjLod", "textureProjLod"}, {"texture2DGrad", "textureGrad"},
-                {"texture3DGrad", "textureGrad"}, {"texelFetch2D", "texelFetch"}, {"texelFetch3D", "texelFetch"},
-                {"texelFetch1D", "texelFetch"}, {"textureSize2D", "textureSize"}, {"textureSize3D", "textureSize"}};
+                {"texture1D", "texture"},         {"texture2D", "texture"},
+                {"texture3D", "texture"},         {"textureCube", "texture"},
+                {"texture1DLod", "textureLod"},   {"texture2DLod", "textureLod"},
+                {"texture3DLod", "textureLod"},   {"textureCubeLod", "textureLod"},
+                {"texture1DProj", "textureProj"}, {"texture2DProj", "textureProj"},
+                {"texture3DProj", "textureProj"}, {"texture2DProjLod", "textureProjLod"},
+                {"texture2DGrad", "textureGrad"}, {"texture3DGrad", "textureGrad"},
+                {"texelFetch2D", "texelFetch"},   {"texelFetch3D", "texelFetch"},
+                {"texelFetch1D", "texelFetch"},   {"textureSize2D", "textureSize"},
+                {"textureSize3D", "textureSize"}};
             return m;
         }
 
         const std::unordered_set<std::string>& NewKeywords() {
-            static const std::unordered_set<std::string> s = {"sample", "input", "output", "filter", "common", "partition", "active",
-                                                               "buffer", "patch", "shared", "coherent", "restrict", "readonly",
-                                                               "writeonly", "resource", "subroutine", "interface", "inline",
-                                                               "noinline", "public", "static", "extern", "external", "packed",
-                                                               "template", "this", "union", "enum", "typedef", "class", "using",
-                                                               "namespace", "cast", "goto", "long", "short", "half", "fixed",
-                                                               "unsigned", "sizeof", "superp", "row_major", "smooth"};
+            static const std::unordered_set<std::string> s = {
+                "sample",   "input",      "output",    "filter",    "common",   "partition", "active",
+                "buffer",   "patch",      "shared",    "coherent",  "restrict", "readonly",  "writeonly",
+                "resource", "subroutine", "interface", "inline",    "noinline", "public",    "static",
+                "extern",   "external",   "packed",    "template",  "this",     "union",     "enum",
+                "typedef",  "class",      "using",     "namespace", "cast",     "goto",      "long",
+                "short",    "half",       "fixed",     "unsigned",  "sizeof",   "superp",    "row_major",
+                "smooth"};
             return s;
         }
 
         const std::unordered_set<std::string>& Builtin450Functions() {
-            static const std::unordered_set<std::string> s = {
-                "round", "roundEven", "trunc", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "isnan", "isinf", "transpose",
-                "inverse", "determinant", "outerProduct", "modf", "frexp", "ldexp", "fma", "findLSB", "findMSB", "bitCount",
-                "mix", "smoothstep", "step", "clamp", "lessThan", "greaterThan", "equal", "notEqual", "any", "all", "not",
-                "dFdx", "dFdy", "fwidth", "noise1", "noise2", "noise3", "noise4", "reflect", "refract", "faceforward",
-                "distance", "length", "normalize", "cross", "dot", "pow", "exp", "log", "exp2", "log2", "sqrt", "inversesqrt",
-                "abs", "sign", "floor", "ceil", "fract", "mod", "min", "max", "radians", "degrees", "sin", "cos", "tan", "asin",
-                "acos", "atan", "texture", "textureLod", "textureProj", "textureGrad", "texelFetch", "textureSize",
-                "packUnorm4x8", "unpackUnorm4x8", "packHalf2x16", "unpackHalf2x16", "uaddCarry", "usubBorrow", "bitfieldExtract",
-                "bitfieldInsert", "bitfieldReverse", "floatBitsToInt", "floatBitsToUint", "intBitsToFloat", "uintBitsToFloat"};
+            static const std::unordered_set<std::string> s = {"round",
+                                                              "roundEven",
+                                                              "trunc",
+                                                              "sinh",
+                                                              "cosh",
+                                                              "tanh",
+                                                              "asinh",
+                                                              "acosh",
+                                                              "atanh",
+                                                              "isnan",
+                                                              "isinf",
+                                                              "transpose",
+                                                              "inverse",
+                                                              "determinant",
+                                                              "outerProduct",
+                                                              "modf",
+                                                              "frexp",
+                                                              "ldexp",
+                                                              "fma",
+                                                              "findLSB",
+                                                              "findMSB",
+                                                              "bitCount",
+                                                              "mix",
+                                                              "smoothstep",
+                                                              "step",
+                                                              "clamp",
+                                                              "lessThan",
+                                                              "greaterThan",
+                                                              "equal",
+                                                              "notEqual",
+                                                              "any",
+                                                              "all",
+                                                              "not",
+                                                              "dFdx",
+                                                              "dFdy",
+                                                              "fwidth",
+                                                              "noise1",
+                                                              "noise2",
+                                                              "noise3",
+                                                              "noise4",
+                                                              "reflect",
+                                                              "refract",
+                                                              "faceforward",
+                                                              "distance",
+                                                              "length",
+                                                              "normalize",
+                                                              "cross",
+                                                              "dot",
+                                                              "pow",
+                                                              "exp",
+                                                              "log",
+                                                              "exp2",
+                                                              "log2",
+                                                              "sqrt",
+                                                              "inversesqrt",
+                                                              "abs",
+                                                              "sign",
+                                                              "floor",
+                                                              "ceil",
+                                                              "fract",
+                                                              "mod",
+                                                              "min",
+                                                              "max",
+                                                              "radians",
+                                                              "degrees",
+                                                              "sin",
+                                                              "cos",
+                                                              "tan",
+                                                              "asin",
+                                                              "acos",
+                                                              "atan",
+                                                              "texture",
+                                                              "textureLod",
+                                                              "textureProj",
+                                                              "textureGrad",
+                                                              "texelFetch",
+                                                              "textureSize",
+                                                              "packUnorm4x8",
+                                                              "unpackUnorm4x8",
+                                                              "packHalf2x16",
+                                                              "unpackHalf2x16",
+                                                              "uaddCarry",
+                                                              "usubBorrow",
+                                                              "bitfieldExtract",
+                                                              "bitfieldInsert",
+                                                              "bitfieldReverse",
+                                                              "floatBitsToInt",
+                                                              "floatBitsToUint",
+                                                              "intBitsToFloat",
+                                                              "uintBitsToFloat"};
             return s;
         }
 
-        std::string Slot(int n) { return std::to_string(n); }
+        std::string Slot(int n) {
+            return std::to_string(n);
+        }
     }
 
     const std::vector<UniformDecl>& BuiltinUniformDecls() {
         static const std::vector<UniformDecl> decls = {
-            {"iris_ModelViewMat", "mat4", "", 0},        {"iris_ModelViewMatInverse", "mat4", "", 0},
-            {"iris_ProjMat", "mat4", "", 0},             {"iris_ProjMatInverse", "mat4", "", 0},
-            {"iris_NormalMat", "mat3", "", 0},           {"iris_TextureMat", "mat4", "2", 2},
-            {"iris_FogColor", "vec4", "", 0},            {"iris_FogDensity", "float", "", 0},
-            {"iris_FogStart", "float", "", 0},           {"iris_FogEnd", "float", "", 0},
-            {"iris_FogScale", "float", "", 0},           {"iris_ViewHeight", "float", "", 0},
+            {"iris_ModelViewMat", "mat4", "", 0}, {"iris_ModelViewMatInverse", "mat4", "", 0},
+            {"iris_ProjMat", "mat4", "", 0},      {"iris_ProjMatInverse", "mat4", "", 0},
+            {"iris_NormalMat", "mat3", "", 0},    {"iris_TextureMat", "mat4", "2", 2},
+            {"iris_FogColor", "vec4", "", 0},     {"iris_FogDensity", "float", "", 0},
+            {"iris_FogStart", "float", "", 0},    {"iris_FogEnd", "float", "", 0},
+            {"iris_FogScale", "float", "", 0},    {"iris_ViewHeight", "float", "", 0},
         };
         return decls;
     }
@@ -220,7 +333,6 @@ namespace perlin::jshader {
             int version = 120;
             bool compat = false;
         };
-
 
         // a pack's local variable, parameter or struct member can share a name with one of its samplers (`float specular`
         // next to `uniform sampler2D specular`). the sampler names are macros here, so the other uses get renamed first
@@ -251,12 +363,13 @@ namespace perlin::jshader {
                 if (t[i].text == "struct" && t[i + 1].kind == Tok::Ident)
                     structs.insert(t[i + 1].text);
             const auto typeLike = [&](size_t k) {
-                return t[k].kind == Tok::Ident && !IsOpaqueType(t[k].text) && (IsType(t[k].text) || structs.count(t[k].text));
+                return t[k].kind == Tok::Ident && !IsOpaqueType(t[k].text) &&
+                       (IsType(t[k].text) || structs.contains(t[k].text));
             };
             const auto rename = [&](const std::string& n) { return "iris_local_" + n; };
             // members are always reached through '.', and a sampler never has any
             for (size_t i = 1; i < t.size(); i++)
-                if (t[i].kind == Tok::Ident && names.count(t[i].text) && t[i - 1].text == ".")
+                if (t[i].kind == Tok::Ident && names.contains(t[i].text) && t[i - 1].text == ".")
                     t[i].text = rename(t[i].text);
 
             struct Scope {
@@ -275,18 +388,23 @@ namespace perlin::jshader {
                     i++;
                     continue;
                 }
-                if (x == "(") paren++;
-                else if (x == ")") paren--;
+                if (x == "(")
+                    paren++;
+                else if (x == ")")
+                    paren--;
                 if (x == "{" && paren == 0) {
                     int depth = 0;
                     size_t k = i;
                     for (; k < t.size(); k++) {
-                        if (t[k].text == "{") depth++;
-                        else if (t[k].text == "}" && --depth == 0) break;
+                        if (t[k].text == "{")
+                            depth++;
+                        else if (t[k].text == "}" && --depth == 0)
+                            break;
                     }
                     const size_t end = std::min(k + 1, t.size());
                     for (size_t j = headerStart; j < end; j++) {
-                        if (t[j].kind != Tok::Ident || !names.count(t[j].text) || declTokens.count(j) || t[j].text.compare(0, 11, "iris_local_") == 0)
+                        if (t[j].kind != Tok::Ident || !names.contains(t[j].text) || declTokens.contains(j) ||
+                            t[j].text.compare(0, 11, "iris_local_") == 0)
                             continue;
                         bool declares = j > 0 && typeLike(j - 1);
                         if (!declares && j > 0 && t[j - 1].text == ",") {
@@ -295,9 +413,14 @@ namespace perlin::jshader {
                             int d = 0;
                             while (b > headerStart) {
                                 const std::string& y = t[b - 1].text;
-                                if (y == ")" || y == "]") d++;
-                                else if (y == "(" || y == "[") { if (d == 0) break; d--; }
-                                else if (d == 0 && (y == ";" || y == "{" || y == "}")) break;
+                                if (y == ")" || y == "]")
+                                    d++;
+                                else if (y == "(" || y == "[") {
+                                    if (d == 0)
+                                        break;
+                                    d--;
+                                } else if (d == 0 && (y == ";" || y == "{" || y == "}"))
+                                    break;
                                 b--;
                             }
                             while (b < j && t[b].kind == Tok::Ident && IsQualifier(t[b].text))
@@ -317,33 +440,37 @@ namespace perlin::jshader {
             }
             for (const Scope& sc : scopes)
                 for (size_t j = sc.begin; j < sc.end; j++)
-                    if (t[j].kind == Tok::Ident && t[j].text == sc.name && !declTokens.count(j))
+                    if (t[j].kind == Tok::Ident && t[j].text == sc.name && !declTokens.contains(j))
                         t[j].text = rename(sc.name);
             // declarations outside any block (globals, function names): rename everywhere but the uniform declaration
             for (size_t j = 1; j < t.size(); j++) {
-                if (t[j].kind != Tok::Ident || !names.count(t[j].text) || declTokens.count(j) || !typeLike(j - 1))
+                if (t[j].kind != Tok::Ident || !names.contains(t[j].text) || declTokens.contains(j) ||
+                    !typeLike(j - 1))
                     continue;
                 int depth = 0;
                 for (size_t k = 0; k < j; k++) {
-                    if (t[k].text == "{") depth++;
-                    else if (t[k].text == "}") depth--;
+                    if (t[k].text == "{")
+                        depth++;
+                    else if (t[k].text == "}")
+                        depth--;
                 }
                 if (depth != 0)
                     continue;
                 int open = 0;
                 for (size_t k = j; k-- > 0 && t[k].text != ";" && t[k].text != "}" && t[k].text != "{";) {
-                    if (t[k].text == ")") open--;
-                    else if (t[k].text == "(") open++;
+                    if (t[k].text == ")")
+                        open--;
+                    else if (t[k].text == "(")
+                        open++;
                 }
                 if (open > 0)
                     continue; // a parameter: its scope is the function, handled above
                 const std::string n = t[j].text;
                 for (size_t k = 0; k < t.size(); k++)
-                    if (t[k].kind == Tok::Ident && t[k].text == n && !declTokens.count(k))
+                    if (t[k].kind == Tok::Ident && t[k].text == n && !declTokens.contains(k))
                         t[k].text = rename(n);
             }
         }
-
 
         // glslang refuses a sampler built from a texture and a sampler as a function argument, so user functions that take a
         // sampler get the two halves as separate parameters and their callers pass both
@@ -358,11 +485,14 @@ namespace perlin::jshader {
                         continue;
                     if (IsOpaqueType(t[k].text) && t[k].text.compare(0, 5, "image") != 0)
                         opaque = true;
-                    else if (opaque && !IsQualifier(t[k].text) && !IsType(t[k].text) && t[k].text != "texture")
+                    else if (opaque && !IsQualifier(t[k].text) && !IsType(t[k].text) &&
+                             t[k].text != "texture")
                         globals.insert(t[k].text);
                 }
             }
-            const auto samplerType = [](const std::string& x) { return IsOpaqueType(x) && x.contains("sampler"); };
+            const auto samplerType = [](const std::string& x) {
+                return IsOpaqueType(x) && x.contains("sampler");
+            };
             struct Fn {
                 std::vector<int> params; // indexes of the sampler parameters
             };
@@ -375,9 +505,12 @@ namespace perlin::jshader {
             std::vector<Def> defs;
             int brace = 0;
             for (size_t i = 0; i + 1 < t.size(); i++) {
-                if (t[i].text == "{") brace++;
-                else if (t[i].text == "}") brace--;
-                if (brace != 0 || t[i].kind != Tok::Ident || t[i + 1].text != "(" || i == 0 || !(IsType(t[i - 1].text) || t[i - 1].text == "void"))
+                if (t[i].text == "{")
+                    brace++;
+                else if (t[i].text == "}")
+                    brace--;
+                if (brace != 0 || t[i].kind != Tok::Ident || t[i + 1].text != "(" || i == 0 ||
+                    !(IsType(t[i - 1].text) || t[i - 1].text == "void"))
                     continue;
                 // a function declaration or definition at file scope
                 Def d{i + 1, 0, 0, {}};
@@ -387,13 +520,16 @@ namespace perlin::jshader {
                 std::vector<int> positions;
                 size_t typeTok = 0;
                 for (; k < t.size(); k++) {
-                    if (t[k].text == "(") depth++;
-                    else if (t[k].text == ")" && --depth == 0) break;
-                    else if (depth == 1 && t[k].text == ",") index++;
+                    if (t[k].text == "(")
+                        depth++;
+                    else if (t[k].text == ")" && --depth == 0)
+                        break;
+                    else if (depth == 1 && t[k].text == ",")
+                        index++;
                     else if (depth == 1 && t[k].kind == Tok::Ident && samplerType(t[k].text)) {
                         typeTok = k;
                         if (k + 1 < t.size() && t[k + 1].kind == Tok::Ident) {
-                            d.params.push_back({k, k + 1});
+                            d.params.emplace_back(k, k + 1);
                             positions.push_back(index);
                             any = true;
                         }
@@ -407,8 +543,10 @@ namespace perlin::jshader {
                 if (e < t.size() && t[e].text == "{") {
                     int b = 0;
                     for (; e < t.size(); e++) {
-                        if (t[e].text == "{") b++;
-                        else if (t[e].text == "}" && --b == 0) break;
+                        if (t[e].text == "{")
+                            b++;
+                        else if (t[e].text == "}" && --b == 0)
+                            break;
                     }
                     e++;
                 }
@@ -431,19 +569,26 @@ namespace perlin::jshader {
                 size_t argStart = i + 2;
                 for (size_t k = i + 1; k < t.size(); k++) {
                     const bool last = t[k].text == ")" && depth == 1;
-                    if (t[k].text == "(" || t[k].text == "[") depth++;
+                    if (t[k].text == "(" || t[k].text == "[")
+                        depth++;
                     else if ((t[k].text == ")" || t[k].text == "]") && --depth == 0) {
-                        if (std::find(it->second.params.begin(), it->second.params.end(), index) != it->second.params.end() && k == argStart + 1) {
+                        if (std::find(it->second.params.begin(), it->second.params.end(), index) !=
+                                it->second.params.end() &&
+                            k == argStart + 1) {
                             Tok& a = t[argStart];
-                            if (a.kind == Tok::Ident && (globals.count(a.text) || paramNames.count(a.text)))
+                            if (a.kind == Tok::Ident &&
+                                (globals.contains(a.text) || paramNames.contains(a.text)))
                                 a.text = a.text + "_iris_t, " + a.text + "_iris_s";
                         }
                         break;
                     }
                     if (depth == 1 && (t[k].text == "," || last)) {
-                        if (std::find(it->second.params.begin(), it->second.params.end(), index) != it->second.params.end() && k == argStart + 1) {
+                        if (std::find(it->second.params.begin(), it->second.params.end(), index) !=
+                                it->second.params.end() &&
+                            k == argStart + 1) {
                             Tok& a = t[argStart];
-                            if (a.kind == Tok::Ident && (globals.count(a.text) || paramNames.count(a.text)))
+                            if (a.kind == Tok::Ident &&
+                                (globals.contains(a.text) || paramNames.contains(a.text)))
                                 a.text = a.text + "_iris_t, " + a.text + "_iris_s";
                         }
                         index++;
@@ -455,15 +600,19 @@ namespace perlin::jshader {
                 for (const auto& pr : d.params) {
                     const std::string type = t[pr.first].text, name = t[pr.second].text;
                     std::string texture = type;
-                    const bool shadow = texture.size() > 6 && texture.compare(texture.size() - 6, 6, "Shadow") == 0;
-                    if (shadow) texture.erase(texture.size() - 6);
+                    const bool shadow =
+                        texture.size() > 6 && texture.compare(texture.size() - 6, 6, "Shadow") == 0;
+                    if (shadow)
+                        texture.erase(texture.size() - 6);
                     texture.replace(texture.find("sampler"), 7, "texture");
                     // uses inside the body (not the ones the callers pass on, those were already split)
                     for (size_t k = d.close; k < d.bodyEnd; k++)
                         if (t[k].kind == Tok::Ident && t[k].text == name)
                             t[k].text = type + "(" + name + "_iris_t, " + name + "_iris_s)";
                     t[pr.first].text = texture;
-                    t[pr.second].text = name + "_iris_t, " + std::string(shadow ? "samplerShadow " : "sampler ") + name + "_iris_s";
+                    t[pr.second].text = name + "_iris_t, " +
+                                        std::string(shadow ? "samplerShadow " : "sampler ") + name +
+                                        "_iris_s";
                 }
             }
         }
@@ -473,9 +622,11 @@ namespace perlin::jshader {
             std::string structs;
             for (;;) {
                 const size_t a = body.find("/*STRUCT_BEGIN*/");
-                if (a == std::string::npos) break;
+                if (a == std::string::npos)
+                    break;
                 const size_t b = body.find("/*STRUCT_END*/", a);
-                if (b == std::string::npos) break;
+                if (b == std::string::npos)
+                    break;
                 structs += body.substr(a + 16, b - a - 16) + "\n";
                 body.erase(a, b + 14 - a);
             }
@@ -503,10 +654,15 @@ namespace perlin::jshader {
                     const std::string& x = t[i].text;
                     if (t[i].kind == Tok::Directive)
                         break;
-                    if (x == "(") { paren++; sawParen = true; }
-                    else if (x == ")") paren--;
-                    else if (x == "[") bracket++;
-                    else if (x == "]") bracket--;
+                    if (x == "(") {
+                        paren++;
+                        sawParen = true;
+                    } else if (x == ")")
+                        paren--;
+                    else if (x == "[")
+                        bracket++;
+                    else if (x == "]")
+                        bracket--;
                     else if (x == ";" && paren == 0 && bracket == 0) {
                         i++;
                         out.push_back({start, i, false});
@@ -517,10 +673,14 @@ namespace perlin::jshader {
                         int depth = 0;
                         size_t k = i;
                         for (; k < t.size(); k++) {
-                            if (t[k].text == "{") depth++;
+                            if (t[k].text == "{")
+                                depth++;
                             else if (t[k].text == "}") {
                                 depth--;
-                                if (depth == 0) { k++; break; }
+                                if (depth == 0) {
+                                    k++;
+                                    break;
+                                }
                             }
                         }
                         i = k;
@@ -544,21 +704,26 @@ namespace perlin::jshader {
             const std::string c = o == "(" ? ")" : o == "[" ? "]" : "}";
             int depth = 0;
             for (size_t i = open; i < t.size(); i++) {
-                if (t[i].text == o) depth++;
+                if (t[i].text == o)
+                    depth++;
                 else if (t[i].text == c) {
                     depth--;
-                    if (depth == 0) return i;
+                    if (depth == 0)
+                        return i;
                 }
             }
             return t.size();
         }
 
         bool ParseIntLiteral(const std::string& s, int& out) {
-            if (s.empty()) return false;
+            if (s.empty())
+                return false;
             char* end = nullptr;
             const long v = std::strtol(s.c_str(), &end, 0);
-            while (end && *end && (*end == 'u' || *end == 'U')) end++;
-            if (end == s.c_str() || (end && *end)) return false;
+            while (end && *end && (*end == 'u' || *end == 'U'))
+                end++;
+            if (end == s.c_str() || (end && *end))
+                return false;
             out = static_cast<int>(v);
             return true;
         }
@@ -566,7 +731,8 @@ namespace perlin::jshader {
         std::string StripSpace(const std::string& s) {
             std::string out;
             for (char c : s)
-                if (!std::isspace(static_cast<unsigned char>(c))) out += c;
+                if (!std::isspace(static_cast<unsigned char>(c)))
+                    out += c;
             return out;
         }
 
@@ -623,9 +789,12 @@ namespace perlin::jshader {
                     size_t k = i;
                     int depth = 0;
                     for (; k < end; k++) {
-                        if (t[k].text == "(" || t[k].text == "[" || t[k].text == "{") depth++;
-                        else if (t[k].text == ")" || t[k].text == "]" || t[k].text == "}") depth--;
-                        else if ((t[k].text == "," || t[k].text == ";") && depth == 0) break;
+                        if (t[k].text == "(" || t[k].text == "[" || t[k].text == "{")
+                            depth++;
+                        else if (t[k].text == ")" || t[k].text == "]" || t[k].text == "}")
+                            depth--;
+                        else if ((t[k].text == "," || t[k].text == ";") && depth == 0)
+                            break;
                     }
                     n.init = Join(t, i, k);
                     i = k;
@@ -649,20 +818,27 @@ namespace perlin::jshader {
             std::vector<std::string> parts;
             std::string cur;
             for (char c : layout) {
-                if (c == ',') { parts.push_back(cur); cur.clear(); }
-                else cur += c;
+                if (c == ',') {
+                    parts.push_back(cur);
+                    cur.clear();
+                } else
+                    cur += c;
             }
-            if (!cur.empty()) parts.push_back(cur);
+            if (!cur.empty())
+                parts.push_back(cur);
             std::string out;
             for (const std::string& p : parts) {
                 const std::string s = StripSpace(p);
-                if (s.compare(0, std::char_traits<char>::length(key), key) == 0 && s.size() > std::char_traits<char>::length(key) &&
+                if (s.compare(0, std::char_traits<char>::length(key), key) == 0 &&
+                    s.size() > std::char_traits<char>::length(key) &&
                     s[std::char_traits<char>::length(key)] == '=') {
-                    if (value) *value = std::atoi(s.c_str() + std::char_traits<char>::length(key) + 1);
+                    if (value)
+                        *value = std::atoi(s.c_str() + std::char_traits<char>::length(key) + 1);
                     continue;
                 }
                 if (!s.empty()) {
-                    if (!out.empty()) out += ", ";
+                    if (!out.empty())
+                        out += ", ";
                     out += s;
                 }
             }
@@ -683,7 +859,9 @@ namespace perlin::jshader {
             std::vector<int> fragmentLocations;
         };
 
-        std::string ReplaceSampler(const std::string& type) { return type; }
+        std::string ReplaceSampler(const std::string& type) {
+            return type;
+        }
     }
 
     namespace {
@@ -734,14 +912,17 @@ namespace perlin::jshader {
         int EvalSize(const std::string& expr, const std::map<std::string, int>& consts) {
             std::string e = StripSpace(expr);
             int n = 0;
-            if (ParseIntLiteral(e, n)) return n;
+            if (ParseIntLiteral(e, n))
+                return n;
             const auto it = consts.find(e);
-            if (it != consts.end()) return it->second;
+            if (it != consts.end())
+                return it->second;
             for (char op : {'*', '+', '-', '/'}) {
                 const size_t at = e.find(op);
                 if (at != std::string::npos && at > 0) {
                     const int a = EvalSize(e.substr(0, at), consts), b = EvalSize(e.substr(at + 1), consts);
-                    if (a < 0 || b < 0) return -1;
+                    if (a < 0 || b < 0)
+                        return -1;
                     return op == '*' ? a * b : op == '+' ? a + b : op == '-' ? a - b : (b ? a / b : -1);
                 }
             }
@@ -750,7 +931,8 @@ namespace perlin::jshader {
     }
 
     namespace {
-        StageResult TransformStage(Stage stage, const std::string& rawSource, const TransformOptions& options) {
+        StageResult TransformStage(Stage stage, const std::string& rawSource,
+                                   const TransformOptions& options) {
             StageResult result;
             result.stage = stage;
             if (!options.preprocess) {
@@ -777,8 +959,8 @@ namespace perlin::jshader {
                     std::string d = tk.text;
                     size_t a = d.find_first_not_of("# \t");
                     const std::string name = a == std::string::npos ? std::string() : d.substr(a, 8);
-                    if (name.compare(0, 7, "version") == 0 || name.compare(0, 9, "extension") == 0 || name.compare(0, 4, "line") == 0 ||
-                        name.compare(0, 6, "pragma") == 0) {
+                    if (name.compare(0, 7, "version") == 0 || name.compare(0, 9, "extension") == 0 ||
+                        name.compare(0, 4, "line") == 0 || name.compare(0, 6, "pragma") == 0) {
                         tk.text.clear();
                         tk.kind = Tok::Punct;
                     }
@@ -796,25 +978,31 @@ namespace perlin::jshader {
             std::set<std::string> renameFunctions;
             if (version < 130) {
                 for (const Statement& st : statements) {
-                    if (!st.function) continue;
+                    if (!st.function)
+                        continue;
                     size_t p = st.begin;
-                    while (p < st.end && tokens[p].text != "(") p++;
-                    if (p > st.begin && tokens[p - 1].kind == Tok::Ident && Builtin450Functions().count(tokens[p - 1].text))
+                    while (p < st.end && tokens[p].text != "(")
+                        p++;
+                    if (p > st.begin && tokens[p - 1].kind == Tok::Ident &&
+                        Builtin450Functions().contains(tokens[p - 1].text))
                         renameFunctions.insert(tokens[p - 1].text);
                 }
             }
             for (const Statement& st : statements) {
-                if (!st.function) continue;
+                if (!st.function)
+                    continue;
                 size_t p = st.begin;
-                while (p < st.end && tokens[p].text != "(") p++;
+                while (p < st.end && tokens[p].text != "(")
+                    p++;
                 if (p > st.begin && tokens[p - 1].kind == Tok::Ident)
                     ctx.userFunctions.insert(tokens[p - 1].text);
             }
-            const bool userDefinesTexture = ctx.userFunctions.count("texture") != 0;
+            const bool userDefinesTexture = ctx.userFunctions.contains("texture");
 
             std::set<std::string> declaredNames;
             for (size_t i = 1; i < tokens.size(); i++)
-                if (tokens[i].kind == Tok::Ident && tokens[i - 1].kind == Tok::Ident && (IsType(tokens[i - 1].text) || IsQualifier(tokens[i - 1].text)))
+                if (tokens[i].kind == Tok::Ident && tokens[i - 1].kind == Tok::Ident &&
+                    (IsType(tokens[i - 1].text) || IsQualifier(tokens[i - 1].text)))
                     declaredNames.insert(tokens[i].text);
 
             std::map<std::string, std::string> constInts;
@@ -823,17 +1011,23 @@ namespace perlin::jshader {
             const auto closeOf = [&](size_t open) {
                 int depth = 0;
                 for (size_t k = open; k < tokens.size(); k++) {
-                    if (tokens[k].text == "(") depth++;
-                    else if (tokens[k].text == ")" && --depth == 0) return k;
+                    if (tokens[k].text == "(")
+                        depth++;
+                    else if (tokens[k].text == ")" && --depth == 0)
+                        return k;
                 }
                 return tokens.size() - 1;
             };
             const auto lodArgs = [&](size_t name) {
                 int depth = 0, args = 1;
                 for (size_t k = name + 1; k < tokens.size(); k++) {
-                    if (tokens[k].text == "(" || tokens[k].text == "[") depth++;
-                    else if (tokens[k].text == ")" || tokens[k].text == "]") { if (--depth == 0) return args; }
-                    else if (depth == 1 && tokens[k].text == ",") args++;
+                    if (tokens[k].text == "(" || tokens[k].text == "[")
+                        depth++;
+                    else if (tokens[k].text == ")" || tokens[k].text == "]") {
+                        if (--depth == 0)
+                            return args;
+                    } else if (depth == 1 && tokens[k].text == ",")
+                        args++;
                 }
                 return 0;
             };
@@ -849,24 +1043,49 @@ namespace perlin::jshader {
                 std::string rep;
                 if (afterDot) {
                     rep = id;
-                } else if (renameFunctions.count(id)) {
+                } else if (renameFunctions.contains(id)) {
                     rep = "iris_" + id;
-                } else if (!declaredNames.count(id) && (id == "projectionMatrix" || id == "modelViewMatrix" || id == "normalMatrix" ||
-                                                        id == "modelViewMatrixInverse" || id == "projectionMatrixInverse" ||
-                                                        id == "textureMatrix" || id == "chunkOffset" || id == "vaPosition" ||
-                                                        id == "vaColor" || id == "vaUV0" || id == "vaUV2" || id == "vaNormal")) {
-                    if (id == "projectionMatrix") { ctx.use.proj = true; rep = "iris_ProjMat"; }
-                    else if (id == "modelViewMatrix") { ctx.use.modelView = true; rep = "iris_ModelViewMat"; }
-                    else if (id == "normalMatrix") { ctx.use.normalMat = true; rep = "iris_NormalMat"; }
-                    else if (id == "modelViewMatrixInverse") { ctx.use.modelViewInv = true; rep = "iris_ModelViewMatInverse"; }
-                    else if (id == "projectionMatrixInverse") { ctx.use.projInv = true; rep = "iris_ProjMatInverse"; }
-                    else if (id == "textureMatrix") { ctx.use.textureMat = true; rep = "iris_TextureMat[0]"; }
-                    else if (id == "chunkOffset") rep = "vec3(0.0)";
-                    else if (id == "vaPosition") { ctx.vin.position = true; rep = "iris_Position"; }
-                    else if (id == "vaColor") { ctx.vin.color = true; rep = "iris_Color"; }
-                    else if (id == "vaUV0") { ctx.vin.uv0 = true; rep = "iris_UV0"; }
-                    else if (id == "vaUV2") { ctx.vin.uv2 = true; rep = "ivec2(iris_UV2)"; }
-                    else { ctx.vin.normal = true; rep = "iris_Normal"; }
+                } else if (!declaredNames.contains(id) &&
+                           (id == "projectionMatrix" || id == "modelViewMatrix" || id == "normalMatrix" ||
+                            id == "modelViewMatrixInverse" || id == "projectionMatrixInverse" ||
+                            id == "textureMatrix" || id == "chunkOffset" || id == "vaPosition" ||
+                            id == "vaColor" || id == "vaUV0" || id == "vaUV2" || id == "vaNormal")) {
+                    if (id == "projectionMatrix") {
+                        ctx.use.proj = true;
+                        rep = "iris_ProjMat";
+                    } else if (id == "modelViewMatrix") {
+                        ctx.use.modelView = true;
+                        rep = "iris_ModelViewMat";
+                    } else if (id == "normalMatrix") {
+                        ctx.use.normalMat = true;
+                        rep = "iris_NormalMat";
+                    } else if (id == "modelViewMatrixInverse") {
+                        ctx.use.modelViewInv = true;
+                        rep = "iris_ModelViewMatInverse";
+                    } else if (id == "projectionMatrixInverse") {
+                        ctx.use.projInv = true;
+                        rep = "iris_ProjMatInverse";
+                    } else if (id == "textureMatrix") {
+                        ctx.use.textureMat = true;
+                        rep = "iris_TextureMat[0]";
+                    } else if (id == "chunkOffset")
+                        rep = "vec3(0.0)";
+                    else if (id == "vaPosition") {
+                        ctx.vin.position = true;
+                        rep = "iris_Position";
+                    } else if (id == "vaColor") {
+                        ctx.vin.color = true;
+                        rep = "iris_Color";
+                    } else if (id == "vaUV0") {
+                        ctx.vin.uv0 = true;
+                        rep = "iris_UV0";
+                    } else if (id == "vaUV2") {
+                        ctx.vin.uv2 = true;
+                        rep = "ivec2(iris_UV2)";
+                    } else {
+                        ctx.vin.normal = true;
+                        rep = "iris_Normal";
+                    }
                 } else if (id == "gl_Vertex") {
                     ctx.vin.position = true;
                     rep = "vec4(iris_Position, 1.0)";
@@ -924,12 +1143,23 @@ namespace perlin::jshader {
                     }
                 } else if (id == "gl_Fog" && i + 2 < tokens.size() && tokens[i + 1].text == ".") {
                     const std::string field = tokens[i + 2].text;
-                    if (field == "color") { ctx.use.fogColor = true; rep = "iris_FogColor"; }
-                    else if (field == "density") { ctx.use.fogDensity = true; rep = "iris_FogDensity"; }
-                    else if (field == "start") { ctx.use.fogStart = true; rep = "iris_FogStart"; }
-                    else if (field == "end") { ctx.use.fogEnd = true; rep = "iris_FogEnd"; }
-                    else if (field == "scale") { ctx.use.fogScale = true; rep = "iris_FogScale"; }
-                    else rep = "0.0";
+                    if (field == "color") {
+                        ctx.use.fogColor = true;
+                        rep = "iris_FogColor";
+                    } else if (field == "density") {
+                        ctx.use.fogDensity = true;
+                        rep = "iris_FogDensity";
+                    } else if (field == "start") {
+                        ctx.use.fogStart = true;
+                        rep = "iris_FogStart";
+                    } else if (field == "end") {
+                        ctx.use.fogEnd = true;
+                        rep = "iris_FogEnd";
+                    } else if (field == "scale") {
+                        ctx.use.fogScale = true;
+                        rep = "iris_FogScale";
+                    } else
+                        rep = "0.0";
                     out[i] = tk.ws + rep;
                     out[i + 1].clear();
                     out[i + 2].clear();
@@ -943,7 +1173,8 @@ namespace perlin::jshader {
                 } else if (id == "gl_FragCoord") {
                     ctx.use.fragCoord = true;
                     rep = options.flipFragCoordY ? "iris_FragCoord" : "gl_FragCoord";
-                } else if (id == "gl_FragData" && i + 3 < tokens.size() && tokens[i + 1].text == "[" && tokens[i + 3].text == "]") {
+                } else if (id == "gl_FragData" && i + 3 < tokens.size() && tokens[i + 1].text == "[" &&
+                           tokens[i + 3].text == "]") {
                     const int idx = std::atoi(tokens[i + 2].text.c_str());
                     ctx.use.fragData = std::max(ctx.use.fragData, idx + 1);
                     out[i] = tk.ws + "iris_FragData" + Slot(idx);
@@ -972,21 +1203,25 @@ namespace perlin::jshader {
                 } else if (id == "shadow2DProj" && nextCall) {
                     ctx.use.shadow2DProj = true;
                     rep = "iris_shadow2DProj";
-                } else if (options.explicitLod && stage == Stage::Fragment && nextCall && !ctx.userFunctions.count(id) &&
-                           (id == "texture2D" || (id == "texture" && !userDefinesTexture)) && lodArgs(i) == 2) {
+                } else if (options.explicitLod && stage == Stage::Fragment && nextCall &&
+                           !ctx.userFunctions.contains(id) &&
+                           (id == "texture2D" || (id == "texture" && !userDefinesTexture)) &&
+                           lodArgs(i) == 2) {
                     // full screen passes read buffers without mips: a fixed level avoids implicit derivatives inside loops
                     rep = "textureLod";
                     lodClose.insert(closeOf(i + 1));
-                } else if (TextureFunctionMap().count(id) && nextCall && !ctx.userFunctions.count(id)) {
+                } else if (TextureFunctionMap().contains(id) && nextCall && !ctx.userFunctions.contains(id)) {
                     rep = TextureFunctionMap().at(id);
                 } else if (id == "texture" && !nextCall && !userDefinesTexture) {
                     rep = "iris_texture";
-                } else if (NewKeywords().count(id) && !nextCall) {
+                } else if (NewKeywords().contains(id) && !nextCall) {
                     if (id == "smooth") {
-                        const bool qualifierUse = i + 1 < tokens.size() && tokens[i + 1].kind == Tok::Ident &&
-                                                  (IsType(tokens[i + 1].text) || IsQualifier(tokens[i + 1].text));
+                        const bool qualifierUse =
+                            i + 1 < tokens.size() && tokens[i + 1].kind == Tok::Ident &&
+                            (IsType(tokens[i + 1].text) || IsQualifier(tokens[i + 1].text));
                         rep = qualifierUse ? id : "iris_kw_" + id;
-                    } else if (id == "sample" && i + 1 < tokens.size() && tokens[i + 1].kind == Tok::Ident && IsType(tokens[i + 1].text)) {
+                    } else if (id == "sample" && i + 1 < tokens.size() && tokens[i + 1].kind == Tok::Ident &&
+                               IsType(tokens[i + 1].text)) {
                         rep = id;
                     } else {
                         rep = "iris_kw_" + id;
@@ -1010,19 +1245,22 @@ namespace perlin::jshader {
 
             auto emitRange = [&](size_t a, size_t b) {
                 std::string s;
-                for (size_t k = a; k < b; k++) s += out[k];
+                for (size_t k = a; k < b; k++)
+                    s += out[k];
                 return s;
             };
 
             for (const Statement& st : statements) {
                 if (st.function) {
                     size_t p = st.begin;
-                    while (p < st.end && tokens[p].text != "(") p++;
+                    while (p < st.end && tokens[p].text != "(")
+                        p++;
                     std::string text = emitRange(st.begin, st.end);
                     if (p > st.begin && tokens[p - 1].text == "main") {
                         hasMain = true;
                         size_t at = text.find("main");
-                        if (at != std::string::npos) text.replace(at, 4, "iris_user_main");
+                        if (at != std::string::npos)
+                            text.replace(at, 4, "iris_user_main");
                     }
                     bodyText += text;
                     continue;
@@ -1061,12 +1299,16 @@ namespace perlin::jshader {
                     if (IsOpaqueType(d.type)) {
                         for (const auto& n : d.names) {
                             std::string name = n.name;
-                            if (name == "texture") name = "iris_texture";
-                            if (!seenSamplers.insert(name).second) continue;
+                            if (name == "texture")
+                                name = "iris_texture";
+                            if (!seenSamplers.insert(name).second)
+                                continue;
                             SamplerDecl s;
                             s.name = name;
                             s.type = d.type;
-                            s.image = d.type.compare(0, 5, "image") == 0 || d.type.compare(0, 6, "iimage") == 0 || d.type.compare(0, 6, "uimage") == 0;
+                            s.image = d.type.compare(0, 5, "image") == 0 ||
+                                      d.type.compare(0, 6, "iimage") == 0 ||
+                                      d.type.compare(0, 6, "uimage") == 0;
                             s.imageFormat = LayoutWithout(d.layout, "binding");
                             ctx.samplers.push_back(s);
                         }
@@ -1074,7 +1316,8 @@ namespace perlin::jshader {
                         continue;
                     }
                     for (const auto& n : d.names) {
-                        if (!seenUniforms.insert(n.name).second) continue;
+                        if (!seenUniforms.insert(n.name).second)
+                            continue;
                         UniformDecl u;
                         u.name = n.name;
                         u.type = typeName;
@@ -1082,7 +1325,8 @@ namespace perlin::jshader {
                         u.arrayCount = n.arraySize.empty() ? 0 : EvalSize(n.arraySize, arrayConsts);
                         if (!n.arraySize.empty() && u.arrayCount < 0) {
                             result.ok = false;
-                            result.error = "uniform array size is not a constant: " + n.name + "[" + n.arraySize + "]";
+                            result.error =
+                                "uniform array size is not a constant: " + n.name + "[" + n.arraySize + "]";
                         }
                         ctx.uniforms.push_back(u);
                     }
@@ -1107,10 +1351,14 @@ namespace perlin::jshader {
                         v.location = loc;
                         ctx.inputs.push_back(v);
                         userAttribNames.insert(n.name);
-                        if (n.name == "mc_Entity") ctx.vin.mcEntity = true;
-                        else if (n.name == "mc_midTexCoord") ctx.vin.mcMidTexCoord = true;
-                        else if (n.name == "at_tangent") ctx.vin.atTangent = true;
-                        else if (n.name == "at_midBlock") ctx.vin.atMidBlock = true;
+                        if (n.name == "mc_Entity")
+                            ctx.vin.mcEntity = true;
+                        else if (n.name == "mc_midTexCoord")
+                            ctx.vin.mcMidTexCoord = true;
+                        else if (n.name == "at_tangent")
+                            ctx.vin.atTangent = true;
+                        else if (n.name == "at_midBlock")
+                            ctx.vin.atMidBlock = true;
                     }
                     bodyText += "/*ATTR*/";
                     continue;
@@ -1125,7 +1373,8 @@ namespace perlin::jshader {
                     LayoutWithout(d.layout, "location", &loc);
                     std::string interp;
                     for (const std::string& q : d.qualifiers)
-                        if (q == "flat" || q == "centroid" || q == "noperspective" || q == "smooth") interp = q == "smooth" ? "" : q;
+                        if (q == "flat" || q == "centroid" || q == "noperspective" || q == "smooth")
+                            interp = q == "smooth" ? "" : q;
                     for (const auto& n : d.names) {
                         InterfaceVar v;
                         v.name = n.name;
@@ -1140,7 +1389,8 @@ namespace perlin::jshader {
                         else
                             ctx.inputs.push_back(v);
                     }
-                    bodyText += outputDecl ? (stage == Stage::Fragment ? "/*FRAGOUT*/" : "/*VARYING_OUT*/") : "/*VARYING_IN*/";
+                    bodyText += outputDecl ? (stage == Stage::Fragment ? "/*FRAGOUT*/" : "/*VARYING_OUT*/")
+                                           : "/*VARYING_IN*/";
                     continue;
                 }
                 (void)toFragmentOut;
@@ -1159,11 +1409,13 @@ namespace perlin::jshader {
             result.glsl = bodyText;
 
             auto addBuiltin = [&](bool used, const char* name) {
-                if (!used) return;
+                if (!used)
+                    return;
                 for (const UniformDecl& b : BuiltinUniformDecls())
                     if (b.name == name) {
                         for (const UniformDecl& u : result.uniforms)
-                            if (u.name == name) return;
+                            if (u.name == name)
+                                return;
                         result.uniforms.push_back(b);
                     }
             };
@@ -1181,38 +1433,48 @@ namespace perlin::jshader {
             addBuiltin(options.flipFragCoordY && ctx.use.fragCoord, "iris_ViewHeight");
 
             std::string flags;
-            if (ctx.use.fogCoord) flags += "FOGCOORD;";
-            if (ctx.use.fragCoord) flags += "FRAGCOORD;";
-            if (ctx.use.shadow2D) flags += "SHADOW2D;";
-            if (ctx.use.shadow2DLod) flags += "SHADOW2DLOD;";
-            if (ctx.use.shadow2DProj) flags += "SHADOW2DPROJ;";
-            if (ctx.use.fragData) flags += "FRAGDATA=" + std::to_string(ctx.use.fragData) + ";";
+            if (ctx.use.fogCoord)
+                flags += "FOGCOORD;";
+            if (ctx.use.fragCoord)
+                flags += "FRAGCOORD;";
+            if (ctx.use.shadow2D)
+                flags += "SHADOW2D;";
+            if (ctx.use.shadow2DLod)
+                flags += "SHADOW2DLOD;";
+            if (ctx.use.shadow2DProj)
+                flags += "SHADOW2DPROJ;";
+            if (ctx.use.fragData)
+                flags += "FRAGDATA=" + std::to_string(ctx.use.fragData) + ";";
             result.glsl = "/*FLAGS:" + flags + "*/" + result.glsl;
             return result;
         }
 
         bool HasFlag(const std::string& glsl, const std::string& flag) {
             const size_t end = glsl.find("*/");
-            if (end == std::string::npos) return false;
+            if (end == std::string::npos)
+                return false;
             return glsl.substr(0, end).contains(flag);
         }
 
         int FlagNumber(const std::string& glsl, const std::string& flag) {
             const size_t end = glsl.find("*/");
             const size_t at = glsl.find(flag + "=");
-            if (end == std::string::npos || at == std::string::npos || at > end) return 0;
+            if (end == std::string::npos || at == std::string::npos || at > end)
+                return 0;
             return std::atoi(glsl.c_str() + at + flag.size() + 1);
         }
 
         std::string StripFlags(const std::string& glsl) {
-            if (glsl.compare(0, 9, "/*FLAGS:") != 0) return glsl;
+            if (glsl.compare(0, 9, "/*FLAGS:") != 0)
+                return glsl;
             const size_t end = glsl.find("*/");
             return end == std::string::npos ? glsl : glsl.substr(end + 2);
         }
 
         std::string ReplaceFirst(std::string text, const std::string& from, const std::string& to) {
             const size_t at = text.find(from);
-            if (at != std::string::npos) text.replace(at, from.size(), to);
+            if (at != std::string::npos)
+                text.replace(at, from.size(), to);
             return text;
         }
 
@@ -1230,9 +1492,11 @@ namespace perlin::jshader {
                                    const TransformOptions& options) {
         ProgramResult program;
         static const char* kDefaultVertex =
-            "#version 120\nvarying vec4 color;\nvarying vec2 texcoord;\nvoid main(){ gl_Position = ftransform(); texcoord = gl_MultiTexCoord0.st; color = gl_Color; }\n";
+            "#version 120\nvarying vec4 color;\nvarying vec2 texcoord;\nvoid main(){ gl_Position = "
+            "ftransform(); texcoord = gl_MultiTexCoord0.st; color = gl_Color; }\n";
         static const char* kDefaultFragment =
-            "#version 120\nuniform sampler2D iris_texture_default;\nvarying vec4 color;\nvarying vec2 texcoord;\nvoid main(){ gl_FragData[0] = texture2D(iris_texture_default, texcoord) * color; }\n";
+            "#version 120\nuniform sampler2D iris_texture_default;\nvarying vec4 color;\nvarying vec2 "
+            "texcoord;\nvoid main(){ gl_FragData[0] = texture2D(iris_texture_default, texcoord) * color; }\n";
         const std::string vs = vertexSource.text.empty() ? kDefaultVertex : vertexSource.text;
         const std::string fs = fragmentSource.text.empty() ? kDefaultFragment : fragmentSource.text;
         program.vertex = TransformStage(Stage::Vertex, vs, options);
@@ -1249,10 +1513,12 @@ namespace perlin::jshader {
                         found = true;
                         if (m.type != u.type || m.arrayCount != u.arrayCount) {
                             program.fragment.ok = false;
-                            program.fragment.error = "uniform '" + u.name + "' is declared with different types in the two stages";
+                            program.fragment.error =
+                                "uniform '" + u.name + "' is declared with different types in the two stages";
                         }
                     }
-                if (!found) merged.push_back(u);
+                if (!found)
+                    merged.push_back(u);
             }
             program.uniforms = std::move(merged);
             program.vertex.uniforms = program.uniforms;
@@ -1267,13 +1533,18 @@ namespace perlin::jshader {
             for (const StageResult* st : {&program.vertex, &program.fragment})
                 for (const SamplerDecl& smp : st->samplers) {
                     const auto fixed = options.fixedSamplerSlots.find(smp.name);
-                    if (fixed != options.fixedSamplerSlots.end()) { samplerBindings[smp.name] = fixed->second; used.insert(fixed->second); }
+                    if (fixed != options.fixedSamplerSlots.end()) {
+                        samplerBindings[smp.name] = fixed->second;
+                        used.insert(fixed->second);
+                    }
                 }
             int cursor = 0;
             for (const StageResult* st : {&program.vertex, &program.fragment})
                 for (const SamplerDecl& smp : st->samplers) {
-                    if (samplerBindings.count(smp.name)) continue;
-                    while (used.count(cursor)) cursor++;
+                    if (samplerBindings.contains(smp.name))
+                        continue;
+                    while (used.contains(cursor))
+                        cursor++;
                     samplerBindings[smp.name] = cursor;
                     used.insert(cursor);
                 }
@@ -1286,18 +1557,28 @@ namespace perlin::jshader {
             bool inVertexOut = false, inFragmentIn = false;
         };
         std::map<std::string, Link> links;
-        bool fogCoord = HasFlag(program.vertex.glsl, "FOGCOORD") || HasFlag(program.fragment.glsl, "FOGCOORD");
+        bool fogCoord =
+            HasFlag(program.vertex.glsl, "FOGCOORD") || HasFlag(program.fragment.glsl, "FOGCOORD");
         for (const InterfaceVar& v : program.vertex.outputs) {
             Link& l = links[v.name];
-            l.type = v.type; l.interp = v.interpolation; l.arrayCount = v.arrayCount; l.inVertexOut = true;
-            if (v.location >= 0) l.location = v.location;
+            l.type = v.type;
+            l.interp = v.interpolation;
+            l.arrayCount = v.arrayCount;
+            l.inVertexOut = true;
+            if (v.location >= 0)
+                l.location = v.location;
         }
         for (const InterfaceVar& v : program.fragment.inputs) {
             Link& l = links[v.name];
-            if (l.type.empty()) { l.type = v.type; l.arrayCount = v.arrayCount; }
-            if (l.interp.empty()) l.interp = v.interpolation;
+            if (l.type.empty()) {
+                l.type = v.type;
+                l.arrayCount = v.arrayCount;
+            }
+            if (l.interp.empty())
+                l.interp = v.interpolation;
             l.inFragmentIn = true;
-            if (v.location >= 0 && l.location < 0) l.location = v.location;
+            if (v.location >= 0 && l.location < 0)
+                l.location = v.location;
         }
         if (fogCoord) {
             Link& l = links["iris_FogFragCoord"];
@@ -1308,31 +1589,40 @@ namespace perlin::jshader {
         for (const auto& kv : links)
             if (kv.second.location >= 0) {
                 const int slots = TypeSlots(kv.second.type) * std::max(1, kv.second.arrayCount);
-                for (int s = 0; s < slots; s++) taken.insert(kv.second.location + s);
+                for (int s = 0; s < slots; s++)
+                    taken.insert(kv.second.location + s);
             }
         int next = 0;
         for (auto& kv : links) {
             Link& l = kv.second;
-            if (l.location >= 0) continue;
+            if (l.location >= 0)
+                continue;
             const int slots = TypeSlots(l.type) * std::max(1, l.arrayCount);
             for (;;) {
                 bool free = true;
                 for (int s = 0; s < slots; s++)
-                    if (taken.count(next + s)) { free = false; break; }
-                if (free) break;
+                    if (taken.contains(next + s)) {
+                        free = false;
+                        break;
+                    }
+                if (free)
+                    break;
                 next++;
             }
             l.location = next;
-            for (int s = 0; s < slots; s++) taken.insert(next + s);
+            for (int s = 0; s < slots; s++)
+                taken.insert(next + s);
             next += slots;
         }
 
         auto varyingDecl = [&](const std::string& name, const Link& l, bool out) {
             std::string s = "layout(location = " + std::to_string(l.location) + ") ";
-            if (!l.interp.empty()) s += l.interp + " ";
+            if (!l.interp.empty())
+                s += l.interp + " ";
             s += out ? "out " : "in ";
             s += l.type + " " + name;
-            if (l.arrayCount > 0) s += "[" + std::to_string(l.arrayCount) + "]";
+            if (l.arrayCount > 0)
+                s += "[" + std::to_string(l.arrayCount) + "]";
             return s + ";\n";
         };
 
@@ -1348,36 +1638,60 @@ namespace perlin::jshader {
                     const int count = std::max(1, u.arrayCount);
                     const bool matrix = u.type.compare(0, 3, "mat") == 0;
                     int comps = 1;
-                    if (u.type.size() > 3 && (u.type.compare(0, 3, "vec") == 0)) comps = u.type[3] - '0';
-                    else if (u.type.size() > 4 && (u.type.compare(0, 4, "ivec") == 0 || u.type.compare(0, 4, "uvec") == 0 || u.type.compare(0, 4, "bvec") == 0)) comps = u.type[4] - '0';
+                    if (u.type.size() > 3 && (u.type.compare(0, 3, "vec") == 0))
+                        comps = u.type[3] - '0';
+                    else if (u.type.size() > 4 &&
+                             (u.type.compare(0, 4, "ivec") == 0 || u.type.compare(0, 4, "uvec") == 0 ||
+                              u.type.compare(0, 4, "bvec") == 0))
+                        comps = u.type[4] - '0';
                     u.reg = reg;
                     u.regsPerElement = matrix ? 4 : 1;
                     u.regs = u.regsPerElement * count;
                     u.components = matrix ? (u.type == "mat2" ? 4 : u.type == "mat3" ? 9 : 16) : comps;
                     reg += u.regs;
                     block += std::string("    ") + (matrix ? "mat4 " : "vec4 ") + member;
-                    if (count > 1 || u.arrayCount > 0) block += "[" + std::to_string(count) + "]";
+                    if (count > 1 || u.arrayCount > 0)
+                        block += "[" + std::to_string(count) + "]";
                     block += ";\n";
                     auto unpack = [&](const std::string& ref) -> std::string {
                         const std::string& t = u.type;
-                        if (t == "float") return ref + ".x";
-                        if (t == "int") return "int(" + ref + ".x)";
-                        if (t == "uint") return "uint(" + ref + ".x)";
-                        if (t == "bool") return "(" + ref + ".x != 0.0)";
-                        if (t == "vec2") return ref + ".xy";
-                        if (t == "vec3") return ref + ".xyz";
-                        if (t == "vec4" || t == "mat4") return ref;
-                        if (t == "mat3" || t == "mat2") return t + "(" + ref + ")";
-                        if (t == "ivec2" || t == "ivec3" || t == "ivec4" || t == "uvec2" || t == "uvec3" || t == "uvec4")
-                            return t + "(" + ref + (t.back() == '2' ? ".xy" : t.back() == '3' ? ".xyz" : "") + ")";
+                        if (t == "float")
+                            return ref + ".x";
+                        if (t == "int")
+                            return "int(" + ref + ".x)";
+                        if (t == "uint")
+                            return "uint(" + ref + ".x)";
+                        if (t == "bool")
+                            return "(" + ref + ".x != 0.0)";
+                        if (t == "vec2")
+                            return ref + ".xy";
+                        if (t == "vec3")
+                            return ref + ".xyz";
+                        if (t == "vec4" || t == "mat4")
+                            return ref;
+                        if (t == "mat3" || t == "mat2")
+                            return t + "(" + ref + ")";
+                        if (t == "ivec2" || t == "ivec3" || t == "ivec4" || t == "uvec2" || t == "uvec3" ||
+                            t == "uvec4")
+                            return t + "(" + ref +
+                                   (t.back() == '2'   ? ".xy"
+                                    : t.back() == '3' ? ".xyz"
+                                                      : "") +
+                                   ")";
                         if (t == "bvec2" || t == "bvec3" || t == "bvec4")
-                            return "notEqual(" + ref + (t.back() == '2' ? ".xy" : t.back() == '3' ? ".xyz" : "") + ", vec" + t.back() + "(0.0))";
+                            return "notEqual(" + ref +
+                                   (t.back() == '2'   ? ".xy"
+                                    : t.back() == '3' ? ".xyz"
+                                                      : "") +
+                                   ", vec" + t.back() + "(0.0))";
                         return ref;
                     };
                     if (u.arrayCount > 0) {
-                        globals += u.type + " " + u.name + "[" + std::to_string(count) + "] = " + u.type + "[" + std::to_string(count) + "](";
+                        globals += u.type + " " + u.name + "[" + std::to_string(count) + "] = " + u.type +
+                                   "[" + std::to_string(count) + "](";
                         for (int i = 0; i < count; i++) {
-                            if (i) globals += ", ";
+                            if (i)
+                                globals += ", ";
                             globals += unpack(member + "[" + std::to_string(i) + "]");
                         }
                         globals += ");\n";
@@ -1388,14 +1702,17 @@ namespace perlin::jshader {
                 block += "};\n" + globals;
             }
             glsl = ReplaceFirst(glsl, "/*IRIS_UNIFORM_BLOCK*/", "");
-            for (SamplerDecl& smp : r.samplers) smp.binding = samplerBindings.at(smp.name);
+            for (SamplerDecl& smp : r.samplers)
+                smp.binding = samplerBindings.at(smp.name);
             std::string samplerText;
             for (const SamplerDecl& s : r.samplers) {
                 if (options.splitSamplers && !s.image) {
                     // sampler2D -> texture2D, isampler2D -> itexture2D, sampler2DShadow -> texture2D + samplerShadow
                     std::string texture = s.type;
-                    const bool shadow = texture.size() > 6 && texture.compare(texture.size() - 6, 6, "Shadow") == 0;
-                    if (shadow) texture.erase(texture.size() - 6);
+                    const bool shadow =
+                        texture.size() > 6 && texture.compare(texture.size() - 6, 6, "Shadow") == 0;
+                    if (shadow)
+                        texture.erase(texture.size() - 6);
                     const size_t at = texture.find("sampler");
                     if (at == std::string::npos) {
                         r.ok = false;
@@ -1403,14 +1720,18 @@ namespace perlin::jshader {
                         continue;
                     }
                     texture.replace(at, 7, "texture");
-                    samplerText += "layout(set = 1, binding = " + std::to_string(s.binding * 2) + ") uniform " + texture + " " + s.name + "_iris_t;\n";
-                    samplerText += "layout(set = 1, binding = " + std::to_string(s.binding * 2 + 1) + ") uniform " + (shadow ? "samplerShadow " : "sampler ") +
-                                   s.name + "_iris_s;\n";
-                    samplerText += "#define " + s.name + " " + s.type + "(" + s.name + "_iris_t, " + s.name + "_iris_s)\n";
+                    samplerText += "layout(set = 1, binding = " + std::to_string(s.binding * 2) +
+                                   ") uniform " + texture + " " + s.name + "_iris_t;\n";
+                    samplerText += "layout(set = 1, binding = " + std::to_string(s.binding * 2 + 1) +
+                                   ") uniform " + (shadow ? "samplerShadow " : "sampler ") + s.name +
+                                   "_iris_s;\n";
+                    samplerText += "#define " + s.name + " " + s.type + "(" + s.name + "_iris_t, " + s.name +
+                                   "_iris_s)\n";
                     continue;
                 }
                 samplerText += "layout(set = 0, binding = " + std::to_string(s.binding);
-                if (s.image && !s.imageFormat.empty()) samplerText += ", " + s.imageFormat;
+                if (s.image && !s.imageFormat.empty())
+                    samplerText += ", " + s.imageFormat;
                 samplerText += ") uniform " + s.type + " " + s.name + ";\n";
             }
             glsl = ReplaceAll(glsl, "/*SAMPLERS*/", "");
@@ -1426,29 +1747,49 @@ namespace perlin::jshader {
             std::string attrs;
             const VertexInputs& vi = r.vertexInputs;
             auto have = [&](int loc) { return (options.availableAttribs >> loc) & 1u; };
-            auto emitAttr = [&](int loc, const std::string& type, const std::string& name, const std::string& fallback) {
-                if (have(loc)) attrs += "layout(location = " + std::to_string(loc) + ") in " + type + " " + name + ";\n";
-                else attrs += type + " " + name + " = " + fallback + ";\n";
+            auto emitAttr = [&](int loc, const std::string& type, const std::string& name,
+                                const std::string& fallback) {
+                if (have(loc))
+                    attrs += "layout(location = " + std::to_string(loc) + ") in " + type + " " + name + ";\n";
+                else
+                    attrs += type + " " + name + " = " + fallback + ";\n";
             };
-            if (vi.position) emitAttr(kAttribPosition, "vec3", "iris_Position", "vec3(0.0)");
-            if (vi.color) emitAttr(kAttribColor0, "vec4", "iris_Color", "vec4(1.0)");
-            if (vi.uv0) emitAttr(kAttribTexCoord0, "vec2", "iris_UV0", "vec2(0.0)");
-            if (vi.uv1) emitAttr(kAttribTexCoord1, "vec2", "iris_UV1", "vec2(0.0)");
-            if (vi.normal) emitAttr(kAttribNormal, "vec3", "iris_Normal", "vec3(0.0, 1.0, 0.0)");
-            if (vi.uv2) emitAttr(kAttribTexCoord5, "vec2", "iris_UV2", "vec2(240.0)");
+            if (vi.position)
+                emitAttr(kAttribPosition, "vec3", "iris_Position", "vec3(0.0)");
+            if (vi.color)
+                emitAttr(kAttribColor0, "vec4", "iris_Color", "vec4(1.0)");
+            if (vi.uv0)
+                emitAttr(kAttribTexCoord0, "vec2", "iris_UV0", "vec2(0.0)");
+            if (vi.uv1)
+                emitAttr(kAttribTexCoord1, "vec2", "iris_UV1", "vec2(0.0)");
+            if (vi.normal)
+                emitAttr(kAttribNormal, "vec3", "iris_Normal", "vec3(0.0, 1.0, 0.0)");
+            if (vi.uv2)
+                emitAttr(kAttribTexCoord5, "vec2", "iris_UV2", "vec2(240.0)");
             int userAttrib = 0;
             for (const InterfaceVar& v : r.inputs) {
                 int loc;
-                if (v.name == "mc_Entity") loc = kAttribTexCoord2;
-                else if (v.name == "mc_midTexCoord") loc = kAttribTexCoord3;
-                else if (v.name == "at_tangent") loc = kAttribTangent;
-                else if (v.name == "at_midBlock") loc = kAttribTexCoord4;
-                else loc = kAttribTexCoord6 + userAttrib++;
-                if (loc > kAttribTexCoord15) { r.ok = false; r.error = "too many vertex attributes"; }
+                if (v.name == "mc_Entity")
+                    loc = kAttribTexCoord2;
+                else if (v.name == "mc_midTexCoord")
+                    loc = kAttribTexCoord3;
+                else if (v.name == "at_tangent")
+                    loc = kAttribTangent;
+                else if (v.name == "at_midBlock")
+                    loc = kAttribTexCoord4;
+                else
+                    loc = kAttribTexCoord6 + userAttrib++;
+                if (loc > kAttribTexCoord15) {
+                    r.ok = false;
+                    r.error = "too many vertex attributes";
+                }
                 std::string fallback = v.type + "(0.0)";
-                if (v.name == "mc_Entity") fallback = v.type == "float" ? "-1.0" : v.type + "(-1.0)";
-                else if (v.name == "at_tangent") fallback = v.type == "vec4" ? "vec4(1.0, 0.0, 0.0, 1.0)" : fallback;
-                if (v.type.compare(0, 3, "vec") != 0 && v.type != "float") fallback = v.type + "(0)";
+                if (v.name == "mc_Entity")
+                    fallback = v.type == "float" ? "-1.0" : v.type + "(-1.0)";
+                else if (v.name == "at_tangent")
+                    fallback = v.type == "vec4" ? "vec4(1.0, 0.0, 0.0, 1.0)" : fallback;
+                if (v.type.compare(0, 3, "vec") != 0 && v.type != "float")
+                    fallback = v.type + "(0)";
                 emitAttr(loc, v.type, v.name, fallback);
             }
             body = ReplaceAll(body, "/*ATTR*/", "");
@@ -1457,13 +1798,16 @@ namespace perlin::jshader {
                 const Link& l = links[v.name];
                 varyings += varyingDecl(v.name, l, true);
             }
-            if (fogCoord) varyings += varyingDecl("iris_FogFragCoord", links["iris_FogFragCoord"], true);
+            if (fogCoord)
+                varyings += varyingDecl("iris_FogFragCoord", links["iris_FogFragCoord"], true);
             body = ReplaceAll(body, "/*VARYING_OUT*/", "");
             std::string prelude;
             prelude += "#define PERLIN_VULKAN_GLSL 1\n";
             std::string footer = "\nvoid main() {\n    iris_user_main();\n";
-            if (options.flipVertexY) footer += "    gl_Position.y = -gl_Position.y;\n";
-            if (options.zeroToOneDepth) footer += "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
+            if (options.flipVertexY)
+                footer += "    gl_Position.y = -gl_Position.y;\n";
+            if (options.zeroToOneDepth)
+                footer += "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
             footer += "}\n";
             const std::string structs = HoistStructs(body);
             r.glsl = head + structs + attrs + varyings + samplerText + prelude + body + footer;
@@ -1480,18 +1824,21 @@ namespace perlin::jshader {
                 const Link& l = links[v.name];
                 varyings += varyingDecl(v.name, l, false);
             }
-            if (fogCoord) varyings += varyingDecl("iris_FogFragCoord", links["iris_FogFragCoord"], false);
+            if (fogCoord)
+                varyings += varyingDecl("iris_FogFragCoord", links["iris_FogFragCoord"], false);
             body = ReplaceAll(body, "/*VARYING_IN*/", "");
             std::string outs;
             std::set<int> usedLoc;
             for (const InterfaceVar& v : r.outputs)
-                if (v.location >= 0) usedLoc.insert(v.location);
+                if (v.location >= 0)
+                    usedLoc.insert(v.location);
             int loc = 0;
             std::vector<std::pair<int, InterfaceVar>> placed;
             for (const InterfaceVar& v : r.outputs) {
                 int l = v.location;
                 if (l < 0) {
-                    while (usedLoc.count(loc)) loc++;
+                    while (usedLoc.contains(loc))
+                        loc++;
                     l = loc;
                     usedLoc.insert(l);
                 }
@@ -1499,28 +1846,36 @@ namespace perlin::jshader {
             }
             const int fragData = FlagNumber(flagsSource, "FRAGDATA");
             for (int i = 0; i < fragData; i++) {
-                if (usedLoc.count(i) && !HasFlag(flagsSource, "NEVER")) {
+                if (usedLoc.contains(i) && !HasFlag(flagsSource, "NEVER")) {
                     bool user = false;
-                    for (auto& p : placed) if (p.first == i) user = true;
-                    if (user) continue;
+                    for (auto& p : placed)
+                        if (p.first == i)
+                            user = true;
+                    if (user)
+                        continue;
                 }
-                outs += "layout(location = " + std::to_string(i) + ") out vec4 iris_FragData" + std::to_string(i) + ";\n";
+                outs += "layout(location = " + std::to_string(i) + ") out vec4 iris_FragData" +
+                        std::to_string(i) + ";\n";
                 usedLoc.insert(i);
             }
             for (auto& p : placed) {
-                outs += "layout(location = " + std::to_string(p.first) + ") out " + p.second.type + " " + p.second.name;
-                if (p.second.arrayCount > 0) outs += "[" + std::to_string(p.second.arrayCount) + "]";
+                outs += "layout(location = " + std::to_string(p.first) + ") out " + p.second.type + " " +
+                        p.second.name;
+                if (p.second.arrayCount > 0)
+                    outs += "[" + std::to_string(p.second.arrayCount) + "]";
                 outs += ";\n";
                 r.drawBuffers.push_back(p.first);
             }
-            for (int i = 0; i < fragData; i++) r.drawBuffers.push_back(i);
+            for (int i = 0; i < fragData; i++)
+                r.drawBuffers.push_back(i);
             std::sort(r.drawBuffers.begin(), r.drawBuffers.end());
             r.drawBuffers.erase(std::unique(r.drawBuffers.begin(), r.drawBuffers.end()), r.drawBuffers.end());
             body = ReplaceAll(body, "/*FRAGOUT*/", "");
 
             std::string prelude;
             if (HasFlag(flagsSource, "SHADOW2D"))
-                prelude += options.explicitLod ? "#define iris_shadow2D(s, c) vec4(textureLod(s, c, 0.0))\n" : "#define iris_shadow2D(s, c) vec4(texture(s, c))\n";
+                prelude += options.explicitLod ? "#define iris_shadow2D(s, c) vec4(textureLod(s, c, 0.0))\n"
+                                               : "#define iris_shadow2D(s, c) vec4(texture(s, c))\n";
             if (HasFlag(flagsSource, "SHADOW2DLOD"))
                 prelude += "#define iris_shadow2DLod(s, c, l) vec4(textureLod(s, c, l))\n";
             if (HasFlag(flagsSource, "SHADOW2DPROJ"))
@@ -1529,7 +1884,8 @@ namespace perlin::jshader {
             std::string mainPrefix;
             if (options.flipFragCoordY && HasFlag(flagsSource, "FRAGCOORD")) {
                 fragCoord = "vec4 iris_FragCoord;\n";
-                mainPrefix = "    iris_FragCoord = vec4(gl_FragCoord.x, iris_ViewHeight - gl_FragCoord.y, gl_FragCoord.z, gl_FragCoord.w);\n";
+                mainPrefix = "    iris_FragCoord = vec4(gl_FragCoord.x, iris_ViewHeight - gl_FragCoord.y, "
+                             "gl_FragCoord.z, gl_FragCoord.w);\n";
             }
             std::string footer = "\nvoid main() {\n" + mainPrefix + "    iris_user_main();\n}\n";
             const std::string structs = HoistStructs(body);
@@ -1541,7 +1897,8 @@ namespace perlin::jshader {
         }
         program.uniforms = program.vertex.uniforms;
         program.uniformRegs = 0;
-        for (const UniformDecl& u : program.uniforms) program.uniformRegs += u.regs;
+        for (const UniformDecl& u : program.uniforms)
+            program.uniformRegs += u.regs;
         return program;
     }
 }

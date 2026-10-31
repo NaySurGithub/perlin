@@ -185,6 +185,7 @@ else()
 endif()
 
 add_library(perlin_server_core STATIC ${PS_SOURCES})
+target_include_directories(perlin_server_core PUBLIC "${PERLIN_ROOT}/mods/sdk")
 target_include_directories(perlin_server_core
     PUBLIC include
     PRIVATE src "${PERLIN_ROOT}/src")
@@ -272,7 +273,7 @@ if(PERLIN_SERVER_BUILD_TESTS)
 
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm"
         COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/examples/hello_server/build.sh" "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm"
-        DEPENDS examples/hello_server/hello_server.c sdk/perlin_server.h examples/hello_server/build.sh
+        DEPENDS examples/hello_server/hello_server.c ${PERLIN_ROOT}/mods/sdk/perlin.h ${PERLIN_ROOT}/mods/sdk/perlin/abi_table.h examples/hello_server/build.sh
         COMMENT "Building the example plugin" VERBATIM)
     add_custom_target(server_example_plugin DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm")
 

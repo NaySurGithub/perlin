@@ -560,7 +560,7 @@ namespace perlin {
         {
             std::vector<std::pair<std::string, std::string>> apis = {{"auto", "Auto"}};
             for (rhi::Api api : rhi::CompiledApis())
-                apis.push_back({rhi::ApiId(api), rhi::ApiName(api)});
+                apis.emplace_back(rhi::ApiId(api), rhi::ApiName(api));
             size_t at = 0;
             for (size_t i = 0; i < apis.size(); i++)
                 if (apis[i].first == options.renderer)

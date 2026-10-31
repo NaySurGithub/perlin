@@ -29,5 +29,6 @@ namespace perlin::ui {
     std::string BuildDownloadScreenRml(const DownloadScreenText& text, int guiW, int guiH, double time);
 
     std::string DefaultLoadingScreenTemplate();
-    std::string BuildLoadingScreenRml(const std::string& templateText, const LoadingScreenText& text, int guiW, int guiH, double time);
+    std::string BuildLoadingScreenRml(const std::string& templateText, const LoadingScreenText& text,
+                                      int guiW, int guiH, double time);
 }

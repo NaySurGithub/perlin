@@ -31,7 +31,8 @@ namespace perlin {
                 v.s = e.text;
                 states.emplace_back(e.key, std::move(v));
             }
-            std::sort(states.begin(), states.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            std::sort(states.begin(), states.end(),
+                      [](const auto& a, const auto& b) { return a.first < b.first; });
             std::string name = block.name;
             if (!name.empty() && !name.contains(':'))
                 name = "minecraft:" + name;
@@ -39,7 +40,6 @@ namespace perlin {
             BlockPalette::Instance().LearnState(hash, name, std::move(states));
             return hash;
         }
-
 
         int ParseLevel(const ui::Json* v, const char* key, bool fraction) {
             if (!v)
@@ -127,7 +127,8 @@ namespace perlin {
             if (const ui::Json* wearable = FindKey(nbt, "minecraft:wearable")) {
                 const ui::Json* slot = wearable->IsObject() ? wearable->Find("slot") : nullptr;
                 const std::string where = slot && slot->IsString() ? slot->string : std::string();
-                static const char* const kSlots[] = {"slot.armor.head", "slot.armor.chest", "slot.armor.legs", "slot.armor.feet"};
+                static const char* const kSlots[] = {"slot.armor.head", "slot.armor.chest", "slot.armor.legs",
+                                                     "slot.armor.feet"};
                 for (int i = 0; i < 4; i++)
                     if (where == kSlots[i])
                         def.armorSlot = i;
@@ -147,7 +148,9 @@ namespace perlin {
         return count;
     }
 
-    void InstallPersistentChunkResolver() { SetPersistentResolver(&ResolvePersistent); }
+    void InstallPersistentChunkResolver() {
+        SetPersistentResolver(&ResolvePersistent);
+    }
 
     size_t RegisterCustomBlocks(const std::vector<proto::BlockPropertiesEntry>& blocks) {
         auto& palette = BlockPalette::Instance();
@@ -169,8 +172,11 @@ namespace perlin {
                     {"cardinal_direction", {"south", "west", "north", "east"}},
                     {"facing_direction", {"down", "up", "north", "south", "west", "east"}},
                 };
-                static const char* kConnections[] = {"connection_north", "connection_east", "connection_south", "connection_west"};
-                const auto key = [](const std::string& n) { return n.starts_with("minecraft:") ? n.substr(10) : n; };
+                static const char* kConnections[] = {"connection_north", "connection_east",
+                                                     "connection_south", "connection_west"};
+                const auto key = [](const std::string& n) {
+                    return n.starts_with("minecraft:") ? n.substr(10) : n;
+                };
                 std::vector<std::string> enabled;
                 const auto collect = [&](const std::string& traitName, const ui::Json& trait) {
                     const ui::Json* flags = trait.IsObject() ? trait.Find("enabled_states") : nullptr;
@@ -201,7 +207,9 @@ namespace perlin {
                         for (const auto& [k, t] : traits->object)
                             collect(k, t);
                 }
-                const auto has = [&](const std::string& n) { return std::find(enabled.begin(), enabled.end(), n) != enabled.end(); };
+                const auto has = [&](const std::string& n) {
+                    return std::find(enabled.begin(), enabled.end(), n) != enabled.end();
+                };
                 for (const auto& [name, values] : kTraitStates)
                     if (has(name)) {
                         Prop prop;
@@ -249,7 +257,8 @@ namespace perlin {
                 st.reserve(axes.size());
                 for (size_t i = 0; i < axes.size(); i++)
                     st.emplace_back(axes[i].name, axes[i].values[idx[i]]);
-                std::sort(st.begin(), st.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                std::sort(st.begin(), st.end(),
+                          [](const auto& a, const auto& b) { return a.first < b.first; });
                 const int32_t stateHash = BlockPalette::HashState(entry.name, st);
                 palette.LearnState(stateHash, entry.name, st);
                 run.hashes.push_back(stateHash);
@@ -273,7 +282,8 @@ namespace perlin {
             if (const ui::Json* components = nbt.Find("components"); components && components->IsObject()) {
                 collision.base = ParseBlockBoxComponent(components->Find("minecraft:collision_box"));
                 collision.selection = ParseBlockBoxComponent(components->Find("minecraft:selection_box"));
-                collision.randomOffset = ParseBlockOffsetDefinition(components->Find("minecraft:random_offset"));
+                collision.randomOffset =
+                    ParseBlockOffsetDefinition(components->Find("minecraft:random_offset"));
                 if (const ui::Json* f = components->Find("minecraft:friction")) {
                     const ui::Json* v = f->IsObject() ? f->Find("value") : f;
                     if (v && v->IsNumber())
@@ -287,7 +297,8 @@ namespace perlin {
                 if (damp < 0)
                     damp = ParseLevel(components->Find("minecraft:block_light_filter"), "lightLevel", false);
                 dampening = damp;
-                if (const ui::Json* mi = components->Find("minecraft:material_instances"); mi && mi->IsObject()) {
+                if (const ui::Json* mi = components->Find("minecraft:material_instances");
+                    mi && mi->IsObject()) {
                     const ui::Json* mats = mi->Find("materials");
                     const ui::Json* map = mats && mats->IsObject() ? mats : mi;
                     for (const auto& [face, v] : map->object) {
@@ -295,7 +306,8 @@ namespace perlin {
                             continue;
                         if (const ui::Json* tex = v.Find("texture"); tex && tex->IsString())
                             def.faceTexture[face] = tex->string;
-                        if (const ui::Json* rm = v.Find("render_method"); rm && rm->IsString() && rm->string != "opaque")
+                        if (const ui::Json* rm = v.Find("render_method");
+                            rm && rm->IsString() && rm->string != "opaque")
                             def.cutout = true;
                     }
                 }
@@ -329,7 +341,9 @@ namespace perlin {
             customDump.resize(customDump.size() - 2);
             std::error_code ec;
             std::filesystem::create_directories(paths::DataDir() + "/ui_generated", ec);
-            std::ofstream(paths::DataDir() + "/ui_generated/custom_blocks.json", std::ios::binary | std::ios::trunc) << customDump << "\n}\n";
+            std::ofstream(paths::DataDir() + "/ui_generated/custom_blocks.json",
+                          std::ios::binary | std::ios::trunc)
+                << customDump << "\n}\n";
         }
         return states;
     }

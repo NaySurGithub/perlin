@@ -28,16 +28,22 @@ namespace {
         std::string out;
         for (size_t i = 0; i < s.size(); i += 3) {
             uint32_t v = static_cast<unsigned char>(s[i]) << 16;
-            if (i + 1 < s.size()) v |= static_cast<unsigned char>(s[i + 1]) << 8;
-            if (i + 2 < s.size()) v |= static_cast<unsigned char>(s[i + 2]);
+            if (i + 1 < s.size())
+                v |= static_cast<unsigned char>(s[i + 1]) << 8;
+            if (i + 2 < s.size())
+                v |= static_cast<unsigned char>(s[i + 2]);
             out += t[(v >> 18) & 63];
             out += t[(v >> 12) & 63];
-            if (i + 1 < s.size()) out += t[(v >> 6) & 63];
-            if (i + 2 < s.size()) out += t[v & 63];
+            if (i + 1 < s.size())
+                out += t[(v >> 6) & 63];
+            if (i + 2 < s.size())
+                out += t[v & 63];
         }
         return out;
     }
-    std::string Jwt(const std::string& payload) { return B64Url("{}") + "." + B64Url(payload) + ".sig"; }
+    std::string Jwt(const std::string& payload) {
+        return B64Url("{}") + "." + B64Url(payload) + ".sig";
+    }
 
     template <class P> std::vector<uint8_t> Wire(BatchCodec& codec, const P& packet) {
         std::vector<uint8_t> body, content;
@@ -57,7 +63,8 @@ namespace {
     };
 
     // one webrtc client against a running server: probe, offer (optionally with an identity assertion), login, and if let in, a chunk
-    Outcome JoinOver(uint16_t port, const std::string& identity, const std::string& clientToken, const testauth::Key* assertWith, bool fullHandshake) {
+    Outcome JoinOver(uint16_t port, const std::string& identity, const std::string& clientToken,
+                     const testauth::Key* assertWith, bool fullHandshake) {
         Outcome out;
         httplib::Client http("127.0.0.1", port);
         http.set_connection_timeout(3);
@@ -90,7 +97,8 @@ namespace {
         reliable->onMessage([&](rtc::message_variant m) {
             if (auto* b = std::get_if<rtc::binary>(&m); b && b->size() > 1) {
                 std::lock_guard lock(mutex);
-                messages.emplace_back(reinterpret_cast<const uint8_t*>(b->data()) + 1, reinterpret_cast<const uint8_t*>(b->data()) + b->size());
+                messages.emplace_back(reinterpret_cast<const uint8_t*>(b->data()) + 1,
+                                      reinterpret_cast<const uint8_t*>(b->data()) + b->size());
             }
         });
         pc->setLocalDescription();
@@ -123,7 +131,8 @@ namespace {
 
         const auto send = [&](const std::vector<uint8_t>& wire) {
             for (const auto& p : SplitFragments(wire.data(), wire.size()))
-                reliable->send(rtc::binary(reinterpret_cast<const std::byte*>(p.data()), reinterpret_cast<const std::byte*>(p.data()) + p.size()));
+                reliable->send(rtc::binary(reinterpret_cast<const std::byte*>(p.data()),
+                                           reinterpret_cast<const std::byte*>(p.data()) + p.size()));
         };
         // packets already unpacked from batches, so two packets in one batch are both found
         std::vector<std::pair<uint32_t, std::vector<uint8_t>>> packets;
@@ -228,10 +237,12 @@ int main() {
     // an open server: an offline login gets all the way to a chunk
     {
         testauth::Account guest("Webrtc", "");
-        const Outcome o = JoinOver(kPort, guest.Identity(guest.Chain(false), 2), guest.ClientToken(), nullptr, true);
+        const Outcome o =
+            JoinOver(kPort, guest.Identity(guest.Chain(false), 2), guest.ClientToken(), nullptr, true);
         CHECK(o.connected && o.loginSuccess && o.gotChunk);
         // a forged login is turned away even on an open server
-        const Outcome forged = JoinOver(kPort, guest.Identity({"a.b.c"}, 2), guest.ClientToken(), nullptr, false);
+        const Outcome forged =
+            JoinOver(kPort, guest.Identity({"a.b.c"}, 2), guest.ClientToken(), nullptr, false);
         CHECK(forged.connected && !forged.loginSuccess);
     }
     open.RequestStop();
@@ -248,15 +259,19 @@ int main() {
     CHECK(locked.Start(error));
     std::thread ticker2([&] { locked.Run(); });
     {
-        const Outcome good = JoinOver(strict.port, xbox.Identity(xbox.Chain()), xbox.ClientToken(), &xbox.player, true);
+        const Outcome good =
+            JoinOver(strict.port, xbox.Identity(xbox.Chain()), xbox.ClientToken(), &xbox.player, true);
         CHECK(good.loginSuccess && good.gotChunk);
-        const Outcome offline = JoinOver(strict.port, xbox.Identity(xbox.Chain(false), 2), xbox.ClientToken(), &xbox.player, false);
+        const Outcome offline = JoinOver(strict.port, xbox.Identity(xbox.Chain(false), 2), xbox.ClientToken(),
+                                         &xbox.player, false);
         CHECK(!offline.loginSuccess && offline.disconnected && offline.disconnectReason == 46);
         // a replayed login: right chain, but the offer is not signed by the account's key
         testauth::Key replayer;
-        const Outcome replay = JoinOver(strict.port, xbox.Identity(xbox.Chain()), xbox.ClientToken(), &replayer, false);
+        const Outcome replay =
+            JoinOver(strict.port, xbox.Identity(xbox.Chain()), xbox.ClientToken(), &replayer, false);
         CHECK(!replay.loginSuccess && replay.disconnected && replay.disconnectReason == 46);
-        const Outcome noAssertion = JoinOver(strict.port, xbox.Identity(xbox.Chain()), xbox.ClientToken(), nullptr, false);
+        const Outcome noAssertion =
+            JoinOver(strict.port, xbox.Identity(xbox.Chain()), xbox.ClientToken(), nullptr, false);
         CHECK(!noAssertion.loginSuccess && noAssertion.disconnected && noAssertion.disconnectReason == 46);
     }
     locked.RequestStop();

@@ -21,14 +21,13 @@ namespace perlin::ui {
         const int m = bound - 1;
         if ((bound & m) == 0)
             return static_cast<int>((static_cast<int64_t>(bound) * static_cast<int64_t>(r)) >> 31);
-        for (int u = r; u - (r = u % bound) + m < 0; u = Next(31)) {
-        }
+        for (int u = r; u - (r = u % bound) + m < 0; u = Next(31)) {}
         return r;
     }
 
     namespace {
-        void Tex(RmlWriter& w, const LNode& n, float x, float y, float size, const char* texture, int zOffset = 0,
-                 float alpha = 1.0f) {
+        void Tex(RmlWriter& w, const LNode& n, float x, float y, float size, const char* texture,
+                 int zOffset = 0, float alpha = 1.0f) {
             ImageStyle st;
             st.alpha = alpha * n.alpha;
             w.Image(x, y, size, size, n.layer + zOffset, std::string("textures/ui/") + texture, st);
@@ -42,9 +41,12 @@ namespace perlin::ui {
         };
 
         HeartSet HeartsFor(const HudState& s) {
-            if (s.wither) return {"wither_heart", "wither_heart_half", "wither_heart_flash", "wither_heart_flash_half"};
-            if (s.poison) return {"poison_heart", "poison_heart_half", "poison_heart_flash", "poison_heart_flash_half"};
-            if (s.freezing) return {"freeze_heart", "freeze_heart_half", "freeze_heart_flash", "freeze_heart_flash_half"};
+            if (s.wither)
+                return {"wither_heart", "wither_heart_half", "wither_heart_flash", "wither_heart_flash_half"};
+            if (s.poison)
+                return {"poison_heart", "poison_heart_half", "poison_heart_flash", "poison_heart_flash_half"};
+            if (s.freezing)
+                return {"freeze_heart", "freeze_heart_half", "freeze_heart_flash", "freeze_heart_flash_half"};
             return {"heart", "heart_half", "heart_flash", "heart_flash_half"};
         }
 
@@ -53,7 +55,9 @@ namespace perlin::ui {
             return std::max(1, (hearts + 9) / 10);
         }
 
-        int RowHeight(const HudState& s) { return std::max(10 - (HealthRows(s) - 2), 3); }
+        int RowHeight(const HudState& s) {
+            return std::max(10 - (HealthRows(s) - 2), 3);
+        }
 
         void Hearts(const HudState& s, const LNode& n, RmlWriter& w) {
             const int health = static_cast<int>(std::ceil(s.health));
@@ -62,8 +66,12 @@ namespace perlin::ui {
             int absorption = static_cast<int>(std::ceil(s.absorption));
             const int rows = HealthRows(s);
             const int rowHeight = RowHeight(s);
-            const bool blinking = s.healthBlinkUntil > static_cast<int>(s.tick) && ((s.healthBlinkUntil - static_cast<int>(s.tick)) / 3) % 2 == 1;
-            const int regen = s.regeneration ? static_cast<int>(s.tick % static_cast<uint64_t>(std::ceil(s.maxHealth + 5.0f))) : -1;
+            const bool blinking = s.healthBlinkUntil > static_cast<int>(s.tick) &&
+                                  ((s.healthBlinkUntil - static_cast<int>(s.tick)) / 3) % 2 == 1;
+            const int regen =
+                s.regeneration
+                    ? static_cast<int>(s.tick % static_cast<uint64_t>(std::ceil(s.maxHealth + 5.0f)))
+                    : -1;
             JavaRandom random(static_cast<int64_t>(s.tick) * 312871);
             const HeartSet set = HeartsFor(s);
             const int total = static_cast<int>(std::ceil((s.maxHealth + std::ceil(s.absorption)) / 2.0f));
@@ -98,8 +106,7 @@ namespace perlin::ui {
                     Tex(w, n, x, y, 9, half ? set.half : set.full, 2);
                 }
             }
-            if (s.hardcore) {
-            }
+            if (s.hardcore) {}
         }
 
         void Armor(const HudState& s, const LNode& n, RmlWriter& w) {
@@ -107,7 +114,8 @@ namespace perlin::ui {
             const float y = n.ay - 10 - (rows - 1) * RowHeight(s);
             for (int i = 0; i < 10; i++) {
                 const float x = n.ax + i * 8;
-                const char* tex = i * 2 + 1 < s.armor ? "armor_full" : (i * 2 + 1 == s.armor ? "armor_half" : "armor_empty");
+                const char* tex = i * 2 + 1 < s.armor ? "armor_full"
+                                                      : (i * 2 + 1 == s.armor ? "armor_half" : "armor_empty");
                 Tex(w, n, x, y, 9, tex);
             }
         }
@@ -123,8 +131,10 @@ namespace perlin::ui {
                     y += random.NextInt(3) - 1;
                 Tex(w, n, x, y, 9, effect ? "hunger_effect_background" : "hunger_background", 0);
                 const char* tex = nullptr;
-                if (i * 2 + 1 < s.food) tex = effect ? "hunger_effect_full" : "hunger_full";
-                else if (i * 2 + 1 == s.food) tex = effect ? "hunger_effect_half" : "hunger_half";
+                if (i * 2 + 1 < s.food)
+                    tex = effect ? "hunger_effect_full" : "hunger_full";
+                else if (i * 2 + 1 == s.food)
+                    tex = effect ? "hunger_effect_half" : "hunger_half";
                 if (tex)
                     Tex(w, n, x, y, 9, tex, 1);
             }
@@ -179,11 +189,12 @@ namespace perlin::ui {
             st.alpha = 0.9f;
             // two animated layers at slightly different heights, mirrors the vanilla composite
             for (const float side : {-1.0f, 1.0f}) {
-                w.Image(s.guiW * 0.5f + side * 0.24f * unit - unit * 0.5f, top, unit, unit, n.layer, "textures/blocks/fire_1", st);
+                w.Image(s.guiW * 0.5f + side * 0.24f * unit - unit * 0.5f, top, unit, unit, n.layer,
+                        "textures/blocks/fire_1", st);
                 ImageStyle inner = st;
                 inner.alpha = 0.7f;
-                w.Image(s.guiW * 0.5f + side * 0.18f * unit - unit * 0.4f, top + unit * 0.12f, unit * 0.8f, unit * 0.8f,
-                        n.layer + 1, "textures/blocks/fire_0", inner);
+                w.Image(s.guiW * 0.5f + side * 0.18f * unit - unit * 0.4f, top + unit * 0.12f, unit * 0.8f,
+                        unit * 0.8f, n.layer + 1, "textures/blocks/fire_0", inner);
             }
         }
 
@@ -206,7 +217,8 @@ namespace perlin::ui {
 
         void ProgressBar(const HudState& s, const LNode& n, RmlWriter& w) {
             const Json* bag = n.Get("property_bag");
-            const bool durability = bag && bag->Find("is_durability") && bag->Find("is_durability")->BoolOr(false);
+            const bool durability =
+                bag && bag->Find("is_durability") && bag->Find("is_durability")->BoolOr(false);
             if (!durability)
                 return;
             const Json* vis = n.bag.Find("#touch_progress_bar_visible");
@@ -225,14 +237,30 @@ namespace perlin::ui {
             const double f = h - std::floor(h);
             double r = 0, g = 0, b = 0;
             switch (static_cast<int>(h) % 6) {
-            case 0: r = 1; g = f; b = 0; break;
-            case 1: r = 1 - f; g = 1; b = 0; break;
-            case 2: r = 0; g = 1; b = f; break;
-            default: r = 0; g = 1; b = 1; break;
+            case 0:
+                r = 1;
+                g = f;
+                b = 0;
+                break;
+            case 1:
+                r = 1 - f;
+                g = 1;
+                b = 0;
+                break;
+            case 2:
+                r = 0;
+                g = 1;
+                b = f;
+                break;
+            default:
+                r = 0;
+                g = 1;
+                b = 1;
+                break;
             }
             w.Rect(n.ax, n.ay, 13, 2, n.layer, 0, 0, 0, 1);
-            w.Rect(n.ax, n.ay, static_cast<float>(width), 1, n.layer + 1, static_cast<float>(r), static_cast<float>(g),
-                   static_cast<float>(b), 1);
+            w.Rect(n.ax, n.ay, static_cast<float>(width), 1, n.layer + 1, static_cast<float>(r),
+                   static_cast<float>(g), static_cast<float>(b), 1);
         }
     }
 
@@ -247,9 +275,11 @@ namespace perlin::ui {
                     size_t from = 0;
                     while (from <= s.moveStatus.size()) {
                         const size_t nl = s.moveStatus.find('\n', from);
-                        const std::string line = s.moveStatus.substr(from, nl == std::string::npos ? std::string::npos : nl - from);
+                        const std::string line = s.moveStatus.substr(
+                            from, nl == std::string::npos ? std::string::npos : nl - from);
                         if (!line.empty())
-                            w.Text(2.0f, y, McFont::Instance().Width(line) + 2.0f, 9, n.layer + 1, {line}, ms);
+                            w.Text(2.0f, y, McFont::Instance().Width(line) + 2.0f, 9, n.layer + 1, {line},
+                                   ms);
                         y += 10.0f;
                         if (nl == std::string::npos)
                             break;
@@ -295,7 +325,8 @@ namespace perlin::ui {
                 st.shadow = false;
                 st.r = st.g = st.b = l.brightness;
                 const float textW = font.Width(l.text);
-                w.Text(left + 2.0f + (inner - textW) * 0.5f, y + 1.0f, textW + 2.0f, 9, n.layer + 1, {l.text}, st);
+                w.Text(left + 2.0f + (inner - textW) * 0.5f, y + 1.0f, textW + 2.0f, 9, n.layer + 1, {l.text},
+                       st);
                 if (l.direction < 0)
                     w.Text(left + 2.0f, y + 1.0f, 8, 9, n.layer + 1, {"<"}, st);
                 else if (l.direction > 0)
@@ -326,7 +357,8 @@ namespace perlin::ui {
             w.Rect(x0 - 1, y0 - 1, total + 2, static_cast<float>(rows) * 9.0f + 1.0f, z, 0, 0, 0, 0.5f);
             for (int i = 0; i < count; i++) {
                 const int col = i / rows, row = i % rows;
-                const float x = x0 + static_cast<float>(col) * (cell + 1.0f), y = y0 + static_cast<float>(row) * 9.0f;
+                const float x = x0 + static_cast<float>(col) * (cell + 1.0f),
+                            y = y0 + static_cast<float>(row) * 9.0f;
                 w.Rect(x, y, cell, 8.0f, z + 1, 1, 1, 1, 0.125f);
                 const HudState::TabEntry& e = s.tabEntries[static_cast<size_t>(i)];
                 ImageStyle st;
@@ -366,7 +398,8 @@ namespace perlin::ui {
             w.BeginSection();
             if (s.chatScrolled && s.chatTotalLines > 0) {
                 const float track = 180.0f;
-                const float thumb = std::max(4.0f, track * 20.0f / static_cast<float>(std::max(20, s.chatTotalLines)));
+                const float thumb =
+                    std::max(4.0f, track * 20.0f / static_cast<float>(std::max(20, s.chatTotalLines)));
                 const float pos = (track - thumb) * static_cast<float>(s.chatScroll) /
                                   static_cast<float>(std::max(1, s.chatTotalLines - 20));
                 w.Rect(0, 180.0f - pos - thumb, 2, thumb, 1, 0.8f, 0.8f, 0.8f, 0.9f);
@@ -395,7 +428,8 @@ namespace perlin::ui {
                     char cur = 'r';
                     const size_t end = in.size();
                     for (size_t k = start; k < end; k++) {
-                        const char want = in[k] == ' ' ? cur : (k < s.chatColors.size() ? s.chatColors[k] : 'r');
+                        const char want =
+                            in[k] == ' ' ? cur : (k < s.chatColors.size() ? s.chatColors[k] : 'r');
                         if (want != cur) {
                             shown += "\xC2\xA7";
                             shown += want;
@@ -433,17 +467,25 @@ namespace perlin::ui {
                 float boxW = 0;
                 for (const std::string& g : s.chatSuggestions)
                     boxW = std::max(boxW, font.Width(g));
-                float x = 2.0f + font.Width(s.chatInput.substr(0, std::min(static_cast<size_t>(s.chatSuggestStart), s.chatInput.size())));
+                float x =
+                    2.0f + font.Width(s.chatInput.substr(
+                               0, std::min(static_cast<size_t>(s.chatSuggestStart), s.chatInput.size())));
                 x = std::clamp(x, 0.0f, std::max(0.0f, s.guiW - 4.0f - boxW - 1.0f));
                 const float rows = static_cast<float>(s.chatSuggestions.size());
-                w.Rect(x - 1.0f, -rows * 12.0f - 2.0f, boxW + 3.0f, rows * 12.0f + 2.0f, 4, 0, 0, 0, 208.0f / 255.0f);
+                w.Rect(x - 1.0f, -rows * 12.0f - 2.0f, boxW + 3.0f, rows * 12.0f + 2.0f, 4, 0, 0, 0,
+                       208.0f / 255.0f);
                 for (size_t i = 0; i < s.chatSuggestions.size(); i++) {
                     TextStyle ts;
                     ts.shadow = true;
                     const bool sel = static_cast<int>(i) == s.chatSuggestSelected;
-                    if (sel) { ts.r = 1.0f; ts.g = 1.0f; ts.b = 0.0f; }
-                    else ts.r = ts.g = ts.b = 170.0f / 255.0f;
-                    w.Text(x + 1.0f - 1.0f + 0.0f, -rows * 12.0f + 1.0f + static_cast<float>(i) * 12.0f, boxW + 1.0f, 9, 5, {s.chatSuggestions[i]}, ts);
+                    if (sel) {
+                        ts.r = 1.0f;
+                        ts.g = 1.0f;
+                        ts.b = 0.0f;
+                    } else
+                        ts.r = ts.g = ts.b = 170.0f / 255.0f;
+                    w.Text(x + 1.0f - 1.0f + 0.0f, -rows * 12.0f + 1.0f + static_cast<float>(i) * 12.0f,
+                           boxW + 1.0f, 9, 5, {s.chatSuggestions[i]}, ts);
                 }
                 const auto dots = [&](float y) {
                     for (float dx = 0; dx < boxW + 1.0f; dx += 2.0f)
@@ -465,17 +507,22 @@ namespace perlin::ui {
 
     namespace {
         uint32_t BrightnessNinety(uint32_t rgb) {
-            const float r = static_cast<float>((rgb >> 16) & 255) / 255.0f, g = static_cast<float>((rgb >> 8) & 255) / 255.0f,
+            const float r = static_cast<float>((rgb >> 16) & 255) / 255.0f,
+                        g = static_cast<float>((rgb >> 8) & 255) / 255.0f,
                         b = static_cast<float>(rgb & 255) / 255.0f;
             const float mx = std::max({r, g, b}), mn = std::min({r, g, b});
             const float d = mx - mn;
             float h = 0.0f;
             if (d > 0.0f) {
-                if (mx == r) h = std::fmod((g - b) / d, 6.0f);
-                else if (mx == g) h = (b - r) / d + 2.0f;
-                else h = (r - g) / d + 4.0f;
+                if (mx == r)
+                    h = std::fmod((g - b) / d, 6.0f);
+                else if (mx == g)
+                    h = (b - r) / d + 2.0f;
+                else
+                    h = (r - g) / d + 4.0f;
                 h /= 6.0f;
-                if (h < 0.0f) h += 1.0f;
+                if (h < 0.0f)
+                    h += 1.0f;
             }
             const float sat = mx > 0.0f ? d / mx : 0.0f;
             const float v = 0.9f;
@@ -483,14 +530,29 @@ namespace perlin::ui {
             const float hp = h * 6.0f;
             const float x = c * (1.0f - std::fabs(std::fmod(hp, 2.0f) - 1.0f));
             float rr = 0, gg = 0, bb = 0;
-            if (hp < 1) { rr = c; gg = x; }
-            else if (hp < 2) { rr = x; gg = c; }
-            else if (hp < 3) { gg = c; bb = x; }
-            else if (hp < 4) { gg = x; bb = c; }
-            else if (hp < 5) { rr = x; bb = c; }
-            else { rr = c; bb = x; }
+            if (hp < 1) {
+                rr = c;
+                gg = x;
+            } else if (hp < 2) {
+                rr = x;
+                gg = c;
+            } else if (hp < 3) {
+                gg = c;
+                bb = x;
+            } else if (hp < 4) {
+                gg = x;
+                bb = c;
+            } else if (hp < 5) {
+                rr = x;
+                bb = c;
+            } else {
+                rr = c;
+                bb = x;
+            }
             const float m = v - c;
-            const auto to8 = [&](float q) { return static_cast<uint32_t>(std::clamp(std::lround((q + m) * 255.0f), 0l, 255l)); };
+            const auto to8 = [&](float q) {
+                return static_cast<uint32_t>(std::clamp(std::lround((q + m) * 255.0f), 0l, 255l));
+            };
             return (to8(rr) << 16) | (to8(gg) << 8) | to8(bb);
         }
 
@@ -510,7 +572,8 @@ namespace perlin::ui {
                 bg.vh = 24.0f;
                 w.Image(x, y, 24, 24, n.layer, "mcres:ui_hud_effect.png", bg);
                 ImageStyle icon;
-                w.Image(x + 3.0f, y + 3.0f, 18, 18, n.layer + 1, std::string("mcres:effect_") + info.texture + ".png", icon);
+                w.Image(x + 3.0f, y + 3.0f, 18, 18, n.layer + 1,
+                        std::string("mcres:effect_") + info.texture + ".png", icon);
             }
         }
 
@@ -521,21 +584,30 @@ namespace perlin::ui {
             const float y0 = n.ay + n.h - 5.0f;
             ImageStyle bg;
             bg.hasNine = true;
-            bg.nine[0] = 5; bg.nine[1] = 1; bg.nine[2] = 5; bg.nine[3] = 1;
+            bg.nine[0] = 5;
+            bg.nine[1] = 1;
+            bg.nine[2] = 5;
+            bg.nine[3] = 1;
             w.Image(x0, y0, 182, 5, n.layer, "textures/ui/locator_bg", bg);
             const float center = std::ceil((n.w - 9.0f) / 2.0f) + n.ax;
             for (const LocatorMarker& m : s.locator) {
-                const int index = m.distance < 128.0f ? 0 : m.distance >= 332.0f ? 3 : 1 + std::min(1, static_cast<int>((m.distance - 128.0f) / (332.0f - 128.0f) * 2.0f));
+                const int index =
+                    m.distance < 128.0f ? 0
+                    : m.distance >= 332.0f
+                        ? 3
+                        : 1 + std::min(1, static_cast<int>((m.distance - 128.0f) / (332.0f - 128.0f) * 2.0f));
                 const float x = center + std::floor(m.angle * 173.0f / 2.0f / 60.0f);
                 ImageStyle dot;
                 dot.r = static_cast<float>((m.color >> 16) & 255) / 255.0f;
                 dot.g = static_cast<float>((m.color >> 8) & 255) / 255.0f;
                 dot.b = static_cast<float>(m.color & 255) / 255.0f;
-                w.Image(x, y0 - 2.0f, 9, 9, n.layer + 1, "textures/ui/locator_bar_dot_" + std::to_string(index), dot);
+                w.Image(x, y0 - 2.0f, 9, 9, n.layer + 1,
+                        "textures/ui/locator_bar_dot_" + std::to_string(index), dot);
                 if (m.pitch != 0) {
                     ImageStyle arrow;
                     w.Image(x + 1.0f, y0 + (m.pitch > 0 ? -6.0f : 6.0f), 7, 5, n.layer + 2,
-                            m.pitch > 0 ? "textures/ui/locator_arrow_up" : "textures/ui/locator_arrow_down", arrow);
+                            m.pitch > 0 ? "textures/ui/locator_arrow_up" : "textures/ui/locator_arrow_down",
+                            arrow);
                 }
             }
         }
@@ -590,10 +662,10 @@ namespace perlin::ui {
         Reg("progress_bar_renderer", [s](const LNode& n, RmlWriter& w) { ProgressBar(*s, n, w); });
         Reg("locator_bar", [s](const LNode& n, RmlWriter& w) { LocatorBar(*s, n, w); });
         Reg("mob_effects_renderer", [s](const LNode& n, RmlWriter& w) { MobEffects(*s, n, w); });
-        for (const char* name : {"horse_jump_renderer", "dash_renderer",
-                                 "vignette_renderer", "camera_renderer", "hud_player_renderer", "horse_heart_renderer",
-                                 "cooldown_renderer", "editor_gizmo_renderer", "editor_compass_renderer",
-                                 "editor_volume_highlight_renderer", "progress_indicator_renderer"})
+        for (const char* name :
+             {"horse_jump_renderer", "dash_renderer", "vignette_renderer", "camera_renderer",
+              "hud_player_renderer", "horse_heart_renderer", "cooldown_renderer", "editor_gizmo_renderer",
+              "editor_compass_renderer", "editor_volume_highlight_renderer", "progress_indicator_renderer"})
             emitter.Register(name, [](const LNode&, RmlWriter&) {});
     }
 
@@ -605,10 +677,16 @@ namespace perlin::ui {
         std::atomic<uint64_t> gFilterVersion{0};
     }
 
-    uint64_t HudFilterVersion() { return gFilterVersion.load(); }
-    void BumpHudFilter() { gFilterVersion++; }
+    uint64_t HudFilterVersion() {
+        return gFilterVersion.load();
+    }
+    void BumpHudFilter() {
+        gFilterVersion++;
+    }
 
-    void SetHudElementFilter(HudElementFilter filter) { ElementFilter() = std::move(filter); }
+    void SetHudElementFilter(HudElementFilter filter) {
+        ElementFilter() = std::move(filter);
+    }
 
     bool FilterHudElement(std::string_view renderer, float& dx, float& dy) {
         const HudElementFilter& f = ElementFilter();

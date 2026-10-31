@@ -14,7 +14,6 @@
 namespace perlin {
     namespace {
 
-
         bool ParseHex(const std::string& hex, std::array<float, 3>& out) {
             if (hex.size() != 7 || hex[0] != '#')
                 return false;
@@ -67,7 +66,8 @@ namespace perlin {
             bool fromPack = false;
             if (TexturePack::Instance().Active())
                 for (const char* ext : {".png", ".tga"})
-                    if (TexturePack::Instance().Load(std::string("textures/colormap/") + m + ext, tex) && tex.width > 0 && tex.height > 0) {
+                    if (TexturePack::Instance().Load(std::string("textures/colormap/") + m + ext, tex) &&
+                        tex.width > 0 && tex.height > 0) {
                         fromPack = true;
                         break;
                     }
@@ -126,8 +126,8 @@ namespace perlin {
 
         {
             std::error_code dirEc;
-            for (const auto& dirEntry : std::filesystem::directory_iterator(
-                     vanillaRpRoot + "/../behavior_pack/biomes", dirEc)) {
+            for (const auto& dirEntry :
+                 std::filesystem::directory_iterator(vanillaRpRoot + "/../behavior_pack/biomes", dirEc)) {
                 if (!dirEntry.path().filename().string().ends_with(".biome.json"))
                     continue;
                 {
@@ -166,15 +166,18 @@ namespace perlin {
                 rule.grass = c;
                 rule.hasGrass = true;
             }
-            if (const auto v = components["minecraft:foliage_appearance"]["color"]; ResolveTint(v, mapAvg, c)) {
+            if (const auto v = components["minecraft:foliage_appearance"]["color"];
+                ResolveTint(v, mapAvg, c)) {
                 rule.foliage = c;
                 rule.hasFoliage = true;
             }
-            if (const auto v = components["minecraft:dry_foliage_color"]["color"]; ResolveTint(v, mapAvg, c)) {
+            if (const auto v = components["minecraft:dry_foliage_color"]["color"];
+                ResolveTint(v, mapAvg, c)) {
                 rule.dryFoliage = c;
                 rule.hasDry = true;
             }
-            if (const auto v = components["minecraft:water_appearance"]["surface_color"]; v.isString() && ParseHex(v.str(), c)) {
+            if (const auto v = components["minecraft:water_appearance"]["surface_color"];
+                v.isString() && ParseHex(v.str(), c)) {
                 rule.water = c;
                 rule.hasWater = true;
                 if (packLayer) {
@@ -187,7 +190,8 @@ namespace perlin {
         };
         {
             std::error_code dirEc;
-            for (const auto& dirEntry : std::filesystem::directory_iterator(vanillaRpRoot + "/biomes", dirEc)) {
+            for (const auto& dirEntry :
+                 std::filesystem::directory_iterator(vanillaRpRoot + "/biomes", dirEc)) {
                 if (!dirEntry.path().filename().string().ends_with(".client_biome.json"))
                     continue;
                 applyClientBiome(file::Read(dirEntry.path().string()), false);
@@ -230,9 +234,14 @@ namespace perlin {
         };
         std::array<float, 3> plainsG = Grass("minecraft:plains");
         std::array<float, 3> plainsF = Foliage("minecraft:plains");
-        Log("biomes", "colormaps={} rules={} climates={} plainsGrass=({},{},{}) plainsFoliage=({},{},{}) grassAvg=({},{},{}) water=({},{},{})", mapAvg.size(), rules.size(), climate.size(), plainsG[0], plainsG[1], plainsG[2], plainsF[0], plainsF[1], plainsF[2], avg("grass", {0, 0, 0})[0], avg("grass", {0, 0, 0})[1], avg("grass", {0, 0, 0})[2], defaultWater[0], defaultWater[1], defaultWater[2]);
+        Log("biomes",
+            "colormaps={} rules={} climates={} plainsGrass=({},{},{}) plainsFoliage=({},{},{}) "
+            "grassAvg=({},{},{}) water=({},{},{})",
+            mapAvg.size(), rules.size(), climate.size(), plainsG[0], plainsG[1], plainsG[2], plainsF[0],
+            plainsF[1], plainsF[2], avg("grass", {0, 0, 0})[0], avg("grass", {0, 0, 0})[1],
+            avg("grass", {0, 0, 0})[2], defaultWater[0], defaultWater[1], defaultWater[2]);
 
-        bool complete = mapRGB.count("grass") && mapRGB.count("foliage") && !climate.empty() &&
+        bool complete = mapRGB.contains("grass") && mapRGB.contains("foliage") && !climate.empty() &&
                         !rules.empty() && !idToName.empty();
         if (!complete && attempts < 2)
             return false;
@@ -346,12 +355,13 @@ namespace perlin {
         return 1;
     }
 
-
     std::array<float, 3> ResolveDefaultWater(const std::string& vanillaRpRoot) {
         std::array<float, 3> water = {0.266f, 0.686f, 0.961f};
-        if (const auto document = json::Document::Parse(file::Read(vanillaRpRoot + "/biomes_client.json"), true)) {
+        if (const auto document =
+                json::Document::Parse(file::Read(vanillaRpRoot + "/biomes_client.json"), true)) {
             const json::View biomes = document->root()["biomes"];
-            const json::View pick = biomes.contains("default") ? biomes["default"] : biomes["minecraft:plains"];
+            const json::View pick =
+                biomes.contains("default") ? biomes["default"] : biomes["minecraft:plains"];
             std::array<float, 3> parsed;
             if (ParseHex(pick["water_surface_color"].str(), parsed))
                 water = parsed;

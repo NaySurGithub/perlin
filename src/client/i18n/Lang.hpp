@@ -15,9 +15,13 @@ namespace perlin::i18n {
     public:
         static Lang& Get();
 
-        void Configure(const std::string& resourceRoot, const std::string& dataDir, const std::string& language);
+        void Configure(const std::string& resourceRoot, const std::string& dataDir,
+                       const std::string& language);
 
-        void Invalidate() { std::lock_guard lock(mutex); configured = false; }
+        void Invalidate() {
+            std::lock_guard lock(mutex);
+            configured = false;
+        }
 
         const std::string& Language() const { return code; }
         uint64_t Version() const { return version; }
@@ -43,6 +47,10 @@ namespace perlin::i18n {
         bool configured = false;
     };
 
-    inline std::string Tr(const std::string& key) { return Lang::Get().Tr(key); }
-    inline std::string Tr(const std::string& key, const std::vector<std::string>& args) { return Lang::Get().Tr(key, args); }
+    inline std::string Tr(const std::string& key) {
+        return Lang::Get().Tr(key);
+    }
+    inline std::string Tr(const std::string& key, const std::vector<std::string>& args) {
+        return Lang::Get().Tr(key, args);
+    }
 }

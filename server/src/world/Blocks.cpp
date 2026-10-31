@@ -14,9 +14,12 @@ namespace perlin::server {
             std::string k = name;
             for (const auto& [key, v] : states) {
                 k += '|' + key + '=';
-                if (const bool* b = std::get_if<bool>(&v)) k += *b ? "t" : "f";
-                else if (const int32_t* i = std::get_if<int32_t>(&v)) k += std::to_string(*i);
-                else k += std::get<std::string>(v);
+                if (const bool* b = std::get_if<bool>(&v))
+                    k += *b ? "t" : "f";
+                else if (const int32_t* i = std::get_if<int32_t>(&v))
+                    k += std::to_string(*i);
+                else
+                    k += std::get<std::string>(v);
             }
             return k;
         }
@@ -68,7 +71,8 @@ namespace perlin::server {
     }
 
     uint16_t BlockRegistry::Intern(const std::string& name, StateList states) {
-        std::sort(states.begin(), states.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        std::sort(states.begin(), states.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first; });
         const std::string key = Key(name, states);
         std::lock_guard lock(mutex);
         if (const auto it = byKey.find(key); it != byKey.end())

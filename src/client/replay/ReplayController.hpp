@@ -66,7 +66,9 @@ namespace perlin::replay {
         void AddPlaybackMarker(const std::string& name, uint32_t atMs);
         bool SaveMarkers(std::string& error);
         bool SaveArchiveFile(const std::string& name, const std::string& content, std::string& error);
-        std::string ReadArchiveFile(const std::string& name) { return reader ? reader->ReadFile(name) : std::string(); }
+        std::string ReadArchiveFile(const std::string& name) {
+            return reader ? reader->ReadFile(name) : std::string();
+        }
         Reader* GetReader() { return reader.get(); }
 
         CameraMode cameraMode = CameraMode::Free;

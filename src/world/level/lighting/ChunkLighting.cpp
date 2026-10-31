@@ -86,7 +86,8 @@ namespace perlin {
                     const int cost = grid.opacity[i];
                     if (cost >= kMaxLight)
                         level = 0;
-                    else if (row < rows - 1 && Occluded(grid, static_cast<uint32_t>(i + kLayer), static_cast<uint32_t>(i), 0))
+                    else if (row < rows - 1 &&
+                             Occluded(grid, static_cast<uint32_t>(i + kLayer), static_cast<uint32_t>(i), 0))
                         level = 0;
                     else
                         level = std::max(0, level - cost);
@@ -102,10 +103,14 @@ namespace perlin {
             for (int x = 0; x < kSpan; x++) {
                 const size_t c = static_cast<size_t>(z) * kSpan + x;
                 int top = colTop[c];
-                if (x > 0) top = std::max<int>(top, colTop[c - 1]);
-                if (x < kSpan - 1) top = std::max<int>(top, colTop[c + 1]);
-                if (z > 0) top = std::max<int>(top, colTop[c - kSpan]);
-                if (z < kSpan - 1) top = std::max<int>(top, colTop[c + kSpan]);
+                if (x > 0)
+                    top = std::max<int>(top, colTop[c - 1]);
+                if (x < kSpan - 1)
+                    top = std::max<int>(top, colTop[c + 1]);
+                if (z > 0)
+                    top = std::max<int>(top, colTop[c - kSpan]);
+                if (z < kSpan - 1)
+                    top = std::max<int>(top, colTop[c + kSpan]);
                 const int scanTop = std::min(rows - 1, top + 1);
                 for (int row = 0; row <= scanTop; row++) {
                     const uint32_t i = static_cast<uint32_t>(static_cast<size_t>(row) * kLayer + c);
@@ -166,7 +171,8 @@ namespace perlin {
         }
     }
 
-    bool ChunkLighting::Compute(Level& level, const ChunkPos& pos, int yLo, int yHi, Result& out, bool tryLock) {
+    bool ChunkLighting::Compute(Level& level, const ChunkPos& pos, int yLo, int yHi, Result& out,
+                                bool tryLock) {
         Scratch& scratch = Local();
         Grid& grid = scratch.grid;
 
@@ -205,10 +211,11 @@ namespace perlin {
                 for (int z = 0; z < kSpan; z++)
                     for (int cx = 0; cx < 3; cx++)
                         if (const Chunk* src = around[z >> 4][cx])
-                            src->CopyRun(y, z & 15, 0, 16,
-                                         &grid.ids[static_cast<size_t>(row) * kLayer + static_cast<size_t>(z) * kSpan +
-                                                   static_cast<size_t>(cx) * 16],
-                                         nullptr, nullptr);
+                            src->CopyRun(
+                                y, z & 15, 0, 16,
+                                &grid.ids[static_cast<size_t>(row) * kLayer + static_cast<size_t>(z) * kSpan +
+                                          static_cast<size_t>(cx) * 16],
+                                nullptr, nullptr);
             }
         }
 

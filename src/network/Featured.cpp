@@ -16,7 +16,6 @@ namespace perlin::featured {
         constexpr const char* kDiscoveryHost = "client.discovery.minecraft-services.net";
         constexpr const char* kFallbackHost = "gatherings-secondary.franchise.minecraft-services.net";
 
-
         std::string Localized(const json::View dict) {
             for (const char* key : {"en-US", "en_US", "NEUTRAL", "neutral"})
                 if (dict[key].isString())
@@ -25,7 +24,9 @@ namespace perlin::featured {
             return {};
         }
 
-        bool ValidUrl(const std::string& u) { return u.starts_with("https://") || u.starts_with("http://"); }
+        bool ValidUrl(const std::string& u) {
+            return u.starts_with("https://") || u.starts_with("http://");
+        }
 
         std::string Image(const json::View images, std::initializer_list<const char*> tags) {
             for (const char* tag : tags)
@@ -33,8 +34,10 @@ namespace perlin::featured {
                     if (!image["Tag"].isString() || !image["Url"].isString())
                         continue;
                     std::string a = image["Tag"].str(), b = tag;
-                    std::transform(a.begin(), a.end(), a.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                    std::transform(b.begin(), b.end(), b.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    std::transform(a.begin(), a.end(), a.begin(),
+                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    std::transform(b.begin(), b.end(), b.begin(),
+                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                     if (a == b && ValidUrl(image["Url"].str()))
                         return image["Url"].str();
                 }
@@ -42,13 +45,16 @@ namespace perlin::featured {
         }
 
         std::string GatheringsHost() {
-            const http::Response r = http::Request(kDiscoveryHost, 443, true, "GET",
-                                                   std::string("/api/v1.0/discovery/MinecraftPE/builds/") + kBedrockVersion, {}, {},
-                                                   {{"Accept", "application/json"}}, 10);
+            const http::Response r =
+                http::Request(kDiscoveryHost, 443, true, "GET",
+                              std::string("/api/v1.0/discovery/MinecraftPE/builds/") + kBedrockVersion, {},
+                              {}, {{"Accept", "application/json"}}, 10);
             if (r.status == 200)
                 if (auto doc = json::Document::Parse(r.body)) {
-                    const json::View uri = doc->root()["result"]["serviceEnvironments"]["gatherings"]["prod"]["serviceUri"];
-                    const json::View alt = doc->root()["serviceEnvironments"]["gatherings"]["prod"]["serviceUri"];
+                    const json::View uri =
+                        doc->root()["result"]["serviceEnvironments"]["gatherings"]["prod"]["serviceUri"];
+                    const json::View alt =
+                        doc->root()["serviceEnvironments"]["gatherings"]["prod"]["serviceUri"];
                     std::string s = uri.isString() ? uri.str() : alt.isString() ? alt.str() : std::string();
                     if (s.starts_with("https://")) {
                         s.erase(0, 8);
@@ -68,7 +74,8 @@ namespace perlin::featured {
         if (!account.ServiceSession(kBedrockVersion, info, error))
             return false;
         const std::string host = GatheringsHost();
-        const http::Response r = http::Request(host, 443, true, "POST", "/api/v2.0/discovery/blob/client", "{}", "application/json",
+        const http::Response r = http::Request(host, 443, true, "POST", "/api/v2.0/discovery/blob/client",
+                                               "{}", "application/json",
                                                {{"Authorization", info.authorization},
                                                 {"Accept", "application/json"},
                                                 {"Accept-Language", "en-US"},
@@ -87,7 +94,8 @@ namespace perlin::featured {
         std::vector<Ranked> found;
         std::set<std::string> seen;
         for (const json::View item : doc->root()["data"]["Items"].items()) {
-            if (item["IsHidden"].boolean() || !item["ContentType"].isString() || item["ContentType"].str() != "3PP_V2.0")
+            if (item["IsHidden"].boolean() || !item["ContentType"].isString() ||
+                item["ContentType"].str() != "3PP_V2.0")
                 continue;
             json::View props = item["DisplayProperties"];
             std::optional<json::Document> inner;

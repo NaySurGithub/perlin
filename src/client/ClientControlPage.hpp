@@ -2,7 +2,7 @@
 #include <string_view>
 
 namespace perlin {
-inline constexpr std::string_view kClientControlPage = R"HTML(<!doctype html>
+    inline constexpr std::string_view kClientControlPage = R"HTML(<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Perlin local control</title>
 <style>

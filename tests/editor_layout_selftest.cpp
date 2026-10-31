@@ -32,7 +32,8 @@ int main() {
             key = key || h.id == "key:0:1";
             ruler = ruler || h.id == "ruler";
             assert(h.w > 0 && h.h > 0);
-            if (h.x + h.w > l.guiW + 1) std::fprintf(stderr, "overflow gw=%d id=%s x=%.0f w=%.0f\n", gw, h.id.c_str(), h.x, h.w);
+            if (h.x + h.w > l.guiW + 1)
+                std::fprintf(stderr, "overflow gw=%d id=%s x=%.0f w=%.0f\n", gw, h.id.c_str(), h.x, h.w);
             assert(h.x + h.w <= l.guiW + 1);
         }
         assert(play && key && ruler);

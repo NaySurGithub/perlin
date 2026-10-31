@@ -40,7 +40,9 @@ namespace perlin::entity {
         void Initialize(RenderContext& renderer);
         std::pair<float, float> HitBox(const Entity& e) const;
         glm::dvec3 SeatPosition(const Entity& vehicle, bool playerRider = true) const;
-        bool CollisionBoxOf(const std::string& type, float& width, float& height) const { return assets.CollisionBox(type, width, height); }
+        bool CollisionBoxOf(const std::string& type, float& width, float& height) const {
+            return assets.CollisionBox(type, width, height);
+        }
         void SetItemRenderer(HandRenderer* items) { itemRenderer = items; }
         void ResolveSeats(std::vector<Entity>& entities) const;
         void Shutdown();
@@ -83,13 +85,13 @@ namespace perlin::entity {
                 glm::vec3 scale{1.0f};
                 float tint[4] = {1, 1, 1, 1};
                 std::string texture;
-                int nameTag = 0;  // 0 keep, 1 hide, 2 replace
+                int nameTag = 0; // 0 keep, 1 hide, 2 replace
                 std::string nameText;
             };
             std::function<const ModStyle*(const Entity&)> modStyle;
             // mod world triangles; texture is a renderer texture id (0 for plain colour)
             struct ModMesh {
-                std::vector<UiVertex> vertices;  // relative to `origin`, three per triangle
+                std::vector<UiVertex> vertices; // relative to `origin`, three per triangle
                 glm::dvec3 origin{0.0};
                 uint32_t texture = 0;
                 bool depthTest = true;
@@ -121,7 +123,8 @@ namespace perlin::entity {
             glm::vec3 light{1.0f};
         };
         void RenderFirstPerson(const Entity& self, const FrameIn& in, const FpState& fp);
-        void RenderDoll(const Entity& doll, const FrameIn& in, float cx, float feetY, float pxPerBlock, const int clip[4]);
+        void RenderDoll(const Entity& doll, const FrameIn& in, float cx, float feetY, float pxPerBlock,
+                        const int clip[4]);
 
         size_t Drawn() const { return drawn; }
         size_t Considered() const { return considered; }
@@ -142,9 +145,10 @@ namespace perlin::entity {
             bool body = true;
         };
         bool Build(const Entity& e, View& v, const FrameIn& in, std::vector<Layer>& layers, float& scale);
-        void RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, attachable::Pose& pose, const FrameIn& in,
-                           const attachable::Geometry* bindGeometry);
-        void Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale, const FrameIn& in);
+        void RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, attachable::Pose& pose,
+                           const FrameIn& in, const attachable::Geometry* bindGeometry);
+        void Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale,
+                  const FrameIn& in);
         const FpState* fp = nullptr;
         bool shadowOnlyPass = false;
         glm::vec3 modScale{1.0f};

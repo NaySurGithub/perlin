@@ -12,5 +12,6 @@ namespace perlin {
         return lower == "vibrant visuals";
     }
     const char* BundledShaderMeta();
-    bool BundledShaderBytes(const std::string& backend, const std::string& shader, const uint8_t*& data, size_t& size);
+    bool BundledShaderBytes(const std::string& backend, const std::string& shader, const uint8_t*& data,
+                            size_t& size);
 }

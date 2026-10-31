@@ -32,7 +32,8 @@ namespace perlin::packetlog {
         std::string Clock() {
             const auto now = std::chrono::system_clock::now();
             const std::time_t t = std::chrono::system_clock::to_time_t(now);
-            const int ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000);
+            const int ms = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000);
             std::tm tm{};
 #ifdef _WIN32
             localtime_s(&tm, &t);
@@ -119,7 +120,8 @@ namespace perlin::packetlog {
             body.resize(kMaxLine);
             body += "...";
         }
-        std::fprintf(file, "%s %s %s(%u) %zuB %s\n", Clock().c_str(), outgoing ? ">>" : "<<", name.c_str(), id, size, body.c_str());
+        std::fprintf(file, "%s %s %s(%u) %zuB %s\n", Clock().c_str(), outgoing ? ">>" : "<<", name.c_str(),
+                     id, size, body.c_str());
         std::fflush(file);
     }
 }

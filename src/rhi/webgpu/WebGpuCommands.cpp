@@ -4,8 +4,12 @@
 
 namespace rhi::webgpu {
     namespace {
-        WGPULoadOp ToLoad(LoadOp op) { return op == LoadOp::Load ? WGPULoadOp_Load : WGPULoadOp_Clear; }
-        WGPUStoreOp ToStore(StoreOp op) { return op == StoreOp::Store ? WGPUStoreOp_Store : WGPUStoreOp_Discard; }
+        WGPULoadOp ToLoad(LoadOp op) {
+            return op == LoadOp::Load ? WGPULoadOp_Load : WGPULoadOp_Clear;
+        }
+        WGPUStoreOp ToStore(StoreOp op) {
+            return op == StoreOp::Store ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
+        }
     }
 
     WebGpuCommandList::~WebGpuCommandList() = default;
@@ -51,14 +55,19 @@ namespace rhi::webgpu {
 
     // barriers: the queue orders everything, so these only keep the statistics honest
 
-    void WebGpuCommandList::Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) {
+    void WebGpuCommandList::Barrier(std::span<const TextureBarrier> textures,
+                                    std::span<const BufferBarrier> buffers) {
         device.MutableStats().barriers += textures.size() + buffers.size();
     }
-    void WebGpuCommandList::UavBarrier(BufferHandle) { device.MutableStats().barriers++; }
-    void WebGpuCommandList::UavBarrier(TextureHandle) { device.MutableStats().barriers++; }
+    void WebGpuCommandList::UavBarrier(BufferHandle) {
+        device.MutableStats().barriers++;
+    }
+    void WebGpuCommandList::UavBarrier(TextureHandle) {
+        device.MutableStats().barriers++;
+    }
 
-
-    void WebGpuCommandList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) {
+    void WebGpuCommandList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src,
+                                       uint64_t srcOffset, uint64_t size) {
         EndPass();
         Buffer* d = device.buffers.Get(dst);
         Buffer* s = device.buffers.Get(src);
@@ -76,10 +85,12 @@ namespace rhi::webgpu {
             n = size & ~3ull;
         if (!n)
             return;
-        wgpuCommandEncoderCopyBufferToBuffer(encoder.Get(), s->buffer.Get(), srcOffset, d->buffer.Get(), dstOffset, n);
+        wgpuCommandEncoderCopyBufferToBuffer(encoder.Get(), s->buffer.Get(), srcOffset, d->buffer.Get(),
+                                             dstOffset, n);
     }
 
-    void WebGpuCommandList::CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) {
+    void WebGpuCommandList::CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                                std::span<const BufferTextureCopy> regions) {
         EndPass();
         Texture* t = device.textures.Get(dst);
         Buffer* b = device.buffers.Get(src);
@@ -105,7 +116,8 @@ namespace rhi::webgpu {
         }
     }
 
-    void WebGpuCommandList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) {
+    void WebGpuCommandList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                                std::span<const BufferTextureCopy> regions) {
         EndPass();
         Texture* t = device.textures.Get(src);
         Buffer* b = device.buffers.Get(dst);
@@ -131,7 +143,8 @@ namespace rhi::webgpu {
         }
     }
 
-    void WebGpuCommandList::CopyTexture(TextureHandle dst, TextureHandle src, std::span<const TextureCopy> regions) {
+    void WebGpuCommandList::CopyTexture(TextureHandle dst, TextureHandle src,
+                                        std::span<const TextureCopy> regions) {
         EndPass();
         Texture* d = device.textures.Get(dst);
         Texture* s = device.textures.Get(src);
@@ -166,7 +179,8 @@ namespace rhi::webgpu {
             device.ReportError("FillBuffer: webgpu can only clear to zero");
             return;
         }
-        wgpuCommandEncoderClearBuffer(encoder.Get(), b->buffer.Get(), offset, size ? AlignUp(size, 4) : WGPU_WHOLE_SIZE);
+        wgpuCommandEncoderClearBuffer(encoder.Get(), b->buffer.Get(), offset,
+                                      size ? AlignUp(size, 4) : WGPU_WHOLE_SIZE);
     }
 
     void WebGpuCommandList::ResolveTexture(TextureHandle dst, TextureHandle src) {
@@ -192,7 +206,6 @@ namespace rhi::webgpu {
         wgpuRenderPassEncoderEnd(pass);
         wgpuRenderPassEncoderRelease(pass);
     }
-
 
     void WebGpuCommandList::BeginRendering(const RenderingDesc& desc) {
         EndPass();
@@ -227,7 +240,8 @@ namespace rhi::webgpu {
                 device.ReportError("BeginRendering: depth attachment is gone");
                 return;
             }
-            depth.view = device.ViewOf(*t, {desc.depth.mip, 1, desc.depth.layer, 1}, TextureDim::Tex2D, Format::Unknown, false, true);
+            depth.view = device.ViewOf(*t, {desc.depth.mip, 1, desc.depth.layer, 1}, TextureDim::Tex2D,
+                                       Format::Unknown, false, true);
             if (desc.depth.readOnly) {
                 depth.depthReadOnly = true;
                 depth.stencilReadOnly = HasStencil(t->desc.format);
@@ -262,8 +276,9 @@ namespace rhi::webgpu {
         stencilDirty = true;
     }
 
-    void WebGpuCommandList::EndRendering() { EndPass(); }
-
+    void WebGpuCommandList::EndRendering() {
+        EndPass();
+    }
 
     void WebGpuCommandList::SetPipeline(PipelineHandle p) {
         pipeline = p;
@@ -271,7 +286,8 @@ namespace rhi::webgpu {
         dirtySets = 0xF;
     }
 
-    void WebGpuCommandList::SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) {
+    void WebGpuCommandList::SetBindGroup(uint32_t set, BindGroupHandle group,
+                                         std::span<const uint32_t> dynamicOffsets) {
         if (set >= kMaxBindGroups)
             return;
         BoundSet& s = sets[set];
@@ -373,7 +389,8 @@ namespace rhi::webgpu {
                 device.ReportError("draw: vertex stream " + std::to_string(i) + " is not bound");
                 return false;
             }
-            wgpuRenderPassEncoderSetVertexBuffer(render.Get(), i, b->buffer.Get(), vertex[i].offset, b->gpuSize - vertex[i].offset);
+            wgpuRenderPassEncoderSetVertexBuffer(render.Get(), i, b->buffer.Get(), vertex[i].offset,
+                                                 b->gpuSize - vertex[i].offset);
         }
         vertexDirty = 0;
         if (viewportDirty && viewportSet) {
@@ -382,7 +399,8 @@ namespace rhi::webgpu {
                 v.width = (std::min)(v.width, static_cast<float>(passWidth) - v.x);
                 v.height = (std::min)(v.height, static_cast<float>(passHeight) - v.y);
             }
-            wgpuRenderPassEncoderSetViewport(render.Get(), v.x, v.y, v.width, v.height, v.minDepth, v.maxDepth);
+            wgpuRenderPassEncoderSetViewport(render.Get(), v.x, v.y, v.width, v.height, v.minDepth,
+                                             v.maxDepth);
             viewportDirty = false;
         }
         if (scissorDirty && scissorSet) {
@@ -390,10 +408,13 @@ namespace rhi::webgpu {
             r.x = (std::max)(r.x, 0);
             r.y = (std::max)(r.y, 0);
             if (passWidth) {
-                r.width = static_cast<uint32_t>(std::max<int64_t>(0, std::min<int64_t>(r.width, static_cast<int64_t>(passWidth) - r.x)));
-                r.height = static_cast<uint32_t>(std::max<int64_t>(0, std::min<int64_t>(r.height, static_cast<int64_t>(passHeight) - r.y)));
+                r.width = static_cast<uint32_t>(
+                    std::max<int64_t>(0, std::min<int64_t>(r.width, static_cast<int64_t>(passWidth) - r.x)));
+                r.height = static_cast<uint32_t>(std::max<int64_t>(
+                    0, std::min<int64_t>(r.height, static_cast<int64_t>(passHeight) - r.y)));
             }
-            wgpuRenderPassEncoderSetScissorRect(render.Get(), static_cast<uint32_t>(r.x), static_cast<uint32_t>(r.y), r.width, r.height);
+            wgpuRenderPassEncoderSetScissorRect(render.Get(), static_cast<uint32_t>(r.x),
+                                                static_cast<uint32_t>(r.y), r.width, r.height);
             scissorDirty = false;
         }
         if (stencilDirty) {
@@ -403,15 +424,16 @@ namespace rhi::webgpu {
         return true;
     }
 
-    void WebGpuCommandList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
+    void WebGpuCommandList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                                 uint32_t firstInstance) {
         if (!PrepareDraw())
             return;
         wgpuRenderPassEncoderDraw(render.Get(), vertexCount, instanceCount, firstVertex, firstInstance);
         device.MutableStats().draws++;
     }
 
-    void WebGpuCommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset,
-                                        uint32_t firstInstance) {
+    void WebGpuCommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                                        int32_t vertexOffset, uint32_t firstInstance) {
         if (!PrepareDraw())
             return;
         if (indexDirty) {
@@ -420,15 +442,19 @@ namespace rhi::webgpu {
                 device.ReportError("DrawIndexed: no index buffer");
                 return;
             }
-            wgpuRenderPassEncoderSetIndexBuffer(render.Get(), b->buffer.Get(), indexType == IndexType::U16 ? WGPUIndexFormat_Uint16 : WGPUIndexFormat_Uint32,
+            wgpuRenderPassEncoderSetIndexBuffer(render.Get(), b->buffer.Get(),
+                                                indexType == IndexType::U16 ? WGPUIndexFormat_Uint16
+                                                                            : WGPUIndexFormat_Uint32,
                                                 indexOffset, b->gpuSize - indexOffset);
             indexDirty = false;
         }
-        wgpuRenderPassEncoderDrawIndexed(render.Get(), indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+        wgpuRenderPassEncoderDrawIndexed(render.Get(), indexCount, instanceCount, firstIndex, vertexOffset,
+                                         firstInstance);
         device.MutableStats().draws++;
     }
 
-    void WebGpuCommandList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) {
+    void WebGpuCommandList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                                uint32_t stride) {
         if (!PrepareDraw())
             return;
         Buffer* a = device.buffers.Get(args);
@@ -438,22 +464,24 @@ namespace rhi::webgpu {
             return;
         }
         if (indexDirty) {
-            wgpuRenderPassEncoderSetIndexBuffer(render.Get(), ib->buffer.Get(), indexType == IndexType::U16 ? WGPUIndexFormat_Uint16 : WGPUIndexFormat_Uint32,
+            wgpuRenderPassEncoderSetIndexBuffer(render.Get(), ib->buffer.Get(),
+                                                indexType == IndexType::U16 ? WGPUIndexFormat_Uint16
+                                                                            : WGPUIndexFormat_Uint32,
                                                 indexOffset, ib->gpuSize - indexOffset);
             indexDirty = false;
         }
         // no multi-draw in core webgpu: one call per command
         for (uint32_t i = 0; i < maxDraws; i++)
-            wgpuRenderPassEncoderDrawIndexedIndirect(render.Get(), a->buffer.Get(), offset + static_cast<uint64_t>(i) * stride);
+            wgpuRenderPassEncoderDrawIndexedIndirect(render.Get(), a->buffer.Get(),
+                                                     offset + static_cast<uint64_t>(i) * stride);
         device.MutableStats().indirectDraws += maxDraws;
     }
 
-    void WebGpuCommandList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle, uint64_t, uint32_t maxDraws,
-                                                     uint32_t stride) {
+    void WebGpuCommandList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle,
+                                                     uint64_t, uint32_t maxDraws, uint32_t stride) {
         // the count lives on the gpu and webgpu cannot read it back into a draw: run every slot, the culling pass zeroes unused ones
         DrawIndexedIndirect(args, offset, maxDraws, stride);
     }
-
 
     void WebGpuCommandList::Dispatch(uint32_t x, uint32_t y, uint32_t z) {
         const Pipeline* p = device.pipelines.Get(pipeline);
@@ -463,7 +491,8 @@ namespace rhi::webgpu {
         }
         if (!compute) {
             EndPass();
-            compute = Owned<WGPUComputePassEncoder>(wgpuCommandEncoderBeginComputePass(encoder.Get(), nullptr));
+            compute =
+                Owned<WGPUComputePassEncoder>(wgpuCommandEncoderBeginComputePass(encoder.Get(), nullptr));
             dirtySets = 0xF;
             pipelineDirty = true;
         }
@@ -480,7 +509,8 @@ namespace rhi::webgpu {
             uint32_t pickedCount = 0;
             if (ns)
                 for (uint32_t i = 0; i < ns->dynamicPick.size() && i < kMaxDynamicOffsets; i++)
-                    picked[pickedCount++] = ns->dynamicPick[i] < sets[s].offsetCount ? sets[s].offsets[ns->dynamicPick[i]] : 0;
+                    picked[pickedCount++] =
+                        ns->dynamicPick[i] < sets[s].offsetCount ? sets[s].offsets[ns->dynamicPick[i]] : 0;
             if (!group) {
                 device.ReportError("Dispatch: set " + std::to_string(s) + " is not bound");
                 return;

@@ -21,8 +21,7 @@ namespace perlin::http {
     const std::string& AndroidCaBundle();
 #endif
 
-    template <class HttpClient>
-    void UseSystemCa(HttpClient& cli) {
+    template <class HttpClient> void UseSystemCa(HttpClient& cli) {
 #if defined(__ANDROID__)
         const std::string& pem = AndroidCaBundle();
         if (!pem.empty()) {
@@ -35,8 +34,8 @@ namespace perlin::http {
             cli.set_ca_cert_path(file, dir);
     }
 
-    template <class HttpResult>
-    std::string Describe(const HttpResult& res);
+    template <class HttpResult> std::string Describe(const HttpResult& res);
 
-    Response GetUrl(const std::string& url, const std::map<std::string, std::string>& headers = {}, int timeoutSecs = 60);
+    Response GetUrl(const std::string& url, const std::map<std::string, std::string>& headers = {},
+                    int timeoutSecs = 60);
 }

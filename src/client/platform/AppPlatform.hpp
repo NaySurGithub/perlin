@@ -44,8 +44,13 @@ public:
     virtual void SetTitle(const std::string& title) { (void)title; }
 
     virtual bool HasProgressWindow() const { return false; }
-    virtual void SetProgressWindow(bool visible, const std::string& title, const std::string& line1, const std::string& line2, float fraction) {
-        (void)visible; (void)title; (void)line1; (void)line2; (void)fraction;
+    virtual void SetProgressWindow(bool visible, const std::string& title, const std::string& line1,
+                                   const std::string& line2, float fraction) {
+        (void)visible;
+        (void)title;
+        (void)line1;
+        (void)line2;
+        (void)fraction;
     }
     virtual bool TakeProgressCancel() { return false; }
 
@@ -71,10 +76,16 @@ public:
     // a fresh native surface for the next graphics backend: windows and metal tie a window to the api that first presented to it,
     // so after a backend switch the old surface can keep showing its last frame; call with the old swapchain already destroyed
     virtual void RenewRenderSurface() {}
-    virtual bool PickFile(const std::string& kind) { (void)kind; return false; }
+    virtual bool PickFile(const std::string& kind) {
+        (void)kind;
+        return false;
+    }
 
     virtual void SetTouchState(const perlin::TouchState& state) { (void)state; }
-    virtual bool TakeTouchLayout(std::map<std::string, perlin::TouchPlace>& out) { (void)out; return false; }
+    virtual bool TakeTouchLayout(std::map<std::string, perlin::TouchPlace>& out) {
+        (void)out;
+        return false;
+    }
     virtual void DrawTouchOverlay(perlin::RenderContext& renderer) { (void)renderer; }
 
     virtual std::unique_ptr<perlin::RenderContext> CreateRenderContext() = 0;

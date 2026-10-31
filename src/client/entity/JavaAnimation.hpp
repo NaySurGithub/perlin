@@ -79,7 +79,8 @@ namespace perlin::entity::java {
                     rotation.previous = rotation.current;
                     rotation.current = Turn(rotation.current, facing, 0.3f);
                 } else
-                    rotation.PlayerTick(tx - tickX, tz - tickZ, Turn(lastHead, head, static_cast<float>(f)), swinging);
+                    rotation.PlayerTick(tx - tickX, tz - tickZ, Turn(lastHead, head, static_cast<float>(f)),
+                                        swinging);
                 tickX = tx;
                 tickZ = tz;
                 ++ticks;

@@ -51,7 +51,8 @@ namespace perlin {
     std::vector<uint16_t> FanIndices(int vertexCount);
     std::vector<uint16_t> QuadIndices(int quadCount);
 
-    CloudFrame ComputeCloudFrame(double cameraX, double cameraY, double cameraZ, float bottomY, double gameTicks,
-                                 const CloudTexture& texture);
-    CloudMesh BuildCloudMesh(const CloudTexture& texture, const CloudFrame& frame, bool fancy, int rangeChunks);
+    CloudFrame ComputeCloudFrame(double cameraX, double cameraY, double cameraZ, float bottomY,
+                                 double gameTicks, const CloudTexture& texture);
+    CloudMesh BuildCloudMesh(const CloudTexture& texture, const CloudFrame& frame, bool fancy,
+                             int rangeChunks);
 }

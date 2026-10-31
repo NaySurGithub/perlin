@@ -29,7 +29,9 @@ namespace perlin::server {
         // chunks per submit; the density buffer (393 KB a chunk) is sized for it
         constexpr uint32_t kBatch = 16;
         constexpr uint64_t kBlocksPerChunk = static_cast<uint64_t>(kHeight) * 256;
-        constexpr uint64_t kCornersPerChunk = static_cast<uint64_t>(vanilla::GpuProgram::kCornersXz) * vanilla::GpuProgram::kCornersXz * vanilla::GpuProgram::kCornersY;
+        constexpr uint64_t kCornersPerChunk = static_cast<uint64_t>(vanilla::GpuProgram::kCornersXz) *
+                                              vanilla::GpuProgram::kCornersXz *
+                                              vanilla::GpuProgram::kCornersY;
         // per column: the ground index and the biome
         constexpr uint64_t kColumnWords = 2;
 
@@ -39,8 +41,9 @@ namespace perlin::server {
 
         // what one submit brings back
         struct BatchOut {
-            std::vector<float> density;      // [chunk][x][z][y]; after the surface phase the bits are block ids instead
-            std::vector<uint32_t> columns;   // [chunk][x * 16 + z] -> ground index (as int), biome
+            std::vector<float>
+                density; // [chunk][x][z][y]; after the surface phase the bits are block ids instead
+            std::vector<uint32_t> columns; // [chunk][x * 16 + z] -> ground index (as int), biome
         };
 
         class GpuVanillaBackend final : public TerrainBackend, public DensityBackend {
@@ -70,7 +73,8 @@ namespace perlin::server {
             bool ThreadSafe() const override { return true; }
             bool FindSpawn(int& x, int& y, int& z) override { return cpu->FindSpawn(x, y, z); }
             // searching samples single points on the cpu's workers; the gpu is built for batches of whole chunks
-            bool LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel, int& x, int& y, int& z) override {
+            bool LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel,
+                             int& x, int& y, int& z) override {
                 return cpu->LocateBiome(biome, fromX, fromZ, radius, cancel, x, y, z);
             }
             bool HasBiomes() const override { return true; }
@@ -95,7 +99,8 @@ namespace perlin::server {
                 const rhi::Probe probe = rhi::ProbeSystem(po);
                 rhi::ShaderLibrary library;
                 std::string packError;
-                if (!library.Load(std::span<const uint8_t>(kTerrainShaderPack, kTerrainShaderPackSize), &packError)) {
+                if (!library.Load(std::span<const uint8_t>(kTerrainShaderPack, kTerrainShaderPackSize),
+                                  &packError)) {
                     note = "terrain shader pack: " + packError;
                     return false;
                 }
@@ -108,13 +113,18 @@ namespace perlin::server {
                 for (const rhi::Candidate& c : probe.candidates) {
                     if (!c.adapter.usable)
                         continue;
-                    if (library.Code(*info, rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(c.adapter.api)).empty())
+                    if (library
+                            .Code(*info, rhi::ShaderStage::Compute,
+                                  rhi::ShaderLibrary::TargetFor(c.adapter.api))
+                            .empty())
                         continue;
                     pick = &c;
                     break;
                 }
                 if (!pick) {
-                    note = po.allowSoftware ? "no graphics device with a compute shader for it" : "no hardware graphics device (software devices are skipped in auto mode)";
+                    note = po.allowSoftware
+                               ? "no graphics device with a compute shader for it"
+                               : "no hardware graphics device (software devices are skipped in auto mode)";
                     return false;
                 }
                 rhi::InstanceOptions io;
@@ -137,12 +147,14 @@ namespace perlin::server {
                     return false;
                 }
                 const rhi::Api api = pick->adapter.api;
-                const auto code = library.Code(*info, rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(api));
+                const auto code =
+                    library.Code(*info, rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(api));
                 rhi::ShaderDesc sd;
                 sd.stage = rhi::ShaderStage::Compute;
                 sd.format = rhi::ShaderLibrary::FormatFor(rhi::ShaderLibrary::TargetFor(api));
                 sd.code = code;
-                sd.entry = rhi::ShaderLibrary::EntryFor(rhi::ShaderStage::Compute, rhi::ShaderLibrary::TargetFor(api));
+                sd.entry = rhi::ShaderLibrary::EntryFor(rhi::ShaderStage::Compute,
+                                                        rhi::ShaderLibrary::TargetFor(api));
                 sd.name = "terrain_vanilla";
                 shader = device->CreateShader(sd);
 
@@ -169,7 +181,8 @@ namespace perlin::server {
                 pipeline = device->CreateComputePipeline(cp);
 
                 interpCount = static_cast<uint32_t>(program->interpolatedInputs.size());
-                columnBase = static_cast<uint32_t>(kBatch * kCornersPerChunk * std::max<uint32_t>(1, interpCount));
+                columnBase =
+                    static_cast<uint32_t>(kBatch * kCornersPerChunk * std::max<uint32_t>(1, interpCount));
                 rhi::BufferDesc b;
                 b.size = static_cast<uint64_t>(tables.size()) * 4;
                 b.usage = rhi::BufferUsage::Storage;
@@ -202,7 +215,9 @@ namespace perlin::server {
                 fence = device->CreateFence(0);
 
                 uint8_t* t = device->Map(tableBuffer);
-                if (!t || !device->Map(chunkBuffer) || !device->Map(readback) || !device->Map(readbackColumns) || !pipeline || !fence || !scratchBuffer || !densityBuffer) {
+                if (!t || !device->Map(chunkBuffer) || !device->Map(readback) ||
+                    !device->Map(readbackColumns) || !pipeline || !fence || !scratchBuffer ||
+                    !densityBuffer) {
                     note = "terrain pipeline or buffers could not be created on " + pick->adapter.name;
                     return false;
                 }
@@ -226,7 +241,8 @@ namespace perlin::server {
 
             // checks each stage against the cpu reference on a few chunks and settles which stages run on the gpu; false when even the density stage fails
             bool Validate(std::string& note) {
-                const std::vector<ChunkPos> probe = {{0, 0}, {-1, -1}, {37, 12}, {-2048, 2047}, {100000, -100000}};
+                const std::vector<ChunkPos> probe = {
+                    {0, 0}, {-1, -1}, {37, 12}, {-2048, 2047}, {100000, -100000}};
                 const size_t chunks = probe.size();
 
                 // stage 1, density: bit for bit against the graph (chunk 0 in full, the rest sampled)
@@ -253,9 +269,11 @@ namespace perlin::server {
                             y = static_cast<int>(rng() % kHeight);
                         }
                         const float want = cpu->Density(bx + x, kMinY + y, bz + z);
-                        const float got = d.density[n * kBlocksPerChunk + static_cast<size_t>((x * 16 + z) * kHeight + y)];
+                        const float got =
+                            d.density[n * kBlocksPerChunk + static_cast<size_t>((x * 16 + z) * kHeight + y)];
                         if (std::memcmp(&want, &got, sizeof want) != 0 && !(want != want && got != got)) {
-                            note = "density differs at (" + std::to_string(bx + x) + "," + std::to_string(kMinY + y) + "," + std::to_string(bz + z) + "): cpu " +
+                            note = "density differs at (" + std::to_string(bx + x) + "," +
+                                   std::to_string(kMinY + y) + "," + std::to_string(bz + z) + "): cpu " +
                                    std::to_string(want) + ", gpu " + std::to_string(got);
                             return false;
                         }
@@ -271,14 +289,18 @@ namespace perlin::server {
                 std::vector<uint8_t> expectedBiome(chunks * 256);
                 std::vector<int> expectedTop(chunks * 256);
                 for (size_t n = 0; n < chunks && gpuBiome; n++) {
-                    cpu->BiomesOf(c.density.data() + n * kBlocksPerChunk, probe[n].x, probe[n].z, expectedBiome.data() + n * 256);
+                    cpu->BiomesOf(c.density.data() + n * kBlocksPerChunk, probe[n].x, probe[n].z,
+                                  expectedBiome.data() + n * 256);
                     for (int col = 0; col < 256; col++) {
                         const size_t at = n * 256 + static_cast<size_t>(col);
                         expectedTop[at] = vanilla::VanillaSurface::TopOf(c.density.data() + at * kHeight);
-                        if (static_cast<int>(c.columns[at * 2]) != expectedTop[at] || c.columns[at * 2 + 1] != expectedBiome[at]) {
+                        if (static_cast<int>(c.columns[at * 2]) != expectedTop[at] ||
+                            c.columns[at * 2 + 1] != expectedBiome[at]) {
                             gpuBiome = false;
-                            biomeNote = "biome differs in chunk (" + std::to_string(probe[n].x) + "," + std::to_string(probe[n].z) + ") column " + std::to_string(col) + ": cpu " +
-                                        vanilla::kBiomes[expectedBiome[at]].java + ", gpu biome index " + std::to_string(c.columns[at * 2 + 1]);
+                            biomeNote = "biome differs in chunk (" + std::to_string(probe[n].x) + "," +
+                                        std::to_string(probe[n].z) + ") column " + std::to_string(col) +
+                                        ": cpu " + vanilla::kBiomes[expectedBiome[at]].java +
+                                        ", gpu biome index " + std::to_string(c.columns[at * 2 + 1]);
                             break;
                         }
                     }
@@ -296,13 +318,18 @@ namespace perlin::server {
                             const size_t at = n * 256 + static_cast<size_t>(col);
                             const vanilla::SurfaceMaterial& m = cpu->Surface().Materials()[expectedBiome[at]];
                             for (int y = 0; y < kHeight; y++) {
-                                const uint16_t want = cpu->Surface().BlockAt(m, y, expectedTop[at], c.density[at * kHeight + static_cast<size_t>(y)] > 0.0f);
+                                const uint16_t want = cpu->Surface().BlockAt(
+                                    m, y, expectedTop[at],
+                                    c.density[at * kHeight + static_cast<size_t>(y)] > 0.0f);
                                 uint32_t got;
                                 std::memcpy(&got, &s.density[at * kHeight + static_cast<size_t>(y)], 4);
                                 if (got != want) {
                                     gpuSurface = false;
-                                    surfaceNote = "surface differs in chunk (" + std::to_string(probe[n].x) + "," + std::to_string(probe[n].z) + ") column " + std::to_string(col) +
-                                                  " y " + std::to_string(kMinY + y) + ": cpu block " + std::to_string(want) + ", gpu " + std::to_string(got);
+                                    surfaceNote = "surface differs in chunk (" + std::to_string(probe[n].x) +
+                                                  "," + std::to_string(probe[n].z) + ") column " +
+                                                  std::to_string(col) + " y " + std::to_string(kMinY + y) +
+                                                  ": cpu block " + std::to_string(want) + ", gpu " +
+                                                  std::to_string(got);
                                     break;
                                 }
                             }
@@ -318,7 +345,8 @@ namespace perlin::server {
                     on += ", surface";
                 else if (gpuBiome)
                     off += "surface";
-                name = "vanilla/gpu (" + deviceName + "; gpu: " + on + (off.empty() ? "" : "; cpu: " + off) + ")";
+                name = "vanilla/gpu (" + deviceName + "; gpu: " + on + (off.empty() ? "" : "; cpu: " + off) +
+                       ")";
                 note = name + ", each gpu stage identical to the cpu reference on the probe chunks";
                 if (!biomeNote.empty())
                     note += "; biome stage on the cpu: " + biomeNote;
@@ -353,7 +381,8 @@ namespace perlin::server {
                         failed = true;
                         return;
                     }
-                    std::memcpy(out.data() + first * kBlocksPerChunk, b.density.data(), n * kBlocksPerChunk * 4);
+                    std::memcpy(out.data() + first * kBlocksPerChunk, b.density.data(),
+                                n * kBlocksPerChunk * 4);
                 }
             }
 
@@ -387,13 +416,15 @@ namespace perlin::server {
                     } else {
                         cpu->BiomesOf(density, positions[i].x, positions[i].z, biomes.data());
                     }
-                    cpu->Surface().Fill(density, biomes.data(), out[i], &cpu->Features(), positions[i].x, positions[i].z);
+                    cpu->Surface().Fill(density, biomes.data(), out[i], &cpu->Features(), positions[i].x,
+                                        positions[i].z);
                 }
                 return true;
             }
 
             // runs phases 0..lastPhase for up to kBatch chunks and reads back the density buffer (and the column results when asked); false when the device hangs
-            bool Dispatch(std::span<const ChunkPos> positions, int lastPhase, bool wantColumns, BatchOut& out) {
+            bool Dispatch(std::span<const ChunkPos> positions, int lastPhase, bool wantColumns,
+                          BatchOut& out) {
                 std::lock_guard<std::mutex> lock(deviceMutex);
                 if (failed)
                     return false;
@@ -423,7 +454,8 @@ namespace perlin::server {
                     cmd->Barrier(dens);
                 };
                 run(0, 0, program->innerCount, static_cast<uint64_t>(count) * kCornersPerChunk);
-                run(1, program->innerCount, program->outerCount, static_cast<uint64_t>(count) * kBlocksPerChunk);
+                run(1, program->innerCount, program->outerCount,
+                    static_cast<uint64_t>(count) * kBlocksPerChunk);
                 if (lastPhase >= 2)
                     run(2, 0, 0, static_cast<uint64_t>(count) * 256);
                 if (lastPhase >= 3)
@@ -443,7 +475,8 @@ namespace perlin::server {
                     cols.before = rhi::State::ShaderWrite;
                     cols.after = rhi::State::CopySrc;
                     cmd->Barrier(cols);
-                    cmd->CopyBuffer(readbackColumns, 0, scratchBuffer, static_cast<uint64_t>(columnBase) * 4, columnBytes);
+                    cmd->CopyBuffer(readbackColumns, 0, scratchBuffer, static_cast<uint64_t>(columnBase) * 4,
+                                    columnBytes);
                 }
                 const rhi::FenceOp signal{fence, ++fenceValue};
                 rhi::SubmitDesc sd;
@@ -484,7 +517,8 @@ namespace perlin::server {
             rhi::BindGroupHandle bindGroup;
             rhi::PipelineLayoutHandle pipelineLayout;
             rhi::PipelineHandle pipeline;
-            rhi::BufferHandle tableBuffer, chunkBuffer, scratchBuffer, densityBuffer, readback, readbackColumns;
+            rhi::BufferHandle tableBuffer, chunkBuffer, scratchBuffer, densityBuffer, readback,
+                readbackColumns;
             rhi::FenceHandle fence;
             uint64_t fenceValue = 0;
         };
@@ -500,7 +534,8 @@ namespace perlin::server {
             note = "gpu density differs from the cpu reference (" + result + ")";
             return nullptr;
         }
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        const double ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         note = result + " (" + std::to_string(static_cast<int>(ms)) + " ms check)";
         return backend;
     }

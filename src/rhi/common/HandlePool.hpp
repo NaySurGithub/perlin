@@ -11,8 +11,7 @@
 namespace rhi {
     // slots live in fixed pages that are never moved or freed: Get() is lock free and its pointer stays valid
     // until the handle is freed. alloc/free take a mutex.
-    template <class Tag, class T>
-    class HandlePool {
+    template <class Tag, class T> class HandlePool {
     public:
         using H = Handle<Tag>;
 
@@ -27,7 +26,7 @@ namespace rhi {
         HandlePool(const HandlePool&) = delete;
         HandlePool& operator=(const HandlePool&) = delete;
 
-        H Alloc(T&& value) {
+        H Alloc(T value) {
             std::lock_guard lock(mutex);
             uint32_t index;
             if (!freeList.empty()) {
@@ -58,7 +57,8 @@ namespace rhi {
             if (!page)
                 return nullptr;
             Slot& slot = page[index % kPageSize];
-            if (!slot.alive.load(std::memory_order_acquire) || (slot.generation & 0xFFu) != handle.Generation())
+            if (!slot.alive.load(std::memory_order_acquire) ||
+                (slot.generation & 0xFFu) != handle.Generation())
                 return nullptr;
             return &slot.value;
         }
@@ -85,8 +85,7 @@ namespace rhi {
             return live;
         }
 
-        template <class Fn>
-        void ForEach(Fn&& fn) const {
+        template <class Fn> void ForEach(Fn&& fn) const {
             std::lock_guard lock(mutex);
             for (uint32_t i = 0; i < next; i++) {
                 Slot& slot = SlotAt(i);

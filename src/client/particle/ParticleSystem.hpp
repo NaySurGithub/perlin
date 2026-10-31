@@ -55,8 +55,8 @@ namespace perlin::particle {
 
         void Destroy(int x, int y, int z, uint16_t id);
         void Crack(int x, int y, int z, int face, uint16_t id);
-        void Spawn(Kind kind, const glm::dvec3& at, const glm::dvec3& velocity = glm::dvec3(0.0), float scale = 1.0f,
-                   const glm::vec3& colour = glm::vec3(-1.0f));
+        void Spawn(Kind kind, const glm::dvec3& at, const glm::dvec3& velocity = glm::dvec3(0.0),
+                   float scale = 1.0f, const glm::vec3& colour = glm::vec3(-1.0f));
         bool SpawnNamed(const std::string& name, const glm::dvec3& at);
         bool SpawnLevelEvent(int event, const glm::dvec3& at, int data);
 
@@ -86,7 +86,10 @@ namespace perlin::particle {
             bool byAge = false;
         };
         std::vector<Particle> particles;
-        struct Emitter { glm::dvec3 at; int age = 0, lifetime = 30; };
+        struct Emitter {
+            glm::dvec3 at;
+            int age = 0, lifetime = 30;
+        };
         std::vector<Emitter> emitters;
         std::mt19937 rng{0x5EEDu};
         float Rand() { return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng); }

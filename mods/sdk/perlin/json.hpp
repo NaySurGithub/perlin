@@ -28,9 +28,16 @@ namespace perlin::json {
                 return number_value != 0.0;
             return fallback;
         }
-        double number(double fallback = 0.0) const { return type == Kind::Number ? number_value : type == Kind::Bool ? (flag ? 1.0 : 0.0) : fallback; }
-        int64_t integer(int64_t fallback = 0) const { return type == Kind::Number ? static_cast<int64_t>(number_value) : static_cast<int64_t>(number(static_cast<double>(fallback))); }
-        std::string_view string(std::string_view fallback = {}) const { return type == Kind::String ? std::string_view(text) : fallback; }
+        double number(double fallback = 0.0) const {
+            return type == Kind::Number ? number_value : type == Kind::Bool ? (flag ? 1.0 : 0.0) : fallback;
+        }
+        int64_t integer(int64_t fallback = 0) const {
+            return type == Kind::Number ? static_cast<int64_t>(number_value)
+                                        : static_cast<int64_t>(number(static_cast<double>(fallback)));
+        }
+        std::string_view string(std::string_view fallback = {}) const {
+            return type == Kind::String ? std::string_view(text) : fallback;
+        }
 
         const std::vector<Value>& array() const { return items; }
         size_t size() const { return items.size(); }
@@ -43,7 +50,9 @@ namespace perlin::json {
                         return items[i];
             return null_value();
         }
-        const Value& operator[](size_t index) const { return type == Kind::Array && index < items.size() ? items[index] : null_value(); }
+        const Value& operator[](size_t index) const {
+            return type == Kind::Array && index < items.size() ? items[index] : null_value();
+        }
         bool contains(std::string_view key) const {
             if (type == Kind::Object)
                 for (const std::string& n : names)
@@ -83,7 +92,8 @@ namespace perlin::json {
         size_t pos = 0;
 
         void skip() {
-            while (pos < src.size() && (src[pos] == ' ' || src[pos] == '\t' || src[pos] == '\n' || src[pos] == '\r'))
+            while (pos < src.size() &&
+                   (src[pos] == ' ' || src[pos] == '\t' || src[pos] == '\n' || src[pos] == '\r'))
                 pos++;
         }
         bool eat(char c) {
@@ -132,8 +142,9 @@ namespace perlin::json {
 
         bool number(Value& out) {
             const size_t start = pos;
-            while (pos < src.size() && (src[pos] == '-' || src[pos] == '+' || src[pos] == '.' || src[pos] == 'e' || src[pos] == 'E' ||
-                                        (src[pos] >= '0' && src[pos] <= '9')))
+            while (pos < src.size() &&
+                   (src[pos] == '-' || src[pos] == '+' || src[pos] == '.' || src[pos] == 'e' ||
+                    src[pos] == 'E' || (src[pos] >= '0' && src[pos] <= '9')))
                 pos++;
             if (pos == start || pos - start > 40)
                 return false;
@@ -195,11 +206,21 @@ namespace perlin::json {
                 if (pos >= src.size())
                     return false;
                 switch (const char e = src[pos++]) {
-                case 'n': out += '\n'; break;
-                case 't': out += '\t'; break;
-                case 'r': out += '\r'; break;
-                case 'b': out += '\b'; break;
-                case 'f': out += '\f'; break;
+                case 'n':
+                    out += '\n';
+                    break;
+                case 't':
+                    out += '\t';
+                    break;
+                case 'r':
+                    out += '\r';
+                    break;
+                case 'b':
+                    out += '\b';
+                    break;
+                case 'f':
+                    out += '\f';
+                    break;
                 case 'u': {
                     uint32_t cp = 0;
                     if (!hex4(cp))
@@ -214,7 +235,9 @@ namespace perlin::json {
                     utf8(out, cp);
                     break;
                 }
-                default: out += e; break;
+                default:
+                    out += e;
+                    break;
                 }
             }
             return false;
@@ -258,5 +281,7 @@ namespace perlin::json {
         }
     };
 
-    inline std::optional<Value> parse(std::string_view text) { return Parser(text).run(); }
+    inline std::optional<Value> parse(std::string_view text) {
+        return Parser(text).run();
+    }
 }

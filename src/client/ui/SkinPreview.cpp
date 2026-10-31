@@ -31,7 +31,8 @@ namespace perlin::ui {
             bool Get(float u, float v, unsigned char* out) const {
                 const int x = std::clamp(static_cast<int>(u * sx), 0, w - 1);
                 const int y = std::clamp(static_cast<int>(v * sy), 0, h - 1);
-                const unsigned char* p = &(*px)[(static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)) * 4];
+                const unsigned char* p =
+                    &(*px)[(static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)) * 4];
                 out[0] = p[0];
                 out[1] = p[1];
                 out[2] = p[2];
@@ -113,18 +114,31 @@ namespace perlin::ui {
         out.width = outW;
         out.height = outH;
         out.pixels.assign(static_cast<size_t>(outW) * static_cast<size_t>(outH) * 4, 0);
-        const bool haveSkin = view.skin && view.skinW >= 64 && view.skinH >= 64 &&
-                              view.skin->size() >= static_cast<size_t>(view.skinW) * static_cast<size_t>(view.skinH) * 4;
+        const bool haveSkin =
+            view.skin && view.skinW >= 64 && view.skinH >= 64 &&
+            view.skin->size() >= static_cast<size_t>(view.skinW) * static_cast<size_t>(view.skinH) * 4;
         if (!haveSkin || outW <= 0 || outH <= 0)
             return out;
-        const Sampler skin{view.skin, view.skinW, view.skinH, static_cast<float>(view.skinW) / 64.0f, static_cast<float>(view.skinH) / 64.0f};
-        const bool haveCape = view.cape && view.capeW >= 22 && view.capeH >= 17 &&
-                              view.cape->size() >= static_cast<size_t>(view.capeW) * static_cast<size_t>(view.capeH) * 4;
-        const Sampler cape{view.cape, view.capeW, view.capeH, static_cast<float>(view.capeW) / 64.0f, static_cast<float>(view.capeH) / 32.0f};
+        const Sampler skin{view.skin, view.skinW, view.skinH, static_cast<float>(view.skinW) / 64.0f,
+                           static_cast<float>(view.skinH) / 64.0f};
+        const bool haveCape =
+            view.cape && view.capeW >= 22 && view.capeH >= 17 &&
+            view.cape->size() >= static_cast<size_t>(view.capeW) * static_cast<size_t>(view.capeH) * 4;
+        const Sampler cape{view.cape, view.capeW, view.capeH, static_cast<float>(view.capeW) / 64.0f,
+                           static_cast<float>(view.capeH) / 32.0f};
         const float aw = view.slim ? 3.0f : 4.0f;
         std::vector<Box> boxes;
-        const auto add = [&](float x0, float y0, float z0, float x1, float y1, float z1, int u, int v, int w, int h, int d, float grow, bool overlay) {
-            Box b{{x0 - grow, y0 - grow, z0 - grow}, {x1 + grow, y1 + grow, z1 + grow}, u, v, w, h, d, overlay, false};
+        const auto add = [&](float x0, float y0, float z0, float x1, float y1, float z1, int u, int v, int w,
+                             int h, int d, float grow, bool overlay) {
+            Box b{{x0 - grow, y0 - grow, z0 - grow},
+                  {x1 + grow, y1 + grow, z1 + grow},
+                  u,
+                  v,
+                  w,
+                  h,
+                  d,
+                  overlay,
+                  false};
             b.head = y0 >= 24.0f;
             boxes.push_back(b);
         };
@@ -176,8 +190,10 @@ namespace perlin::ui {
 
         // head turns on its own about the neck (0, 24, 0): rays for head boxes moved into head space
         const bool headTurned = view.headYaw != 0.0f || view.headPitch != 0.0f;
-        const float hcy = std::cos(-view.headYaw * 0.017453292f), hsy = std::sin(-view.headYaw * 0.017453292f);
-        const float hcp = std::cos(-view.headPitch * 0.017453292f), hsp = std::sin(-view.headPitch * 0.017453292f);
+        const float hcy = std::cos(-view.headYaw * 0.017453292f),
+                    hsy = std::sin(-view.headYaw * 0.017453292f);
+        const float hcp = std::cos(-view.headPitch * 0.017453292f),
+                    hsp = std::sin(-view.headPitch * 0.017453292f);
         const auto toHead = [&](const float* a, float* r, bool point) {
             const float x = a[0], y = point ? a[1] - 24.0f : a[1], z = a[2];
             const float x1 = hcy * x + hsy * z, z1 = -hsy * x + hcy * z;
@@ -212,13 +228,20 @@ namespace perlin::ui {
             }
             if (b.head && headTurned) {
                 // turned head can reach past its resting box; widen its screen bounds
-                minX -= 3.0f; maxX += 3.0f; minY -= 3.0f; maxY += 3.0f;
+                minX -= 3.0f;
+                maxX += 3.0f;
+                minY -= 3.0f;
+                maxY += 3.0f;
             }
             Screen s;
-            s.i0 = std::max(0, static_cast<int>(std::floor(minX * scale + static_cast<float>(outW) * 0.5f)) - 1);
-            s.i1 = std::min(outW - 1, static_cast<int>(std::ceil(maxX * scale + static_cast<float>(outW) * 0.5f)) + 1);
-            s.j0 = std::max(0, static_cast<int>(std::floor(static_cast<float>(outH) * 0.5f - maxY * scale)) - 1);
-            s.j1 = std::min(outH - 1, static_cast<int>(std::ceil(static_cast<float>(outH) * 0.5f - minY * scale)) + 1);
+            s.i0 =
+                std::max(0, static_cast<int>(std::floor(minX * scale + static_cast<float>(outW) * 0.5f)) - 1);
+            s.i1 = std::min(outW - 1,
+                            static_cast<int>(std::ceil(maxX * scale + static_cast<float>(outW) * 0.5f)) + 1);
+            s.j0 =
+                std::max(0, static_cast<int>(std::floor(static_cast<float>(outH) * 0.5f - maxY * scale)) - 1);
+            s.j1 = std::min(outH - 1,
+                            static_cast<int>(std::ceil(static_cast<float>(outH) * 0.5f - minY * scale)) + 1);
             bounds[k] = s;
         }
 
@@ -229,7 +252,8 @@ namespace perlin::ui {
                 const float vy = (static_cast<float>(outH) * 0.5f - static_cast<float>(j) - 0.5f) / scale;
                 for (int i = 0; i < outW; i++) {
                     const float vx = (static_cast<float>(i) + 0.5f - static_cast<float>(outW) * 0.5f) / scale;
-                    float mo[3] = {e0[0] + ex[0] * vx + ey[0] * vy, e0[1] + ex[1] * vx + ey[1] * vy, e0[2] + ex[2] * vx + ey[2] * vy};
+                    float mo[3] = {e0[0] + ex[0] * vx + ey[0] * vy, e0[1] + ex[1] * vx + ey[1] * vy,
+                                   e0[2] + ex[2] * vx + ey[2] * vy};
                     hits.clear();
                     for (size_t k = 0; k < boxes.size(); k++) {
                         const Screen& sb = bounds[k];
@@ -279,7 +303,9 @@ namespace perlin::ui {
                     }
                     if (a <= 0.001f)
                         continue;
-                    unsigned char* px = &out.pixels[(static_cast<size_t>(j) * static_cast<size_t>(outW) + static_cast<size_t>(i)) * 4];
+                    unsigned char* px = &out.pixels[(static_cast<size_t>(j) * static_cast<size_t>(outW) +
+                                                     static_cast<size_t>(i)) *
+                                                    4];
                     px[0] = static_cast<unsigned char>(std::clamp(r / a, 0.0f, 255.0f));
                     px[1] = static_cast<unsigned char>(std::clamp(g / a, 0.0f, 255.0f));
                     px[2] = static_cast<unsigned char>(std::clamp(bl / a, 0.0f, 255.0f));
@@ -304,6 +330,7 @@ namespace perlin::ui {
         std::vector<std::future<void>> jobs;
         const int chunk = (rows + workers * 4 - 1) / (workers * 4);
         std::atomic<int> next{top};
+        jobs.reserve(workers);
         for (int w = 0; w < workers; w++)
             jobs.push_back(std::async(std::launch::async, [&] {
                 for (;;) {

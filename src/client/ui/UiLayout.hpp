@@ -87,16 +87,19 @@ namespace perlin::ui {
         }
         bool Bool(const char* key, bool fallback) const {
             const Json* v = p.Find(key);
-            if (!v) return fallback;
-            if (v->IsBool()) return v->boolean;
-            if (v->IsNumber()) return v->number != 0;
+            if (!v)
+                return fallback;
+            if (v->IsBool())
+                return v->boolean;
+            if (v->IsNumber())
+                return v->number != 0;
             return fallback;
         }
         const Json* Get(const char* key) const { return p.Find(key); }
     };
 
-    std::unique_ptr<LNode> EvaluateTree(const Node& root, const UiData& data, const UiServices& services, float guiW,
-                                        float guiH);
+    std::unique_ptr<LNode> EvaluateTree(const Node& root, const UiData& data, const UiServices& services,
+                                        float guiW, float guiH);
 
     std::string StripFormatting(const std::string& text);
 }

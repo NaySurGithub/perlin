@@ -88,7 +88,20 @@ namespace perlin::gpu {
             bool used = false;
             uint32_t w = 0, h = 0;
         };
-        enum class Kind { Dummy, Color, Depth, ShadowDepth, ShadowColor, Noise, Atlas, Lightmap, Normals, Specular, Overlay, Custom };
+        enum class Kind {
+            Dummy,
+            Color,
+            Depth,
+            ShadowDepth,
+            ShadowColor,
+            Noise,
+            Atlas,
+            Lightmap,
+            Normals,
+            Specular,
+            Overlay,
+            Custom
+        };
         struct SamplerBind {
             int slot = 0;
             Kind kind = Kind::Dummy;
@@ -130,7 +143,8 @@ namespace perlin::gpu {
             bool depthTest = false, depthWrite = false;
             rhi::CompareOp depthOp = rhi::CompareOp::LessEqual;
             bool blend = false;
-            rhi::BlendFactor src = rhi::BlendFactor::One, dst = rhi::BlendFactor::Zero, srcA = rhi::BlendFactor::One, dstA = rhi::BlendFactor::Zero;
+            rhi::BlendFactor src = rhi::BlendFactor::One, dst = rhi::BlendFactor::Zero,
+                             srcA = rhi::BlendFactor::One, dstA = rhi::BlendFactor::Zero;
             rhi::ColorMask mask = rhi::ColorMask::All;
         };
         struct PackSet {
@@ -146,7 +160,8 @@ namespace perlin::gpu {
         public:
             void Start(int n);
             ~Pool();
-            std::shared_future<std::shared_ptr<Converted>> Submit(std::function<std::shared_ptr<Converted>()> fn);
+            std::shared_future<std::shared_ptr<Converted>>
+            Submit(std::function<std::shared_ptr<Converted>()> fn);
 
         private:
             void Loop();
@@ -164,37 +179,45 @@ namespace perlin::gpu {
         bool CreateTargets(uint32_t w, uint32_t h);
         void DestroyTargets();
         void ReleaseAll();
-        rhi::TextureHandle MakeTexture(uint32_t w, uint32_t h, rhi::Format format, rhi::TextureUsage usage, const char* name);
+        rhi::TextureHandle MakeTexture(uint32_t w, uint32_t h, rhi::Format format, rhi::TextureUsage usage,
+                                       const char* name);
         rhi::SamplerHandle SamplerFor(int id);
         void BuildBlockMap();
         int PackBlockId(uint16_t palette);
         // programs
         std::string KeyFor(const std::string& name, bool toBackbuffer) const;
-        Program* GetProgram(const std::string& name, bool toBackbuffer, const jshader::ExpandedSource* vs = nullptr,
-                            const jshader::ExpandedSource* fs = nullptr, rhi::Format backFormat = rhi::Format::Unknown);
-        Program* Finish(const std::string& key, const std::string& name, const Converted& c, std::shared_ptr<jshader::ProgramSource> source);
+        Program* GetProgram(const std::string& name, bool toBackbuffer,
+                            const jshader::ExpandedSource* vs = nullptr,
+                            const jshader::ExpandedSource* fs = nullptr,
+                            rhi::Format backFormat = rhi::Format::Unknown);
+        Program* Finish(const std::string& key, const std::string& name, const Converted& c,
+                        std::shared_ptr<jshader::ProgramSource> source);
         SamplerBind ResolveSampler(const jshader::RhiSampler& s);
         rhi::PipelineHandle PipelineFor(Program& p, const PipeState& state);
         void FillUniforms(Program& p, const jshader::PackDrawState& draw, bool perDrawOnly);
         bool BindUniforms(rhi::CommandList& list, Program& p, const jshader::PackDrawState& draw);
-        rhi::BindGroupHandle Textures(rhi::CommandList& list, Program& p, const std::vector<rhi::TextureHandle>& attached);
+        rhi::BindGroupHandle Textures(rhi::CommandList& list, Program& p,
+                                      const std::vector<rhi::TextureHandle>& attached);
         rhi::BindGroupHandle GroupFor(const PackSet& set);
 
         // frame
         void BuildFrame(const FrameParams& params, const Output& out);
         jshader::PackDrawState TerrainDraw() const;
-        void BeginPass(rhi::CommandList& list, const std::vector<rhi::TextureHandle>& colors, rhi::TextureHandle depth, uint32_t w, uint32_t h,
-                       bool clearDepth, const std::vector<std::array<float, 4>>* clears, const char* name);
+        void BeginPass(rhi::CommandList& list, const std::vector<rhi::TextureHandle>& colors,
+                       rhi::TextureHandle depth, uint32_t w, uint32_t h, bool clearDepth,
+                       const std::vector<std::array<float, 4>>* clears, const char* name);
         bool RunPass(rhi::CommandList& list, const std::string& name, bool toBackbuffer, const Output& out);
         void RunChain(rhi::CommandList& list, const char* base);
         void ClearBuffers(rhi::CommandList& list, const FrameParams& params);
         void DrawShadows(rhi::CommandList& list);
         void DrawSky(rhi::CommandList& list);
-        void DrawSkyObjects(rhi::CommandList& list, const char* program, int stage, rhi::BufferHandle vb, uint32_t first, uint32_t count, rhi::BufferHandle ring,
-                            uint64_t ringOffset, const float* modelView, rhi::TextureHandle texture, bool additive);
+        void DrawSkyObjects(rhi::CommandList& list, const char* program, int stage, rhi::BufferHandle vb,
+                            uint32_t first, uint32_t count, rhi::BufferHandle ring, uint64_t ringOffset,
+                            const float* modelView, rhi::TextureHandle texture, bool additive);
         void DrawTranslucent(rhi::CommandList& list);
         void DrawTerrain(rhi::CommandList& list);
-        bool DrawLayers(rhi::CommandList& list, const char* program, const std::vector<RenderLayer>& layers, bool translucent, bool shadow);
+        bool DrawLayers(rhi::CommandList& list, const char* program, const std::vector<RenderLayer>& layers,
+                        bool translucent, bool shadow);
         void DepthToEngine(rhi::CommandList& list, const Output& out);
         void CopyDepth(rhi::CommandList& list, rhi::TextureHandle src, rhi::TextureHandle dst);
 

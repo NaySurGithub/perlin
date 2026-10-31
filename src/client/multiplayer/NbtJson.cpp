@@ -19,126 +19,126 @@ namespace perlin {
             if (depth > 48)
                 return false;
             switch (type) {
-                case 1: {
+            case 1: {
+                uint8_t v = 0;
+                s.u8(v);
+                out = ui::Json(static_cast<bool>(v != 0));
+                out.number = static_cast<double>(v);
+                out.type = ui::Json::Type::Bool;
+                out.boolean = v != 0;
+                break;
+            }
+            case 2: {
+                int16_t v = 0;
+                s.le(v);
+                out = ui::Json(static_cast<double>(v));
+                break;
+            }
+            case 3: {
+                int32_t v = 0;
+                s.zigzag(v);
+                out = ui::Json(static_cast<double>(v));
+                break;
+            }
+            case 4: {
+                int64_t v = 0;
+                s.zigzag(v);
+                out = ui::Json(static_cast<double>(v));
+                break;
+            }
+            case 5: {
+                float v = 0;
+                s.le(v);
+                out = ui::Json(static_cast<double>(v));
+                break;
+            }
+            case 6: {
+                double v = 0;
+                s.le(v);
+                out = ui::Json(v);
+                break;
+            }
+            case 7: {
+                int32_t n = 0;
+                s.zigzag(n);
+                if (n < 0 || !s.length(static_cast<uint64_t>(n)))
+                    return false;
+                out = ui::Json::MakeArray();
+                for (int32_t i = 0; i < n && s.ok; i++) {
                     uint8_t v = 0;
                     s.u8(v);
-                    out = ui::Json(static_cast<bool>(v != 0));
-                    out.number = static_cast<double>(v);
-                    out.type = ui::Json::Type::Bool;
-                    out.boolean = v != 0;
-                    break;
+                    out.Push(ui::Json(static_cast<double>(v)));
                 }
-                case 2: {
-                    int16_t v = 0;
-                    s.le(v);
-                    out = ui::Json(static_cast<double>(v));
-                    break;
+                break;
+            }
+            case 8: {
+                std::string str;
+                if (!ReadName(s, str))
+                    return false;
+                out = ui::Json(std::move(str));
+                break;
+            }
+            case 9: {
+                uint8_t element = 0;
+                s.u8(element);
+                int32_t n = 0;
+                s.zigzag(n);
+                if (!s.ok || n < 0 || (n > 0 && element == 0) || !s.length(static_cast<uint64_t>(n)))
+                    return false;
+                out = ui::Json::MakeArray();
+                for (int32_t i = 0; i < n && s.ok; i++) {
+                    ui::Json item;
+                    if (!Payload(s, element, depth + 1, item))
+                        return false;
+                    out.Push(std::move(item));
                 }
-                case 3: {
+                break;
+            }
+            case 10: {
+                out = ui::Json::MakeObject();
+                while (s.ok) {
+                    uint8_t child = 0;
+                    s.u8(child);
+                    if (!s.ok || child == 0)
+                        break;
+                    std::string key;
+                    if (!ReadName(s, key))
+                        return false;
+                    ui::Json value;
+                    if (!Payload(s, child, depth + 1, value))
+                        return false;
+                    out.Set(key, std::move(value));
+                }
+                break;
+            }
+            case 11: {
+                int32_t n = 0;
+                s.zigzag(n);
+                if (n < 0 || !s.length(static_cast<uint64_t>(n)))
+                    return false;
+                out = ui::Json::MakeArray();
+                for (int32_t i = 0; i < n && s.ok; i++) {
                     int32_t v = 0;
                     s.zigzag(v);
-                    out = ui::Json(static_cast<double>(v));
-                    break;
+                    out.Push(ui::Json(static_cast<double>(v)));
                 }
-                case 4: {
+                break;
+            }
+            case 12: {
+                int32_t n = 0;
+                s.zigzag(n);
+                if (n < 0 || !s.length(static_cast<uint64_t>(n)))
+                    return false;
+                out = ui::Json::MakeArray();
+                for (int32_t i = 0; i < n && s.ok; i++) {
                     int64_t v = 0;
                     s.zigzag(v);
-                    out = ui::Json(static_cast<double>(v));
-                    break;
+                    out.Push(ui::Json(static_cast<double>(v)));
                 }
-                case 5: {
-                    float v = 0;
-                    s.le(v);
-                    out = ui::Json(static_cast<double>(v));
-                    break;
-                }
-                case 6: {
-                    double v = 0;
-                    s.le(v);
-                    out = ui::Json(v);
-                    break;
-                }
-                case 7: {
-                    int32_t n = 0;
-                    s.zigzag(n);
-                    if (n < 0 || !s.length(static_cast<uint64_t>(n)))
-                        return false;
-                    out = ui::Json::MakeArray();
-                    for (int32_t i = 0; i < n && s.ok; i++) {
-                        uint8_t v = 0;
-                        s.u8(v);
-                        out.Push(ui::Json(static_cast<double>(v)));
-                    }
-                    break;
-                }
-                case 8: {
-                    std::string str;
-                    if (!ReadName(s, str))
-                        return false;
-                    out = ui::Json(std::move(str));
-                    break;
-                }
-                case 9: {
-                    uint8_t element = 0;
-                    s.u8(element);
-                    int32_t n = 0;
-                    s.zigzag(n);
-                    if (!s.ok || n < 0 || (n > 0 && element == 0) || !s.length(static_cast<uint64_t>(n)))
-                        return false;
-                    out = ui::Json::MakeArray();
-                    for (int32_t i = 0; i < n && s.ok; i++) {
-                        ui::Json item;
-                        if (!Payload(s, element, depth + 1, item))
-                            return false;
-                        out.Push(std::move(item));
-                    }
-                    break;
-                }
-                case 10: {
-                    out = ui::Json::MakeObject();
-                    while (s.ok) {
-                        uint8_t child = 0;
-                        s.u8(child);
-                        if (!s.ok || child == 0)
-                            break;
-                        std::string key;
-                        if (!ReadName(s, key))
-                            return false;
-                        ui::Json value;
-                        if (!Payload(s, child, depth + 1, value))
-                            return false;
-                        out.Set(key, std::move(value));
-                    }
-                    break;
-                }
-                case 11: {
-                    int32_t n = 0;
-                    s.zigzag(n);
-                    if (n < 0 || !s.length(static_cast<uint64_t>(n)))
-                        return false;
-                    out = ui::Json::MakeArray();
-                    for (int32_t i = 0; i < n && s.ok; i++) {
-                        int32_t v = 0;
-                        s.zigzag(v);
-                        out.Push(ui::Json(static_cast<double>(v)));
-                    }
-                    break;
-                }
-                case 12: {
-                    int32_t n = 0;
-                    s.zigzag(n);
-                    if (n < 0 || !s.length(static_cast<uint64_t>(n)))
-                        return false;
-                    out = ui::Json::MakeArray();
-                    for (int32_t i = 0; i < n && s.ok; i++) {
-                        int64_t v = 0;
-                        s.zigzag(v);
-                        out.Push(ui::Json(static_cast<double>(v)));
-                    }
-                    break;
-                }
-                default:
-                    return false;
+                break;
+            }
+            default:
+                return false;
             }
             return s.ok;
         }

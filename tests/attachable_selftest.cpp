@@ -10,12 +10,12 @@
 using namespace perlin;
 
 static int failures = 0;
-#define CHECK(cond)                                                                       \
-    do {                                                                                  \
-        if (!(cond)) {                                                                    \
-            std::cout << "FAIL " << __FILE__ << ":" << __LINE__ << " " #cond << std::endl; \
-            failures++;                                                                   \
-        }                                                                                 \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::cout << "FAIL " << __FILE__ << ":" << __LINE__ << " " #cond << std::endl;                   \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 static double Eval(const std::string& text, molang::Scope& scope) {
@@ -31,12 +31,21 @@ static std::string Slurp(const std::string& path) {
 
 struct TestHost : molang::Host {
     bool Query(const std::string& name, const molang::Args&, molang::Value& out) override {
-        if (name == "life_time") { out = molang::Value::Num(2.0); return true; }
-        if (name == "use") { out = molang::Value::Num(5.0); return true; }
+        if (name == "life_time") {
+            out = molang::Value::Num(2.0);
+            return true;
+        }
+        if (name == "use") {
+            out = molang::Value::Num(5.0);
+            return true;
+        }
         return false;
     }
     bool Context(const std::string& name, molang::Value& out) override {
-        if (name == "is_first_person") { out = molang::Value::Num(1.0); return true; }
+        if (name == "is_first_person") {
+            out = molang::Value::Num(1.0);
+            return true;
+        }
         return false;
     }
 };
@@ -90,7 +99,9 @@ int main(int argc, char** argv) {
     CHECK(Eval("math.clamp(12, 0.0, 1.0f)", s) == 1.0);
     CHECK(Eval("math.lerp(0, 10, 0.25)", s) == 2.5);
     CHECK(Eval("variable.a = 3; variable.b = variable.a * 2; variable.b + 1", s) == 7);
-    CHECK(Eval("variable.charge = math.clamp((100 - (query.use - 0.5 + 1.0)) / 10.0, 0.0, 1.0f);", s) == 0.0 || true);
+    CHECK(Eval("variable.charge = math.clamp((100 - (query.use - 0.5 + 1.0)) / 10.0, 0.0, 1.0f);", s) ==
+              0.0 ||
+          true);
     CHECK(s.variables["charge"].n == 1.0);
     CHECK(Eval("return 5; 9", s) == 5);
     CHECK(Eval("'a' == 'A'", s) == 1);
@@ -161,7 +172,8 @@ int main(int argc, char** argv) {
         CHECK(grazing);
         if (grazing) {
             const float actual = grazing->bones.at("head").rotation.Eval(s, 0.6f).x;
-            const double expected = 180.0 * (0.2 + 0.07 * std::sin(0.25 * 1644.39 * 3.141592653589793 / 180.0));
+            const double expected =
+                180.0 * (0.2 + 0.07 * std::sin(0.25 * 1644.39 * 3.141592653589793 / 180.0));
             CHECK(std::fabs(actual - expected) < 0.001);
         }
         vanilla.LoadControllers(Slurp(root + "/animation_controllers/shield.animation_controllers.json"));

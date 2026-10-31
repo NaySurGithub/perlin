@@ -133,7 +133,8 @@ namespace {
                             haveModule ? module.ModuleName : "?", rva);
             else
                 std::printf("[crash]   %s+0x%llx [%s+0x%llx]\n", symbol->Name,
-                            static_cast<unsigned long long>(displacement), haveModule ? module.ModuleName : "?", rva);
+                            static_cast<unsigned long long>(displacement),
+                            haveModule ? module.ModuleName : "?", rva);
         } else {
             std::printf("[crash]   %p [%s+0x%llx]\n", reinterpret_cast<void*>(address),
                         haveModule ? module.ModuleName : "?", rva);
@@ -204,8 +205,7 @@ namespace {
                     std::exit(2);
                 }
                 args.controlPort = static_cast<int>(value);
-            }
-            else if (arg == "--raknet")
+            } else if (arg == "--raknet")
                 args.transport = "raknet";
             else if (arg == "--nethernet")
                 args.transport = "nethernet";
@@ -263,7 +263,8 @@ int main(int argc, char** argv) {
         const std::time_t now = std::time(nullptr);
         char stamp[64];
         std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-        std::printf("[perlin] starting %s, data dir %s, log %s/perlin.log\n", stamp, dataDir.c_str(), dataDir.c_str());
+        std::printf("[perlin] starting %s, data dir %s, log %s/perlin.log\n", stamp, dataDir.c_str(),
+                    dataDir.c_str());
     }
 
 #ifdef __EMSCRIPTEN__

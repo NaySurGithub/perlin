@@ -12,7 +12,8 @@ namespace perlin::server {
             std::string out;
             out.reserve(s.size());
             for (size_t i = 0; i < s.size(); i++) {
-                if (static_cast<unsigned char>(s[i]) == 0xC2 && i + 1 < s.size() && static_cast<unsigned char>(s[i + 1]) == 0xA7) {
+                if (static_cast<unsigned char>(s[i]) == 0xC2 && i + 1 < s.size() &&
+                    static_cast<unsigned char>(s[i + 1]) == 0xA7) {
                     i += 2;
                     continue;
                 }
@@ -40,7 +41,8 @@ namespace perlin::server {
         const std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         char stamp[16];
         std::strftime(stamp, sizeof stamp, "%H:%M:%S", std::localtime(&t));
-        std::fprintf(stdout, "[%s %s] %s\n", stamp, names[static_cast<int>(level)], StripFormatting(text).c_str());
+        std::fprintf(stdout, "[%s %s] %s\n", stamp, names[static_cast<int>(level)],
+                     StripFormatting(text).c_str());
         std::fflush(stdout);
     }
 }

@@ -17,24 +17,50 @@ namespace perlin {
             const size_t n = std::char_traits<char>::length(suffix);
             return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
         }
-        bool Has(const std::string& s, const char* part) { return s.contains(part); }
+        bool Has(const std::string& s, const char* part) {
+            return s.contains(part);
+        }
 
         int MaxStack(const std::string& full) {
             const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
-            static const char* const kOne[] = {"_sword", "_pickaxe", "_axe", "_shovel", "_hoe", "_helmet", "_chestplate", "_leggings",
-                                              "_boots", "_boat", "_raft", "_minecart", "_bed", "_shulker_box", "_horse_armor", "_harness",
-                                              "_bucket", "potion", "_book", "_disc", "_banner_pattern"};
+            static const char* const kOne[] = {
+                "_sword",       "_pickaxe", "_axe",    "_shovel", "_hoe",      "_helmet", "_chestplate",
+                "_leggings",    "_boots",   "_boat",   "_raft",   "_minecart", "_bed",    "_shulker_box",
+                "_horse_armor", "_harness", "_bucket", "potion",  "_book",     "_disc",   "_banner_pattern"};
             for (const char* s : kOne)
                 if (EndsWith(n, s) || (std::string(s) == "potion" && Has(n, "potion")))
                     return 1;
-            static const char* const kOneNames[] = {"bow", "crossbow", "trident", "shield", "elytra", "fishing_rod", "shears", "flint_and_steel",
-                                                    "carrot_on_a_stick", "warped_fungus_on_a_stick", "saddle", "totem_of_undying", "cake",
-                                                    "mace", "brush", "spyglass", "minecart", "turtle_helmet", "wolf_armor", "shulker_box",
-                                                    "writable_book", "written_book", "enchanted_book", "boat", "lead_cake", "bundle"};
+            static const char* const kOneNames[] = {"bow",
+                                                    "crossbow",
+                                                    "trident",
+                                                    "shield",
+                                                    "elytra",
+                                                    "fishing_rod",
+                                                    "shears",
+                                                    "flint_and_steel",
+                                                    "carrot_on_a_stick",
+                                                    "warped_fungus_on_a_stick",
+                                                    "saddle",
+                                                    "totem_of_undying",
+                                                    "cake",
+                                                    "mace",
+                                                    "brush",
+                                                    "spyglass",
+                                                    "minecart",
+                                                    "turtle_helmet",
+                                                    "wolf_armor",
+                                                    "shulker_box",
+                                                    "writable_book",
+                                                    "written_book",
+                                                    "enchanted_book",
+                                                    "boat",
+                                                    "lead_cake",
+                                                    "bundle"};
             for (const char* s : kOneNames)
                 if (n == s)
                     return 1;
-            static const char* const k16[] = {"ender_pearl", "snowball", "egg", "bucket", "honey_bottle", "wind_charge", "armor_stand"};
+            static const char* const k16[] = {"ender_pearl",  "snowball",    "egg",        "bucket",
+                                              "honey_bottle", "wind_charge", "armor_stand"};
             for (const char* s : k16)
                 if (n == s)
                     return 16;
@@ -45,7 +71,8 @@ namespace perlin {
 
         int ArmorSlotOf(const std::string& full) {
             const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
-            if (EndsWith(n, "_helmet") || n == "carved_pumpkin" || EndsWith(n, "_head") || EndsWith(n, "_skull"))
+            if (EndsWith(n, "_helmet") || n == "carved_pumpkin" || EndsWith(n, "_head") ||
+                EndsWith(n, "_skull"))
                 return 0;
             if (EndsWith(n, "_chestplate") || n == "elytra")
                 return 1;
@@ -62,8 +89,9 @@ namespace perlin {
 
         bool OffhandAllowed(const std::string& full) {
             const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
-            static const char* const kAllowed[] = {"shield", "totem_of_undying", "arrow", "spectral_arrow", "tipped_arrow",
-                                                   "firework_rocket", "filled_map", "empty_map", "map"};
+            static const char* const kAllowed[] = {"shield",         "totem_of_undying", "arrow",
+                                                   "spectral_arrow", "tipped_arrow",     "firework_rocket",
+                                                   "filled_map",     "empty_map",        "map"};
             for (const char* a : kAllowed)
                 if (n == a)
                     return true;
@@ -79,7 +107,8 @@ namespace perlin {
         }
 
         bool SameStack(const ItemV4& a, const ItemV4& b) {
-            if (a.networkId != b.networkId || a.metadata != b.metadata || a.blockRuntimeId != b.blockRuntimeId)
+            if (a.networkId != b.networkId || a.metadata != b.metadata ||
+                a.blockRuntimeId != b.blockRuntimeId)
                 return false;
             const auto* na = NbtOf(a);
             const auto* nb = NbtOf(b);
@@ -93,15 +122,22 @@ namespace perlin {
         bool TagMatches(const std::string& tag, const std::string& full) {
             const std::string t = tag.starts_with("minecraft:") ? tag.substr(10) : tag;
             const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
-            if (t == "planks") return EndsWith(n, "_planks");
+            if (t == "planks")
+                return EndsWith(n, "_planks");
             if (t == "logs" || t == "logs_that_burn" || Has(t, "_logs"))
-                return Has(n, "_log") || EndsWith(n, "_stem") || EndsWith(n, "_wood") || EndsWith(n, "_hyphae");
-            if (t == "coals") return n == "coal" || n == "charcoal";
+                return Has(n, "_log") || EndsWith(n, "_stem") || EndsWith(n, "_wood") ||
+                       EndsWith(n, "_hyphae");
+            if (t == "coals")
+                return n == "coal" || n == "charcoal";
             if (t == "stone_crafting_materials" || t == "stone_tool_materials")
                 return n == "cobblestone" || n == "blackstone" || n == "cobbled_deepslate";
-            if (t == "soul_fire_base_blocks") return n == "soul_sand" || n == "soul_soil";
-            if (t == "wool") return EndsWith(n, "_wool");
-            if (t == "wooden_slabs") return EndsWith(n, "_slab") && Has(n, "planks") == false && !Has(n, "stone") && !Has(n, "brick");
+            if (t == "soul_fire_base_blocks")
+                return n == "soul_sand" || n == "soul_soil";
+            if (t == "wool")
+                return EndsWith(n, "_wool");
+            if (t == "wooden_slabs")
+                return EndsWith(n, "_slab") && Has(n, "planks") == false && !Has(n, "stone") &&
+                       !Has(n, "brick");
             std::string base = t;
             if (!base.empty() && base.back() == 's')
                 base.pop_back();
@@ -119,17 +155,36 @@ namespace perlin {
             using C = ContainerSlotType;
             C type = C::HotbarAndInventory;
             int slot = a;
-            if (a >= BedrockSession::kInvArmor0 && a < BedrockSession::kInvOffhand) { type = C::Armor; slot = a - BedrockSession::kInvArmor0; }
-            else if (a == BedrockSession::kInvOffhand) { type = C::Offhand; slot = 1; }
-            else if (a >= BedrockSession::kInvCraft0 && a < BedrockSession::kInvOutput) { type = C::CraftingInput; slot = 28 + a - BedrockSession::kInvCraft0; }
-            else if (a >= BedrockSession::kInvWork0 && a < BedrockSession::kInvSlots) { type = C::CraftingInput; slot = 32 + a - BedrockSession::kInvWork0; }
-            else if (a == BedrockSession::kInvOutput) { type = C::CreativeOutput; slot = 50; }
-            else if (a == BedrockSession::kInvCursor) { type = C::Cursor; slot = 0; }
-            else if (a >= BedrockSession::kInvChest0 && a < BedrockSession::kInvTotal) { type = gChestSlotType; slot = a - BedrockSession::kInvChest0; }
-            else if (a >= BedrockSession::kInvHorse0 && a < BedrockSession::kInvChest0) {
+            if (a >= BedrockSession::kInvArmor0 && a < BedrockSession::kInvOffhand) {
+                type = C::Armor;
+                slot = a - BedrockSession::kInvArmor0;
+            } else if (a == BedrockSession::kInvOffhand) {
+                type = C::Offhand;
+                slot = 1;
+            } else if (a >= BedrockSession::kInvCraft0 && a < BedrockSession::kInvOutput) {
+                type = C::CraftingInput;
+                slot = 28 + a - BedrockSession::kInvCraft0;
+            } else if (a >= BedrockSession::kInvWork0 && a < BedrockSession::kInvSlots) {
+                type = C::CraftingInput;
+                slot = 32 + a - BedrockSession::kInvWork0;
+            } else if (a == BedrockSession::kInvOutput) {
+                type = C::CreativeOutput;
+                slot = 50;
+            } else if (a == BedrockSession::kInvCursor) {
+                type = C::Cursor;
+                slot = 0;
+            } else if (a >= BedrockSession::kInvChest0 && a < BedrockSession::kInvTotal) {
+                type = gChestSlotType;
+                slot = a - BedrockSession::kInvChest0;
+            } else if (a >= BedrockSession::kInvHorse0 && a < BedrockSession::kInvChest0) {
                 const int h = a - BedrockSession::kInvHorse0;
-                if (h < 2) { type = C::HorseEquip; slot = h; }
-                else { type = C::Container; slot = h - 2; }
+                if (h < 2) {
+                    type = C::HorseEquip;
+                    slot = h;
+                } else {
+                    type = C::Container;
+                    slot = h - 2;
+                }
             }
             s.slotType.containerId = type;
             s.slotType.dynamicContainerId.reset();
@@ -139,21 +194,32 @@ namespace perlin {
     }
 
     BedrockSession::ItemStackInfo& BedrockSession::InvInfoLocked(int a) {
-        if (a < 9) return inventory.hotbar[a];
-        if (a < 36) return inventory.main[a - 9];
-        if (a < 40) return inventory.armor[a - 36];
-        if (a == kInvOffhand) return inventory.offhand;
-        if (a < kInvOutput) return inventory.craft[a - kInvCraft0];
-        if (a == kInvOutput) return inventory.output;
-        if (a >= kInvChest0 && a < kInvTotal) return inventory.chest[a - kInvChest0];
-        if (a >= kInvHorse0 && a < kInvChest0) return inventory.horse[a - kInvHorse0];
-        if (a >= kInvWork0) return inventory.work[a - kInvWork0];
+        if (a < 9)
+            return inventory.hotbar[a];
+        if (a < 36)
+            return inventory.main[a - 9];
+        if (a < 40)
+            return inventory.armor[a - 36];
+        if (a == kInvOffhand)
+            return inventory.offhand;
+        if (a < kInvOutput)
+            return inventory.craft[a - kInvCraft0];
+        if (a == kInvOutput)
+            return inventory.output;
+        if (a >= kInvChest0 && a < kInvTotal)
+            return inventory.chest[a - kInvChest0];
+        if (a >= kInvHorse0 && a < kInvChest0)
+            return inventory.horse[a - kInvHorse0];
+        if (a >= kInvWork0)
+            return inventory.work[a - kInvWork0];
         return inventory.cursor;
     }
 
     ItemV4& BedrockSession::InvRawLocked(int a) {
-        if (a >= kInvChest0 && a < kInvTotal) return chestRaw[a - kInvChest0];
-        if (a >= kInvHorse0 && a < kInvChest0) return horseRaw[a - kInvHorse0];
+        if (a >= kInvChest0 && a < kInvTotal)
+            return chestRaw[a - kInvChest0];
+        if (a >= kInvHorse0 && a < kInvChest0)
+            return horseRaw[a - kInvHorse0];
         return a < 36 ? inventoryRaw[a] : extraRaw[a - 36];
     }
 
@@ -182,7 +248,9 @@ namespace perlin {
         extraRaw[kInvOutput - 36] = ItemV4{};
         const int side = workbenchOpen ? 3 : 2;
         const int cells = side * side;
-        const auto cell = [&](int i) -> const ItemStackInfo& { return workbenchOpen ? inventory.work[i] : inventory.craft[i]; };
+        const auto cell = [&](int i) -> const ItemStackInfo& {
+            return workbenchOpen ? inventory.work[i] : inventory.craft[i];
+        };
         int filled = 0;
         for (int i = 0; i < cells; i++)
             filled += cell(i).Empty() ? 0 : 1;
@@ -197,8 +265,10 @@ namespace perlin {
                 int x0 = side, y0 = side, x1 = -1, y1 = -1;
                 for (int i = 0; i < cells; i++)
                     if (!cell(i).Empty()) {
-                        x0 = std::min(x0, i % side); x1 = std::max(x1, i % side);
-                        y0 = std::min(y0, i / side); y1 = std::max(y1, i / side);
+                        x0 = std::min(x0, i % side);
+                        x1 = std::max(x1, i % side);
+                        y0 = std::min(y0, i / side);
+                        y1 = std::max(y1, i / side);
                     }
                 if (x1 - x0 + 1 != r.w || y1 - y0 + 1 != r.h)
                     continue;
@@ -207,7 +277,10 @@ namespace perlin {
                     for (int y = 0; y < r.h && good; y++)
                         for (int x = 0; x < r.w && good; x++) {
                             const size_t idx = static_cast<size_t>(y * r.w + (mirror ? r.w - 1 - x : x));
-                            if (idx >= r.in.size()) { good = false; break; }
+                            if (idx >= r.in.size()) {
+                                good = false;
+                                break;
+                            }
                             const auto& src = r.in[idx];
                             Ing ing{src.empty, src.name, src.tag, src.meta};
                             good = IngMatches(ing, cell((y0 + y) * side + (x0 + x)));
@@ -266,7 +339,9 @@ namespace perlin {
             {
                 std::lock_guard lock(statusMutex);
                 const auto now = std::chrono::steady_clock::now();
-                std::erase_if(invInFlight, [&](const auto& e) { return now - e.second >= std::chrono::milliseconds(1500); });
+                std::erase_if(invInFlight, [&](const auto& e) {
+                    return now - e.second >= std::chrono::milliseconds(1500);
+                });
                 if (invInFlight.size() >= 8)
                     return;
                 if (invQueue.empty()) {
@@ -302,11 +377,14 @@ namespace perlin {
                         {
                             std::string text;
                             for (const auto& a : r.actions)
-                                text += " " + std::to_string(static_cast<int>(a.typeId)) + "(" + std::to_string(static_cast<int>(a.count)) + "," +
-                                        std::to_string(static_cast<int>(a.source.slotType.containerId)) + ":" + std::to_string(static_cast<int>(a.source.slot)) +
-                                        "#" + std::to_string(a.source.stackId) + "->" +
-                                        std::to_string(static_cast<int>(a.destination.slotType.containerId)) + ":" +
-                                        std::to_string(static_cast<int>(a.destination.slot)) + "#" + std::to_string(a.destination.stackId) + ")";
+                                text += " " + std::to_string(static_cast<int>(a.typeId)) + "(" +
+                                        std::to_string(static_cast<int>(a.count)) + "," +
+                                        std::to_string(static_cast<int>(a.source.slotType.containerId)) +
+                                        ":" + std::to_string(static_cast<int>(a.source.slot)) + "#" +
+                                        std::to_string(a.source.stackId) + "->" +
+                                        std::to_string(static_cast<int>(a.destination.slotType.containerId)) +
+                                        ":" + std::to_string(static_cast<int>(a.destination.slot)) + "#" +
+                                        std::to_string(a.destination.stackId) + ")";
                             invSummaries[r.requestId] = text;
                             if (invSummaries.size() > 32)
                                 invSummaries.erase(std::prev(invSummaries.end()));
@@ -343,8 +421,9 @@ namespace perlin {
                 auto& sr = raw(src);
                 auto& dr = raw(dst);
                 ItemStackRequestActionsEntry a;
-                const ItemStackRequestActionsEntryTypeId type = dst == BedrockSession::kInvCursor ? ItemStackRequestActionsEntryTypeId::Take
-                                                                                                  : ItemStackRequestActionsEntryTypeId::Place;
+                const ItemStackRequestActionsEntryTypeId type =
+                    dst == BedrockSession::kInvCursor ? ItemStackRequestActionsEntryTypeId::Take
+                                                      : ItemStackRequestActionsEntryTypeId::Place;
                 a.typeId = type;
                 a.legacyTypeId = LegacyActionId(type);
                 a.count = static_cast<uint8_t>(n);
@@ -410,7 +489,8 @@ namespace perlin {
         return moved;
     }
 
-    static void CraftPrelude(Mover& m, BedrockSession::ItemStackInfo outInfo, const ItemV4& outRaw, uint32_t recipeId) {
+    static void CraftPrelude(Mover& m, BedrockSession::ItemStackInfo outInfo, const ItemV4& outRaw,
+                             uint32_t recipeId) {
         ItemStackRequestActionsEntry craft;
         craft.typeId = ItemStackRequestActionsEntryTypeId::CraftRecipe;
         craft.legacyTypeId = LegacyActionId(craft.typeId);
@@ -455,9 +535,11 @@ namespace perlin {
         if (addr < 0 || addr >= kInvTotal || addr == kInvCursor)
             return;
         if (addr >= kInvChest0)
-            Log("inventory", "chest click addr {}{}", addr, (InvInfoLocked(addr).Empty() ? " empty" : " has-item"));
+            Log("inventory", "chest click addr {}{}", addr,
+                (InvInfoLocked(addr).Empty() ? " empty" : " has-item"));
         InvEnqueue([this, addr, right](ItemStackRequest& r) {
-            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                    [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             auto& S = InvInfoLocked(addr);
             auto& C = InvInfoLocked(kInvCursor);
             const ItemV4& sRaw = InvRawLocked(addr);
@@ -492,25 +574,29 @@ namespace perlin {
             const int max = cEmpty ? 64 : MaxStack(C.name);
             if (!right) {
                 if (cEmpty) {
-                    if (sEmpty) return false;
+                    if (sEmpty)
+                        return false;
                     m.Move(addr, kInvCursor, S.count);
                 } else if (sEmpty) {
                     m.Move(kInvCursor, addr, C.count);
                 } else if (SameStack(sRaw, cRaw)) {
                     const int n = std::min(C.count, max - S.count);
-                    if (n <= 0) return false;
+                    if (n <= 0)
+                        return false;
                     m.Move(kInvCursor, addr, n);
                 } else {
                     m.Swap(kInvCursor, addr);
                 }
             } else {
                 if (cEmpty) {
-                    if (sEmpty) return false;
+                    if (sEmpty)
+                        return false;
                     m.Move(addr, kInvCursor, (S.count + 1) / 2);
                 } else if (sEmpty) {
                     m.Move(kInvCursor, addr, 1);
                 } else if (SameStack(sRaw, cRaw)) {
-                    if (S.count >= max) return false;
+                    if (S.count >= max)
+                        return false;
                     m.Move(kInvCursor, addr, 1);
                 } else {
                     m.Swap(kInvCursor, addr);
@@ -526,9 +612,11 @@ namespace perlin {
         if (addr < 0 || addr >= kInvTotal || addr == kInvCursor)
             return;
         if (addr >= kInvChest0)
-            Log("inventory", "chest shift-click addr {}{}", addr, (InvInfoLocked(addr).Empty() ? " empty" : " has-item"));
+            Log("inventory", "chest shift-click addr {}{}", addr,
+                (InvInfoLocked(addr).Empty() ? " empty" : " has-item"));
         InvEnqueue([this, addr](ItemStackRequest& r) {
-            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                    [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             auto& S = InvInfoLocked(addr);
             if (S.Empty())
                 return false;
@@ -558,7 +646,8 @@ namespace perlin {
                 ok = QuickMove(m, addr, mainThenHotbar);
             } else if (addr < 36 && inventory.horseOpen &&
                        ((S.name.contains("saddle") && inventory.horse[0].Empty()) ||
-                        ((S.name.contains("horse_armor") || S.name.contains("carpet")) && inventory.horse[1].Empty()))) {
+                        ((S.name.contains("horse_armor") || S.name.contains("carpet")) &&
+                         inventory.horse[1].Empty()))) {
                 const int target = S.name.contains("saddle") ? kInvHorse0 : kInvHorse0 + 1;
                 ok = QuickMove(m, addr, {{target, target}});
             } else if (addr < 36 && inventory.horseOpen && inventory.horseChestSlots > 0) {
@@ -568,7 +657,9 @@ namespace perlin {
                 if (slot >= 0 && InvInfoLocked(kInvArmor0 + slot).Empty())
                     ok = QuickMove(m, addr, {{kInvArmor0 + slot, kInvArmor0 + slot}});
                 if (!ok)
-                    ok = QuickMove(m, addr, addr < 9 ? std::vector<std::pair<int, int>>{{9, 35}} : std::vector<std::pair<int, int>>{{0, 8}});
+                    ok = QuickMove(m, addr,
+                                   addr < 9 ? std::vector<std::pair<int, int>>{{9, 35}}
+                                            : std::vector<std::pair<int, int>>{{0, 8}});
             } else {
                 ok = QuickMove(m, addr, mainThenHotbar);
             }
@@ -579,10 +670,12 @@ namespace perlin {
     }
 
     void BedrockSession::InvHotbarKey(int addr, int hotbar) {
-        if (addr < 0 || (addr >= 36 && addr < kInvChest0) || addr >= kInvTotal || hotbar < 0 || hotbar > 8 || addr == hotbar)
+        if (addr < 0 || (addr >= 36 && addr < kInvChest0) || addr >= kInvTotal || hotbar < 0 || hotbar > 8 ||
+            addr == hotbar)
             return;
         InvEnqueue([this, addr, hotbar](ItemStackRequest& r) {
-            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                    [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             if (InvInfoLocked(addr).Empty() && InvInfoLocked(hotbar).Empty())
                 return false;
             m.Swap(hotbar, addr);
@@ -604,7 +697,8 @@ namespace perlin {
         if (slots.empty())
             return;
         InvEnqueue([this, slots, mode](ItemStackRequest& r) {
-            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                    [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             auto& C = InvInfoLocked(kInvCursor);
             if (C.Empty())
                 return false;
@@ -612,7 +706,8 @@ namespace perlin {
             const int max = MaxStack(C.name);
             std::vector<int> valid;
             for (int a : slots) {
-                if (a < 0 || (a >= kInvSlots && a < kInvChest0) || a >= kInvTotal || a == kInvCursor || a == kInvOutput)
+                if (a < 0 || (a >= kInvSlots && a < kInvChest0) || a >= kInvTotal || a == kInvCursor ||
+                    a == kInvOutput)
                     continue;
                 if (a >= kInvArmor0 && a < kInvOffhand && ArmorSlotOf(C.name) != a - kInvArmor0)
                     continue;
@@ -648,7 +743,8 @@ namespace perlin {
     uint32_t BedrockSession::CreativeEntryFor(const ItemStackInfo& info) const {
         std::lock_guard lock(statusMutex);
         for (const CreativeItem& c : creative.items)
-            if (c.info.name == info.name && c.info.aux == info.aux && c.info.blockRuntimeId == info.blockRuntimeId)
+            if (c.info.name == info.name && c.info.aux == info.aux &&
+                c.info.blockRuntimeId == info.blockRuntimeId)
                 return c.entryId;
         for (const CreativeItem& c : creative.items)
             if (c.info.name == info.name && c.info.aux == info.aux)
@@ -682,7 +778,8 @@ namespace perlin {
         if (!entry)
             return;
         InvEnqueue([this, entry, addr](ItemStackRequest& r) {
-            const auto found = std::find_if(creative.items.begin(), creative.items.end(), [&](const CreativeItem& c) { return c.entryId == entry; });
+            const auto found = std::find_if(creative.items.begin(), creative.items.end(),
+                                            [&](const CreativeItem& c) { return c.entryId == entry; });
             const auto rawIt = creativeRaw.find(entry);
             if (found == creative.items.end() || rawIt == creativeRaw.end())
                 return false;
@@ -693,7 +790,8 @@ namespace perlin {
             raw.count = static_cast<uint16_t>(out.count);
             if (!dst.Empty() && !SameStack(InvRawLocked(addr), raw))
                 return false;
-            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                    [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             ItemStackRequestActionsEntry craft;
             craft.typeId = ItemStackRequestActionsEntryTypeId::CraftCreative;
             craft.legacyTypeId = LegacyActionId(craft.typeId);
@@ -728,7 +826,8 @@ namespace perlin {
             const ItemV4& cRaw = InvRawLocked(kInvCursor);
             if (mode != 2 && !C.Empty() && (!SameStack(cRaw, raw) || C.count + out.count > MaxStack(C.name)))
                 return false;
-            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                    [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             ItemStackRequestActionsEntry craft;
             craft.typeId = ItemStackRequestActionsEntryTypeId::CraftCreative;
             craft.legacyTypeId = LegacyActionId(craft.typeId);
@@ -798,9 +897,12 @@ namespace perlin {
     }
 
     void BedrockSession::InvReturnCursor() {
-        for (int src : {kInvCursor, kInvCraft0, kInvCraft0 + 1, kInvCraft0 + 2, kInvCraft0 + 3, kInvWork0, kInvWork0 + 1, kInvWork0 + 2, kInvWork0 + 3, kInvWork0 + 4, kInvWork0 + 5, kInvWork0 + 6, kInvWork0 + 7, kInvWork0 + 8}) {
+        for (int src : {kInvCursor, kInvCraft0, kInvCraft0 + 1, kInvCraft0 + 2, kInvCraft0 + 3, kInvWork0,
+                        kInvWork0 + 1, kInvWork0 + 2, kInvWork0 + 3, kInvWork0 + 4, kInvWork0 + 5,
+                        kInvWork0 + 6, kInvWork0 + 7, kInvWork0 + 8}) {
             InvEnqueue([this, src](ItemStackRequest& r) {
-                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                        [this](int a) -> ItemV4& { return InvRawLocked(a); }};
                 const bool ok = QuickMove(m, src, {{0, 8}, {9, 35}});
                 if (src >= kInvCraft0)
                     InvRecomputeOutputLocked();
@@ -823,20 +925,54 @@ namespace perlin {
         pkt.transaction.transactionType = TransactionTransactionType::Normal;
         const auto place = [&](int a, int& window, int& slot) {
             slot = a;
-            if (a < 36) { window = 0; return true; }
-            if (a >= kInvArmor0 && a < kInvOffhand) { window = 120; slot = a - kInvArmor0; return true; }
-            if (a == kInvOffhand) { window = 119; slot = 0; return true; }
-            if (a == kInvCursor) { window = 124; slot = 0; return true; }
-            if (a >= kInvCraft0 && a < kInvOutput) { window = 124; slot = 28 + a - kInvCraft0; return true; }
-            if (a >= kInvWork0 && a < kInvSlots) { window = 124; slot = 32 + a - kInvWork0; return true; }
-            if (a >= kInvChest0 && a < kInvTotal && chestWindow >= 0) { window = chestWindow; slot = a - kInvChest0; return true; }
-            if (a >= kInvHorse0 && a < kInvChest0 && horseWindow >= 0) { window = horseWindow; slot = a - kInvHorse0; return true; }
+            if (a < 36) {
+                window = 0;
+                return true;
+            }
+            if (a >= kInvArmor0 && a < kInvOffhand) {
+                window = 120;
+                slot = a - kInvArmor0;
+                return true;
+            }
+            if (a == kInvOffhand) {
+                window = 119;
+                slot = 0;
+                return true;
+            }
+            if (a == kInvCursor) {
+                window = 124;
+                slot = 0;
+                return true;
+            }
+            if (a >= kInvCraft0 && a < kInvOutput) {
+                window = 124;
+                slot = 28 + a - kInvCraft0;
+                return true;
+            }
+            if (a >= kInvWork0 && a < kInvSlots) {
+                window = 124;
+                slot = 32 + a - kInvWork0;
+                return true;
+            }
+            if (a >= kInvChest0 && a < kInvTotal && chestWindow >= 0) {
+                window = chestWindow;
+                slot = a - kInvChest0;
+                return true;
+            }
+            if (a >= kInvHorse0 && a < kInvChest0 && horseWindow >= 0) {
+                window = horseWindow;
+                slot = a - kInvHorse0;
+                return true;
+            }
             return false;
         };
         const auto oldRaw = [&](int a) -> const ItemV4& {
-            if (a < 36) return before.raw[a];
-            if (a >= kInvChest0) return before.chest[a - kInvChest0];
-            if (a >= kInvHorse0) return before.horse[a - kInvHorse0];
+            if (a < 36)
+                return before.raw[a];
+            if (a >= kInvChest0)
+                return before.chest[a - kInvChest0];
+            if (a >= kInvHorse0)
+                return before.horse[a - kInvHorse0];
             return before.extra[a - 36];
         };
         const auto same = [](const ItemV4& x, const ItemV4& y) {
@@ -912,7 +1048,9 @@ namespace perlin {
                     break;
                 }
             }
-            const std::string key = r.outInfo.name + ";" + std::to_string(r.outInfo.aux) + ";" + std::to_string(r.outInfo.blockRuntimeId) + ";" + std::to_string(r.outInfo.count);
+            const std::string key = r.outInfo.name + ";" + std::to_string(r.outInfo.aux) + ";" +
+                                    std::to_string(r.outInfo.blockRuntimeId) + ";" +
+                                    std::to_string(r.outInfo.count);
             if (const auto seen = byKey.find(key); seen != byKey.end()) {
                 RecipeEntry& prev = out[seen->second];
                 if (craftable && !prev.craftable) {
@@ -943,7 +1081,8 @@ namespace perlin {
         for (int c = 0; c < side * side; c++) {
             const int addr = big ? kInvWork0 + c : kInvCraft0 + c;
             InvEnqueue([this, addr](ItemStackRequest& r) {
-                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                        [this](int a) -> ItemV4& { return InvRawLocked(a); }};
                 if (InvInfoLocked(addr).Empty())
                     return false;
                 const bool ok = QuickMove(m, addr, {{0, 8}, {9, 35}});
@@ -965,7 +1104,8 @@ namespace perlin {
             const int cy = recipe.shaped ? static_cast<int>(k) / w : static_cast<int>(k) / side;
             const int addr = big ? kInvWork0 + cy * side + cx : kInvCraft0 + cy * side + cx;
             InvEnqueue([this, src, addr](ItemStackRequest& r) {
-                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); },
+                        [this](int a) -> ItemV4& { return InvRawLocked(a); }};
                 const Ing ing{src.empty, src.name, src.tag, src.meta};
                 for (int i = 0; i < 36; i++) {
                     const ItemStackInfo& it = InvInfoLocked(i);

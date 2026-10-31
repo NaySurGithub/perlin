@@ -21,7 +21,7 @@ namespace perlin::ui {
 
     // clicked json ui button: bedrock button id + collection row
     struct JsonButton {
-        std::string id;  // e.g. "button.menu_continue"
+        std::string id; // e.g. "button.menu_continue"
         int index = -1;
     };
     bool ParseJsonButton(const std::string& hoverId, JsonButton& out);
@@ -44,7 +44,8 @@ namespace perlin::ui {
 
         bool Global(const std::string& name, Json& out) const override;
         int CollectionSize(const std::string& collection) const override;
-        bool CollectionValue(const std::string& collection, int index, const std::string& binding, Json& out) const override;
+        bool CollectionValue(const std::string& collection, int index, const std::string& binding,
+                             Json& out) const override;
         std::vector<FactoryItem> Factory(const std::string& name) const override;
 
         // stable digest: re-emit only on change
@@ -73,10 +74,12 @@ namespace perlin::ui {
 
         // false (rml untouched) if screen missing or failed: caller falls back to built-in layout;
         // `rootVars`: engine vars (e.g. $container_title); trees cached per set
-        bool Build(const std::string& reference, const ScreenData& data, int guiW, int guiH, float scroll, std::string& rml,
-                   const Vars* rootVars = nullptr);
+        bool Build(const std::string& reference, const ScreenData& data, int guiW, int guiH, float scroll,
+                   std::string& rml, const Vars* rootVars = nullptr);
         // inventory_item_renderer items per collection ("container_items", "inventory_items", "hotbar_items")
-        void SetItems(std::unordered_map<std::string, std::vector<HudItem>> table) { items = std::move(table); }
+        void SetItems(std::unordered_map<std::string, std::vector<HudItem>> table) {
+            items = std::move(table);
+        }
         // some non-vanilla pack defines this screen's namespace
         bool Overridden(const std::string& ns) const;
         float ContentHeight() const { return emitter.ContentHeight(); }
@@ -88,7 +91,10 @@ namespace perlin::ui {
         void SetPaperDoll(std::string key) { paperDoll = std::move(key); }
         // doll rect in last document (gui units); false if none
         bool PaperDollRect(float& x, float& y, float& w, float& h) const {
-            x = dollX; y = dollY; w = dollW; h = dollH;
+            x = dollX;
+            y = dollY;
+            w = dollW;
+            h = dollH;
             return dollW > 0;
         }
         UiServices& Services() { return services; }

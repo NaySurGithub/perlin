@@ -34,17 +34,23 @@ namespace {
 
 extern "C" {
 
-PS_API uint32_t ps_abi_version(void) { return 1; }
+PS_API uint32_t ps_abi_version(void) {
+    return 1;
+}
 
 PS_API void ps_set_log(ps_log_fn fn, void* user) {
     if (!fn) {
         SetLogSink(nullptr);
         return;
     }
-    SetLogSink([fn, user](LogLevel level, const std::string& text) { fn(static_cast<int>(level), text.c_str(), user); });
+    SetLogSink([fn, user](LogLevel level, const std::string& text) {
+        fn(static_cast<int>(level), text.c_str(), user);
+    });
 }
 
-PS_API const char* ps_last_error(void) { return g_error.c_str(); }
+PS_API const char* ps_last_error(void) {
+    return g_error.c_str();
+}
 
 PS_API ps_server* ps_create(const ps_options* options) {
     try {
@@ -61,15 +67,26 @@ PS_API ps_server* ps_create(const ps_options* options) {
             // overrides: write them over the loaded file the same way server.json is read
             json::Value over;
             if (json::Parse(options->config_json, over, &error)) {
-                if (over["name"].IsString()) config.name = over["name"].text;
-                if (over["port"].Int(0) > 0) config.port = static_cast<uint16_t>(over["port"].Int());
-                if (over["view_distance"].Int(0) > 0) config.viewDistance = static_cast<uint32_t>(over["view_distance"].Int());
-                if (over["max_players"].Int(0) > 0) config.maxPlayers = static_cast<uint32_t>(over["max_players"].Int());
-                if (over["terrain_backend"].IsString()) config.terrainBackend = over["terrain_backend"].text;
-                if (const int64_t gm = over["gamemode"].Int(-1); gm == 0 || gm == 1 || gm == 2 || gm == 6) config.gameMode = static_cast<int>(gm);
-                if (over["plugin_dir"].IsString()) config.pluginDir = over["plugin_dir"].text;
-                if (over["generator"].IsString()) config.generator = over["generator"].text;
-                if (over["seed"].kind == json::Value::Kind::Number) { config.seed = static_cast<uint64_t>(over["seed"].Int()); config.randomSeed = false; }
+                if (over["name"].IsString())
+                    config.name = over["name"].text;
+                if (over["port"].Int(0) > 0)
+                    config.port = static_cast<uint16_t>(over["port"].Int());
+                if (over["view_distance"].Int(0) > 0)
+                    config.viewDistance = static_cast<uint32_t>(over["view_distance"].Int());
+                if (over["max_players"].Int(0) > 0)
+                    config.maxPlayers = static_cast<uint32_t>(over["max_players"].Int());
+                if (over["terrain_backend"].IsString())
+                    config.terrainBackend = over["terrain_backend"].text;
+                if (const int64_t gm = over["gamemode"].Int(-1); gm == 0 || gm == 1 || gm == 2 || gm == 6)
+                    config.gameMode = static_cast<int>(gm);
+                if (over["plugin_dir"].IsString())
+                    config.pluginDir = over["plugin_dir"].text;
+                if (over["generator"].IsString())
+                    config.generator = over["generator"].text;
+                if (over["seed"].kind == json::Value::Kind::Number) {
+                    config.seed = static_cast<uint64_t>(over["seed"].Int());
+                    config.randomSeed = false;
+                }
             } else {
                 g_error = "config_json: " + error;
                 return nullptr;
@@ -116,7 +133,9 @@ PS_API int ps_run_async(ps_server* s) {
     return 0;
 }
 
-PS_API int ps_is_running(ps_server* s) { return s && s->asyncRunning && !s->finished ? 1 : 0; }
+PS_API int ps_is_running(ps_server* s) {
+    return s && s->asyncRunning && !s->finished ? 1 : 0;
+}
 
 PS_API void ps_tick(ps_server* s) {
     if (s)
@@ -156,7 +175,9 @@ PS_API ps_conn* ps_connect_loopback(ps_server* s) {
     return c;
 }
 
-PS_API int ps_conn_send(ps_conn* c, const uint8_t* data, size_t size) { return c && c->endpoint->Send(data, size) ? 1 : 0; }
+PS_API int ps_conn_send(ps_conn* c, const uint8_t* data, size_t size) {
+    return c && c->endpoint->Send(data, size) ? 1 : 0;
+}
 
 PS_API int ps_conn_receive(ps_conn* c, uint8_t* buf, size_t capacity, size_t* size) {
     if (!c)
@@ -175,7 +196,9 @@ PS_API int ps_conn_receive(ps_conn* c, uint8_t* buf, size_t capacity, size_t* si
     return 1;
 }
 
-PS_API int ps_conn_alive(ps_conn* c) { return c && c->endpoint->Alive() ? 1 : 0; }
+PS_API int ps_conn_alive(ps_conn* c) {
+    return c && c->endpoint->Alive() ? 1 : 0;
+}
 
 PS_API void ps_conn_close(ps_conn* c) {
     if (!c)

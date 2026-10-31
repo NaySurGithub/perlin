@@ -44,14 +44,15 @@ namespace perlin {
     private:
         static uint64_t Key(int x, int y, int z) {
             return (static_cast<uint64_t>(static_cast<uint32_t>(x) & 0x3FFFFFFu) << 38) |
-                   (static_cast<uint64_t>(static_cast<uint32_t>(z) & 0x3FFFFFFu) << 12) | (static_cast<uint64_t>(y + 2048) & 0xFFFu);
+                   (static_cast<uint64_t>(static_cast<uint32_t>(z) & 0x3FFFFFFu) << 12) |
+                   (static_cast<uint64_t>(y + 2048) & 0xFFFu);
         }
         mutable std::mutex mutex;
         std::unordered_map<uint64_t, BlockEntity> entities;
         struct Lid {
             bool open = false;
             float from = 0.0f;
-            std::chrono::steady_clock::time_point at{};
+            std::chrono::steady_clock::time_point at;
         };
         std::unordered_map<uint64_t, Lid> lids;
         static float LidAt(const Lid& lid, std::chrono::steady_clock::time_point now);

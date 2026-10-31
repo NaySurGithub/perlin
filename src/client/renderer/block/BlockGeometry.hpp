@@ -19,8 +19,9 @@ namespace perlin {
         using FetchFn = std::function<int(const std::string& relPath, const std::string& root)>;
 
         void ScanPack(const std::string& packRoot, const std::string& blocksDir, const FetchFn& fetch);
-        void AddCustom(const std::string& name, const std::string& definitionJson, const std::vector<std::string>& packRoots,
-                       const std::string& textureRoot, const FetchFn& fetch);
+        void AddCustom(const std::string& name, const std::string& definitionJson,
+                       const std::vector<std::string>& packRoots, const std::string& textureRoot,
+                       const FetchFn& fetch);
         void Clear();
         bool Empty() const {
             std::shared_lock lock(mutex);
@@ -43,7 +44,7 @@ namespace perlin {
             struct Face {
                 bool has = false;
                 float uv[2] = {0, 0}, size[2] = {0, 0};
-                int rotation = 0;  // uv_rotation in quarter turns, clockwise
+                int rotation = 0; // uv_rotation in quarter turns, clockwise
                 std::string mat;
             } faces[6];
             std::string mat;

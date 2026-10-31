@@ -17,12 +17,16 @@ namespace testauth {
         std::string out;
         for (size_t i = 0; i < s.size(); i += 3) {
             uint32_t v = static_cast<unsigned char>(s[i]) << 16;
-            if (i + 1 < s.size()) v |= static_cast<unsigned char>(s[i + 1]) << 8;
-            if (i + 2 < s.size()) v |= static_cast<unsigned char>(s[i + 2]);
+            if (i + 1 < s.size())
+                v |= static_cast<unsigned char>(s[i + 1]) << 8;
+            if (i + 2 < s.size())
+                v |= static_cast<unsigned char>(s[i + 2]);
             out += t[(v >> 18) & 63];
             out += t[(v >> 12) & 63];
-            if (i + 1 < s.size()) out += t[(v >> 6) & 63];
-            if (i + 2 < s.size()) out += t[v & 63];
+            if (i + 1 < s.size())
+                out += t[(v >> 6) & 63];
+            if (i + 2 < s.size())
+                out += t[v & 63];
         }
         return out;
     }
@@ -38,7 +42,7 @@ namespace testauth {
 
     struct Key {
         EVP_PKEY* pkey = nullptr;
-        std::string spki;  // base64 der, what x5u and identityPublicKey carry
+        std::string spki; // base64 der, what x5u and identityPublicKey carry
 
         Key() {
             EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr);
@@ -77,7 +81,9 @@ namespace testauth {
     };
 
     inline int64_t Now() {
-        return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        return std::chrono::duration_cast<std::chrono::seconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+            .count();
     }
 
     // header {alg, x5u: signer}, payload text as given
@@ -89,7 +95,9 @@ namespace testauth {
 
     inline std::string Link(const Key& signer, const Key& subject, const std::string& extraData = "") {
         const int64_t now = Now();
-        std::string payload = "{\"identityPublicKey\":\"" + subject.spki + "\",\"nbf\":" + std::to_string(now - 60) + ",\"exp\":" + std::to_string(now + 3600);
+        std::string payload = "{\"identityPublicKey\":\"" + subject.spki +
+                              "\",\"nbf\":" + std::to_string(now - 60) +
+                              ",\"exp\":" + std::to_string(now + 3600);
         if (!extraData.empty())
             payload += ",\"extraData\":" + extraData;
         return Jwt(signer, payload + "}");
@@ -102,18 +110,24 @@ namespace testauth {
         Account(std::string n, std::string x) : name(std::move(n)), xuid(std::move(x)) {}
 
         std::vector<std::string> Chain(bool withService = true) const {
-            const std::string extra = "{\"displayName\":\"" + name + "\",\"XUID\":\"" + xuid + "\",\"identity\":\"11111111-2222-3333-4444-555555555555\"}";
+            const std::string extra = "{\"displayName\":\"" + name + "\",\"XUID\":\"" + xuid +
+                                      "\",\"identity\":\"11111111-2222-3333-4444-555555555555\"}";
             if (!withService)
-                return {Link(player, player, "{\"displayName\":\"" + name + "\",\"identity\":\"11111111-2222-3333-4444-555555555555\"}")};
+                return {Link(player, player,
+                             "{\"displayName\":\"" + name +
+                                 "\",\"identity\":\"11111111-2222-3333-4444-555555555555\"}")};
             return {Link(player, root), Link(root, intermediate), Link(intermediate, player, extra)};
         }
         std::string Identity(const std::vector<std::string>& chain, int type = 0) const {
             std::string list;
             for (const std::string& c : chain)
                 list += (list.empty() ? "\\\"" : ",\\\"") + c + "\\\"";
-            return "{\"Certificate\":\"{\\\"chain\\\":[" + list + "]}\",\"AuthenticationType\":" + std::to_string(type) + ",\"Token\":\"\"}";
+            return "{\"Certificate\":\"{\\\"chain\\\":[" + list +
+                   "]}\",\"AuthenticationType\":" + std::to_string(type) + ",\"Token\":\"\"}";
         }
-        std::string ClientToken() const { return Jwt(player, "{\"ThirdPartyName\":\"" + name + "\",\"SkinId\":\"s\"}"); }
+        std::string ClientToken() const {
+            return Jwt(player, "{\"ThirdPartyName\":\"" + name + "\",\"SkinId\":\"s\"}");
+        }
     };
 
     // the a=identity line the client adds to its offer: fingerprints signed with the player's key
@@ -126,7 +140,8 @@ namespace testauth {
             size_t eol = sdp.find_first_of("\r\n", pos);
             const std::string rest = sdp.substr(pos + prefix.size(), eol - pos - prefix.size());
             const size_t sp = rest.find(' ');
-            payload += std::string(first ? "" : ",") + "{\"algorithm\":\"" + rest.substr(0, sp) + "\",\"digest\":\"" + rest.substr(sp + 1) + "\"}";
+            payload += std::string(first ? "" : ",") + "{\"algorithm\":\"" + rest.substr(0, sp) +
+                       "\",\"digest\":\"" + rest.substr(sp + 1) + "\"}";
             first = false;
             pos = eol;
         }
@@ -137,7 +152,8 @@ namespace testauth {
         std::string escaped;
         for (char c : assertion)
             escaped += c == '"' ? std::string("\\\"") : std::string(1, c);
-        const std::string outer = "{\"assertion\":\"" + escaped + "\",\"idp\":{\"domain\":\"\",\"protocol\":\"default\"}}";
+        const std::string outer =
+            "{\"assertion\":\"" + escaped + "\",\"idp\":{\"domain\":\"\",\"protocol\":\"default\"}}";
         const size_t m = sdp.find("m=");
         const size_t bol = sdp.rfind('\n', m) + 1;
         return sdp.substr(0, bol) + "a=identity:" + B64Std(outer) + "\r\n" + sdp.substr(bol);

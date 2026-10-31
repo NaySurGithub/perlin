@@ -9,7 +9,7 @@
 namespace perlin::ui {
     struct PausePlayer {
         std::string name;
-        int permission = 1;  // 0 visitor, 1 member, 2 operator
+        int permission = 1; // 0 visitor, 1 member, 2 operator
         bool local = false;
     };
 
@@ -23,5 +23,6 @@ namespace perlin::ui {
 
     // slot bindings for container screens: `container` = open container's items, `inventory` = player's 36 slots
     // (hotbar first); item pictures come from JsonScreens::SetItems
-    ScreenData ContainerScreenData(const std::vector<HudItem>& container, const std::vector<HudItem>& inventory, int selectedHotbar);
+    ScreenData ContainerScreenData(const std::vector<HudItem>& container,
+                                   const std::vector<HudItem>& inventory, int selectedHotbar);
 }

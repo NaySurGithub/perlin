@@ -21,9 +21,10 @@
 namespace perlin::server {
     namespace {
 
-
         // a block name with or without the namespace
-        std::string FullBlockName(const std::string& n) { return !n.contains(':') ? "minecraft:" + n : n; }
+        std::string FullBlockName(const std::string& n) {
+            return !n.contains(':') ? "minecraft:" + n : n;
+        }
     }
 
     Server::Server(ServerConfig cfg) : config(std::move(cfg)) {
@@ -34,7 +35,9 @@ namespace perlin::server {
         plugins = std::make_unique<PluginHost>(*this);
     }
 
-    Server::~Server() { Stop(); }
+    Server::~Server() {
+        Stop();
+    }
 
     bool Server::Start(std::string& error) {
         if (started)
@@ -58,7 +61,8 @@ namespace perlin::server {
             config.compressionAlgorithm = "zlib";
         }
         if (config.udpPublicBegin != 0 || !config.udpPublicAddress.empty())
-            LogWarn("server-udp-ports: the public side of the mapping is not announced to clients (webrtc picks the candidate address); forward the same port numbers");
+            LogWarn("server-udp-ports: the public side of the mapping is not announced to clients (webrtc "
+                    "picks the candidate address); forward the same port numbers");
         if (!config.blockNetworkIdsAreHashes) {
             LogWarn("block-network-ids-are-hashes=false is not supported; block ids stay hashes");
             config.blockNetworkIdsAreHashes = true;
@@ -71,11 +75,14 @@ namespace perlin::server {
             const std::string extra = BlockCatalog::FindFile(config.blockDataDir, "extra_items.txt");
             if (states.empty() || !catalog.Load(states, names, catalogError, extra)) {
                 catalog.LoadBuiltin();
-                LogWarn("block data not found" + (catalogError.empty() ? std::string() : " (" + catalogError + ")") +
-                        ": using the built-in list of " + std::to_string(catalog.Items().size()) +
-                        " blocks; set block_data_dir to a folder with block_states.json and block_destroy.tsv");
+                LogWarn(
+                    "block data not found" +
+                    (catalogError.empty() ? std::string() : " (" + catalogError + ")") +
+                    ": using the built-in list of " + std::to_string(catalog.Items().size()) +
+                    " blocks; set block_data_dir to a folder with block_states.json and block_destroy.tsv");
             } else {
-                LogInfo("block data: " + std::to_string(catalog.StateCount()) + " states, " + std::to_string(catalog.Items().size()) + " items");
+                LogInfo("block data: " + std::to_string(catalog.StateCount()) + " states, " +
+                        std::to_string(catalog.Items().size()) + " items");
             }
             BuildItemPackets();
         }
@@ -84,14 +91,19 @@ namespace perlin::server {
             error = "no terrain backend: " + choice.note;
             return false;
         }
-        LogInfo("terrain: " + std::string(choice.backend->Name()) + (choice.note.empty() ? "" : " (" + choice.note + ")"));
+        LogInfo("terrain: " + std::string(choice.backend->Name()) +
+                (choice.note.empty() ? "" : " (" + choice.note + ")"));
         {
             // the spawn: the backend's dry land nearest the origin, or the origin on the flat surface
             int x = 0, y = FlatSurfaceY(config), z = 0;
             const auto spawnStart = std::chrono::steady_clock::now();
             if (config.generator == "vanilla" && choice.backend->FindSpawn(x, y, z))
-                LogInfo("spawn at " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + " (" +
-                        std::to_string(static_cast<int>(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - spawnStart).count())) + " ms)");
+                LogInfo("spawn at " + std::to_string(x) + ", " + std::to_string(y) + ", " +
+                        std::to_string(z) + " (" +
+                        std::to_string(static_cast<int>(std::chrono::duration<double, std::milli>(
+                                                            std::chrono::steady_clock::now() - spawnStart)
+                                                            .count())) +
+                        " ms)");
             spawnX = x;
             spawnY = y;
             spawnZ = z;
@@ -108,13 +120,15 @@ namespace perlin::server {
         if (config.nethernet && !config.loopbackOnly) {
             nethernet = CreateNetherNetListener(config, [this] {
                 std::ostringstream o;
-                o << "{\"name\":\"" << json::Escape(config.name) << "\",\"protocol\":2225,\"version\":\"1.26.60\",\"level\":\""
-                  << json::Escape(config.levelName) << "\",\"players\":" << InGamePlayers().size() << ",\"maxPlayers\":" << config.maxPlayers
-                  << ",\"gameType\":" << config.gameMode << "}";
+                o << "{\"name\":\"" << json::Escape(config.name)
+                  << "\",\"protocol\":2225,\"version\":\"1.26.60\",\"level\":\""
+                  << json::Escape(config.levelName) << "\",\"players\":" << InGamePlayers().size()
+                  << ",\"maxPlayers\":" << config.maxPlayers << ",\"gameType\":" << config.gameMode << "}";
                 return o.str();
             });
             if (!nethernet) {
-                error = "this build has no NetherNet support (rebuild with PERLIN_SERVER_NETHERNET=ON), or set loopback_only";
+                error = "this build has no NetherNet support (rebuild with PERLIN_SERVER_NETHERNET=ON), or "
+                        "set loopback_only";
                 return false;
             }
             if (!nethernet->Start(events, error))
@@ -135,7 +149,8 @@ namespace perlin::server {
                 for (const AccessEntry& e : legacyOps.Entries())
                     permissionList.SetPermission(e.name, e.xuid, "operator");
                 if (!legacyOps.Entries().empty())
-                    LogInfo("imported " + std::to_string(legacyOps.Entries().size()) + " operators from ops.json into permissions.json");
+                    LogInfo("imported " + std::to_string(legacyOps.Entries().size()) +
+                            " operators from ops.json into permissions.json");
             }
             // the old operators key in server.json still counts
             for (const std::string& o : config.operators)
@@ -146,7 +161,8 @@ namespace perlin::server {
                 allowList.Save();
             }
             if (config.whitelist && !config.loopbackOnly)
-                LogInfo("allow-list is on: " + std::to_string(allowList.Entries().size()) + " entries in " + allowList.Path());
+                LogInfo("allow-list is on: " + std::to_string(allowList.Entries().size()) + " entries in " +
+                        allowList.Path());
         }
         plugins->LoadDirectory(config.pluginDir);
         started = true;
@@ -212,11 +228,8 @@ namespace perlin::server {
             if (frozen && stepRemaining > 0)
                 stepRemaining--;
             TickItems();
-            if (plugins->AnyoneListens(PS_EVENT_TICK)) {
-                PayloadWriter w;
-                w.U64(tick);
-                plugins->Dispatch(PS_EVENT_TICK, w.bytes);
-            }
+            if (plugins->AnyoneListens(abi::Event::Tick))
+                plugins->Dispatch<abi::Event::Tick>({.dt = 0.05f, .tick = tick});
         }
         // position broadcast: once per tick for players that moved is plenty at 20 Hz
         std::vector<Session*> players = InGamePlayers();
@@ -229,14 +242,18 @@ namespace perlin::server {
             session->Tick(tick);
         ReapClosed();
         if (advance) {
-            tickMillis.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+            tickMillis.push_back(
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
             if (tickMillis.size() > 100)
                 tickMillis.pop_front();
             if (sprintRemaining > 0 && --sprintRemaining == 0) {
-                const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - sprintStarted).count();
+                const double seconds =
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - sprintStarted).count();
                 char report[160];
-                std::snprintf(report, sizeof report, "Sprint completed with %.1f ticks per second, or %.2f ms per tick",
-                              seconds > 0 ? static_cast<double>(sprintTotal) / seconds : 0.0, sprintTotal > 0 ? seconds * 1000.0 / static_cast<double>(sprintTotal) : 0.0);
+                std::snprintf(report, sizeof report,
+                              "Sprint completed with %.1f ticks per second, or %.2f ms per tick",
+                              seconds > 0 ? static_cast<double>(sprintTotal) / seconds : 0.0,
+                              sprintTotal > 0 ? seconds * 1000.0 / static_cast<double>(sprintTotal) : 0.0);
                 Broadcast(report);
             }
         }
@@ -244,7 +261,9 @@ namespace perlin::server {
 
     std::string Server::TickQuery() const {
         char line[200];
-        std::string out = sprintRemaining > 0 ? "The game is sprinting" : frozen ? "The game is frozen" : "The game is running normally";
+        std::string out = sprintRemaining > 0 ? "The game is sprinting"
+                          : frozen            ? "The game is frozen"
+                                              : "The game is running normally";
         std::snprintf(line, sizeof line, "\nTarget tick rate: %.1f per second.", tickRateTarget);
         out += line;
         if (!tickMillis.empty()) {
@@ -253,10 +272,16 @@ namespace perlin::server {
             double sum = 0;
             for (double v : sorted)
                 sum += v;
-            const auto pct = [&](double p) { return sorted[std::min(sorted.size() - 1, static_cast<size_t>(p * static_cast<double>(sorted.size())))]; };
-            std::snprintf(line, sizeof line, "\nAverage time per tick: %.1fms (Target: %.1fms)", sum / static_cast<double>(sorted.size()), 1000.0 / tickRateTarget);
+            const auto pct = [&](double p) {
+                return sorted[std::min(sorted.size() - 1,
+                                       static_cast<size_t>(p * static_cast<double>(sorted.size())))];
+            };
+            std::snprintf(line, sizeof line, "\nAverage time per tick: %.1fms (Target: %.1fms)",
+                          sum / static_cast<double>(sorted.size()), 1000.0 / tickRateTarget);
             out += line;
-            std::snprintf(line, sizeof line, "\nPercentiles: P50: %.1fms P95: %.1fms P99: %.1fms, sample: %zu", pct(0.5), pct(0.95), pct(0.99), sorted.size());
+            std::snprintf(line, sizeof line,
+                          "\nPercentiles: P50: %.1fms P95: %.1fms P99: %.1fms, sample: %zu", pct(0.5),
+                          pct(0.95), pct(0.99), sorted.size());
             out += line;
         }
         return out;
@@ -360,7 +385,8 @@ namespace perlin::server {
         }
     }
 
-    void Server::SpawnItem(const ItemStack& stack, double x, double y, double z, double vx, double vy, double vz, int pickupDelay) {
+    void Server::SpawnItem(const ItemStack& stack, double x, double y, double z, double vx, double vy,
+                           double vz, int pickupDelay) {
         if (stack.Empty())
             return;
         ItemEntity item;
@@ -390,7 +416,8 @@ namespace perlin::server {
         if (itemEntities.empty())
             return;
         const auto solid = [&](double x, double y, double z) {
-            const int bx = static_cast<int>(std::floor(x)), by = static_cast<int>(std::floor(y)), bz = static_cast<int>(std::floor(z));
+            const int bx = static_cast<int>(std::floor(x)), by = static_cast<int>(std::floor(y)),
+                      bz = static_cast<int>(std::floor(z));
             if (by < kMinY)
                 return true;
             if (!chunks->Peek({bx >> 4, bz >> 4}))
@@ -526,7 +553,9 @@ namespace perlin::server {
         return std::filesystem::exists(legacy, ec) ? legacy : config.dataDir + "/allowlist.json";
     }
 
-    std::string Server::PermissionsPath() const { return config.dataDir + "/permissions.json"; }
+    std::string Server::PermissionsPath() const {
+        return config.dataDir + "/permissions.json";
+    }
 
     std::string Server::PermissionOf(const std::string& name, const std::string& xuid) const {
         if (const AccessEntry* e = permissionList.Find(name, xuid))
@@ -582,10 +611,7 @@ namespace perlin::server {
         for (const ItemEntity& item : itemEntities)
             joined.ShowItem(item);
         SendWorldState(joined);
-        PayloadWriter w;
-        w.U64(joined.Id());
-        w.Str(joined.Name());
-        plugins->Dispatch(PS_EVENT_PLAYER_JOIN, w.bytes);
+        plugins->Dispatch<abi::Event::PlayerJoin>({joined.Id(), joined.Name()});
         Broadcast("§e" + joined.Name() + " joined the game");
     }
 
@@ -594,10 +620,7 @@ namespace perlin::server {
         for (Session* other : InGamePlayers())
             if (other != &left)
                 other->HidePlayer(left);
-        PayloadWriter w;
-        w.U64(left.Id());
-        w.Str(left.Name());
-        plugins->Dispatch(PS_EVENT_PLAYER_QUIT, w.bytes);
+        plugins->Dispatch<abi::Event::PlayerQuit>({left.Id(), left.Name()});
         for (Session* other : InGamePlayers())
             if (other != &left)
                 other->SendRaw("§e" + left.Name() + " left the game");
@@ -608,11 +631,7 @@ namespace perlin::server {
             RunPlayerCommand(from, message);
             return;
         }
-        PayloadWriter w;
-        w.U64(from.Id());
-        w.Str(from.Name());
-        w.Str(message);
-        if (plugins->Dispatch(PS_EVENT_CHAT, w.bytes) & 1u)
+        if (plugins->Dispatch<abi::Event::PlayerChat>({from.Id(), from.Name(), message}))
             return;
         LogInfo("<" + from.Name() + "> " + message);
         for (Session* s : InGamePlayers())
@@ -631,7 +650,9 @@ namespace perlin::server {
         RunCommand(&from, line);
     }
 
-    void Server::RunConsoleCommand(const std::string& line) { RunCommand(nullptr, line); }
+    void Server::RunConsoleCommand(const std::string& line) {
+        RunCommand(nullptr, line);
+    }
 
     void Server::RunCommand(Session* from, const std::string& line) {
         std::string text = str::Trim(line);
@@ -695,8 +716,8 @@ namespace perlin::server {
         return true;
     }
 
-
-    void Server::RegisterCommand(const std::string& plugin, const std::string& name, const std::string& description) {
+    void Server::RegisterCommand(const std::string& plugin, const std::string& name,
+                                 const std::string& description) {
         CommandDef d;
         d.name = str::Lower(name);
         d.description = description;
@@ -726,14 +747,9 @@ namespace perlin::server {
         for (Session* s : InGamePlayers())
             if (s->HasSent({x >> 4, z >> 4}))
                 s->SendBlockUpdate(x, y, z, hash);
-        if (plugins->AnyoneListens(PS_EVENT_BLOCK_CHANGE)) {
-            PayloadWriter w;
-            w.I32(x);
-            w.I32(y);
-            w.I32(z);
-            w.Str(BlockRegistry::Instance().Name(block));
-            plugins->Dispatch(PS_EVENT_BLOCK_CHANGE, w.bytes);
-        }
+        if (plugins->AnyoneListens(abi::Event::BlockChanged))
+            plugins->Dispatch<abi::Event::BlockChanged>(
+                {.x = x, .y = y, .z = z, .to = BlockRegistry::Instance().Name(block)});
     }
 
     void Server::SendBlockTo(Session& to, int x, int y, int z) {
@@ -742,23 +758,24 @@ namespace perlin::server {
         to.SendBlockUpdate(x, y, z, BlockRegistry::Instance().Hash(chunks->GetBlock(x, y, z)));
     }
 
-    int Server::SetBlock(int x, int y, int z, const std::string& block) {
+    abi::Status Server::SetBlock(int x, int y, int z, const std::string& block) {
         if (y < kMinY || y >= kMinY + kHeight)
-            return PS_ERR_BAD_ARGUMENTS;
+            return abi::Status::BadArguments;
         // by name means the default state; a block with no item is not one the catalog can place
         const CatalogItem* item = BlockCatalog::Instance().ItemByName(FullBlockName(block));
         const bool air = FullBlockName(block) == "minecraft:air";
         if ((!item || !item->block) && !air)
-            return PS_ERR_BAD_ARGUMENTS;
+            return abi::Status::BadArguments;
         if (!chunks->Peek({x >> 4, z >> 4}))
-            return PS_ERR_NOT_LOADED;
+            return abi::Status::Unavailable;
         ApplyBlock(x, y, z, air ? BlockRegistry::kAir : BlockCatalog::Instance().RegistryId(item->blockHash));
-        return PS_OK;
+        return abi::Status::Ok;
     }
 
     namespace {
         // block face index to the neighbour it points at, the order the game numbers faces in
-        constexpr int kFaceOffset[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+        constexpr int kFaceOffset[6][3] = {{0, -1, 0}, {0, 1, 0},  {0, 0, -1},
+                                           {0, 0, 1},  {-1, 0, 0}, {1, 0, 0}};
     }
 
     bool Server::PlayerBreak(Session& by, int x, int y, int z) {
@@ -777,14 +794,8 @@ namespace perlin::server {
             by.CorrectBlock(x, y, z);
             return false;
         }
-        if (plugins->AnyoneListens(PS_EVENT_BLOCK_BREAK)) {
-            PayloadWriter w;
-            w.U64(by.Id());
-            w.I32(x);
-            w.I32(y);
-            w.I32(z);
-            w.Str(name);
-            if (plugins->Dispatch(PS_EVENT_BLOCK_BREAK, w.bytes) & 1u) {
+        if (plugins->AnyoneListens(abi::Event::BlockBreak)) {
+            if (plugins->Dispatch<abi::Event::BlockBreak>({by.Id(), x, y, z, name})) {
                 by.CorrectBlock(x, y, z);
                 return false;
             }
@@ -815,19 +826,12 @@ namespace perlin::server {
         const int tx = x + kFaceOffset[face][0], ty = y + kFaceOffset[face][1], tz = z + kFaceOffset[face][2];
         const ItemStack& held = by.Inventory().Held();
         const CatalogItem* item = held.Empty() ? nullptr : BlockCatalog::Instance().ItemById(held.networkId);
-        if (!item || !item->block || ty < kMinY || ty >= kMinY + kHeight || !by.InReach(tx, ty, tz) || !chunks->Peek({tx >> 4, tz >> 4}) ||
-            chunks->GetBlock(tx, ty, tz) != BlockRegistry::kAir)
+        if (!item || !item->block || ty < kMinY || ty >= kMinY + kHeight || !by.InReach(tx, ty, tz) ||
+            !chunks->Peek({tx >> 4, tz >> 4}) || chunks->GetBlock(tx, ty, tz) != BlockRegistry::kAir)
             return reject(tx, ty, tz);
-        if (plugins->AnyoneListens(PS_EVENT_BLOCK_PLACE)) {
-            PayloadWriter w;
-            w.U64(by.Id());
-            w.I32(tx);
-            w.I32(ty);
-            w.I32(tz);
-            w.Str(item->name);
-            if (plugins->Dispatch(PS_EVENT_BLOCK_PLACE, w.bytes) & 1u)
-                return reject(tx, ty, tz);
-        }
+        if (plugins->AnyoneListens(abi::Event::BlockPlace) &&
+            plugins->Dispatch<abi::Event::BlockPlace>({by.Id(), tx, ty, tz, item->name}))
+            return reject(tx, ty, tz);
         ApplyBlock(tx, ty, tz, BlockCatalog::Instance().RegistryId(item->blockHash));
         if (!by.Creative()) {
             by.Inventory().TakeHeld(1);
@@ -836,13 +840,14 @@ namespace perlin::server {
         return true;
     }
 
-    int Server::GiveItem(uint64_t player, const std::string& itemName, int count) {
+    std::expected<int, abi::Status> Server::GiveItem(uint64_t player, const std::string& itemName,
+                                                     int count) {
         Session* s = FindSession(player);
         if (!s || !s->InGame())
-            return PS_ERR_NO_SUCH_PLAYER;
+            return std::unexpected(abi::Status::NotFound);
         const CatalogItem* item = BlockCatalog::Instance().ItemByName(FullBlockName(itemName));
         if (!item)
-            return PS_ERR_UNKNOWN_ITEM;
+            return std::unexpected(abi::Status::BadArguments);
         const int left = s->Inventory().Give(item->networkId, count);
         s->SendInventory();
         return left;
@@ -873,27 +878,49 @@ namespace perlin::server {
                 {C::Construction, "itemGroup.name.glazedTerracotta", {"glazed_terracotta"}},
                 {C::Construction, "itemGroup.name.stainedClay", {"terracotta"}},
                 {C::Construction, "itemGroup.name.copper", {"copper"}},
-                {C::Construction, "itemGroup.name.stoneBrick", {"brick", "stone", "cobble", "deepslate", "tuff", "blackstone", "basalt", "andesite", "diorite", "granite", "prismarine", "purpur", "quartz", "sandstone"}},
+                {C::Construction,
+                 "itemGroup.name.stoneBrick",
+                 {"brick", "stone", "cobble", "deepslate", "tuff", "blackstone", "basalt", "andesite",
+                  "diorite", "granite", "prismarine", "purpur", "quartz", "sandstone"}},
                 {C::Nature, "itemGroup.name.log", {"_log", "_wood", "_stem", "_hyphae"}},
                 {C::Nature, "itemGroup.name.leaves", {"_leaves", "azalea_leaves"}},
                 {C::Nature, "itemGroup.name.sapling", {"sapling", "propagule"}},
-                {C::Nature, "itemGroup.name.flower", {"flower", "tulip", "orchid", "allium", "azure", "daisy", "cornflower", "lily", "rose", "peony", "lilac", "dandelion", "poppy", "sunflower"}},
+                {C::Nature,
+                 "itemGroup.name.flower",
+                 {"flower", "tulip", "orchid", "allium", "azure", "daisy", "cornflower", "lily", "rose",
+                  "peony", "lilac", "dandelion", "poppy", "sunflower"}},
                 {C::Nature, "itemGroup.name.ore", {"_ore", "raw_", "ancient_debris"}},
-                {C::Nature, "itemGroup.name.mineral", {"coal_block", "iron_block", "gold_block", "diamond_block", "emerald_block", "lapis_block", "netherite_block", "redstone_block"}},
+                {C::Nature,
+                 "itemGroup.name.mineral",
+                 {"coal_block", "iron_block", "gold_block", "diamond_block", "emerald_block", "lapis_block",
+                  "netherite_block", "redstone_block"}},
                 {C::Nature, "itemGroup.name.sand", {"sand", "gravel"}},
-                {C::Nature, "itemGroup.name.dirt", {"dirt", "grass", "mycelium", "podzol", "farmland", "mud", "clay", "moss", "soul_soil", "path"}},
+                {C::Nature,
+                 "itemGroup.name.dirt",
+                 {"dirt", "grass", "mycelium", "podzol", "farmland", "mud", "clay", "moss", "soul_soil",
+                  "path"}},
                 {C::Nature, "itemGroup.name.ice", {"ice", "snow"}},
                 {C::Nature, "itemGroup.name.mushroom", {"mushroom"}},
                 {C::Nature, "itemGroup.name.coral", {"coral"}},
-                {C::Nature, "itemGroup.name.seed", {"vine", "kelp", "seagrass", "fern", "bush", "cactus", "bamboo", "sugar_cane", "pumpkin", "melon", "hay", "crop", "wheat", "carrots", "potatoes", "beetroot"}},
-                {C::Nature, "itemGroup.name.netherWartBlock", {"nether", "warped", "crimson", "shroomlight", "glowstone", "soul_"}},
+                {C::Nature,
+                 "itemGroup.name.seed",
+                 {"vine", "kelp", "seagrass", "fern", "bush", "cactus", "bamboo", "sugar_cane", "pumpkin",
+                  "melon", "hay", "crop", "wheat", "carrots", "potatoes", "beetroot"}},
+                {C::Nature,
+                 "itemGroup.name.netherWartBlock",
+                 {"nether", "warped", "crimson", "shroomlight", "glowstone", "soul_"}},
                 {C::Items, "itemGroup.name.rail", {"rail"}},
                 {C::Items, "itemGroup.name.chest", {"chest", "barrel", "shulker"}},
-                {C::Items, "itemGroup.name.lamp", {"lamp", "lantern", "torch", "candle", "campfire", "froglight"}},
+                {C::Items,
+                 "itemGroup.name.lamp",
+                 {"lamp", "lantern", "torch", "candle", "campfire", "froglight"}},
                 {C::Items, "itemGroup.name.sign", {"_sign"}},
                 {C::Items, "itemGroup.name.bed", {"_bed"}},
                 {C::Items, "itemGroup.name.banner", {"banner", "carpet"}},
-                {C::Items, "itemGroup.name.redstone", {"redstone", "piston", "dispenser", "dropper", "observer", "repeater", "comparator", "lever", "button", "pressure_plate", "hopper", "tnt", "target", "sculk"}},
+                {C::Items,
+                 "itemGroup.name.redstone",
+                 {"redstone", "piston", "dispenser", "dropper", "observer", "repeater", "comparator", "lever",
+                  "button", "pressure_plate", "hopper", "tnt", "target", "sculk"}},
             };
             return groups;
         }
@@ -943,9 +970,12 @@ namespace perlin::server {
             const std::string shortName = item.name.substr(item.name.find(':') + 1);
             if (!item.block) {
                 const auto has = [&](const char* w) { return shortName.contains(w); };
-                const bool gear = has("_sword") || has("_pickaxe") || has("_axe") || has("_shovel") || has("_hoe") || has("_helmet") || has("_chestplate") || has("_leggings") ||
-                                  has("_boots") || shortName == "bow" || shortName == "crossbow" || shortName == "shield" || shortName == "trident" || shortName == "mace" ||
-                                  has("_horse_armor") || shortName == "elytra" || shortName == "turtle_helmet" || has("wolf_armor");
+                const bool gear = has("_sword") || has("_pickaxe") || has("_axe") || has("_shovel") ||
+                                  has("_hoe") || has("_helmet") || has("_chestplate") || has("_leggings") ||
+                                  has("_boots") || shortName == "bow" || shortName == "crossbow" ||
+                                  shortName == "shield" || shortName == "trident" || shortName == "mace" ||
+                                  has("_horse_armor") || shortName == "elytra" ||
+                                  shortName == "turtle_helmet" || has("wolf_armor");
                 placed.push_back({legacy, gear ? equipmentGroup : itemsGroup});
                 continue;
             }
@@ -966,7 +996,8 @@ namespace perlin::server {
                 creative.groups.push_back(groups[p.group]);
             }
         // creative order: by group, the way the vanilla menu lists them
-        std::stable_sort(placed.begin(), placed.end(), [&](const Placed& a, const Placed& b) { return remap[a.group] < remap[b.group]; });
+        std::stable_sort(placed.begin(), placed.end(),
+                         [&](const Placed& a, const Placed& b) { return remap[a.group] < remap[b.group]; });
         for (const Placed& p : placed) {
             proto2225::CreativeContentPacketItemsEntry e;
             e.entryId = static_cast<uint32_t>(p.legacy.networkId);
@@ -978,11 +1009,11 @@ namespace perlin::server {
         net::EncodeChecked(creative, creativeBody);
     }
 
-    int Server::GetBlock(int x, int y, int z, std::string& block) {
+    abi::Status Server::GetBlock(int x, int y, int z, std::string& block) {
         if (!chunks->Peek({x >> 4, z >> 4}))
-            return PS_ERR_NOT_LOADED;
+            return abi::Status::Unavailable;
         block = BlockRegistry::Instance().Name(chunks->GetBlock(x, y, z));
-        return PS_OK;
+        return abi::Status::Ok;
     }
 
     PluginApi::Status Server::GetStatus() {
@@ -996,7 +1027,8 @@ namespace perlin::server {
     }
 
     std::string Server::Describe() const {
-        return config.name + " (" + std::to_string(sessions.size()) + " connections, " + std::to_string(chunks ? chunks->Loaded() : 0) + " chunks)";
+        return config.name + " (" + std::to_string(sessions.size()) + " connections, " +
+               std::to_string(chunks ? chunks->Loaded() : 0) + " chunks)";
     }
 }
 
@@ -1008,14 +1040,42 @@ namespace perlin::server {
             int value;
         };
         static const Def defs[] = {
-            {"commandBlockOutput", true, 1}, {"commandBlocksEnabled", true, 1}, {"doDaylightCycle", true, 1}, {"doEntityDrops", true, 1}, {"doFireTick", true, 1},
-            {"doImmediateRespawn", true, 0}, {"doInsomnia", true, 1}, {"doLimitedCrafting", true, 0}, {"doMobLoot", true, 1}, {"doMobSpawning", true, 1},
-            {"doTileDrops", true, 1}, {"doWeatherCycle", true, 1}, {"drowningDamage", true, 1}, {"fallDamage", true, 1}, {"fireDamage", true, 1},
-            {"freezeDamage", true, 1}, {"functionCommandLimit", false, 10000}, {"keepInventory", true, 0}, {"maxCommandChainLength", false, 65535},
-            {"mobGriefing", true, 1}, {"naturalRegeneration", true, 1}, {"playersSleepingPercentage", false, 100}, {"projectilesCanBreakBlocks", true, 1},
-            {"pvp", true, 1}, {"randomTickSpeed", false, 1}, {"recipesUnlock", true, 1}, {"respawnBlocksExplode", true, 1}, {"sendCommandFeedback", true, 1},
-            {"showBorderEffect", true, 1}, {"showCoordinates", true, 0}, {"showDaysPlayed", true, 0}, {"showDeathMessages", true, 1}, {"showTags", true, 1},
-            {"spawnRadius", false, 10}, {"tntExplodes", true, 1}, {"tntExplosionDropDecay", true, 0},
+            {"commandBlockOutput", true, 1},
+            {"commandBlocksEnabled", true, 1},
+            {"doDaylightCycle", true, 1},
+            {"doEntityDrops", true, 1},
+            {"doFireTick", true, 1},
+            {"doImmediateRespawn", true, 0},
+            {"doInsomnia", true, 1},
+            {"doLimitedCrafting", true, 0},
+            {"doMobLoot", true, 1},
+            {"doMobSpawning", true, 1},
+            {"doTileDrops", true, 1},
+            {"doWeatherCycle", true, 1},
+            {"drowningDamage", true, 1},
+            {"fallDamage", true, 1},
+            {"fireDamage", true, 1},
+            {"freezeDamage", true, 1},
+            {"functionCommandLimit", false, 10000},
+            {"keepInventory", true, 0},
+            {"maxCommandChainLength", false, 65535},
+            {"mobGriefing", true, 1},
+            {"naturalRegeneration", true, 1},
+            {"playersSleepingPercentage", false, 100},
+            {"projectilesCanBreakBlocks", true, 1},
+            {"pvp", true, 1},
+            {"randomTickSpeed", false, 1},
+            {"recipesUnlock", true, 1},
+            {"respawnBlocksExplode", true, 1},
+            {"sendCommandFeedback", true, 1},
+            {"showBorderEffect", true, 1},
+            {"showCoordinates", true, 0},
+            {"showDaysPlayed", true, 0},
+            {"showDeathMessages", true, 1},
+            {"showTags", true, 1},
+            {"spawnRadius", false, 10},
+            {"tntExplodes", true, 1},
+            {"tntExplosionDropDecay", true, 0},
         };
         for (const Def& d : defs)
             gameRules[str::Lower(d.display)] = {d.display, d.boolean, d.value};

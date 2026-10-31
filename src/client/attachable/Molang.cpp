@@ -9,12 +9,36 @@
 
 namespace perlin::molang {
     struct Expr::Node {
-        enum Kind { Num, Str, Var, Call, Index, Unary, Binary, Ternary, Coalesce, Assign, Block, Return } kind = Num;
+        enum Kind {
+            Num,
+            Str,
+            Var,
+            Call,
+            Index,
+            Unary,
+            Binary,
+            Ternary,
+            Coalesce,
+            Assign,
+            Block,
+            Return
+        } kind = Num;
         double number = 0;
         std::string text;
         char op = 0;
         std::vector<std::shared_ptr<Node>> kids;
-        enum VarKind : int8_t { VUnset = -1, VVariable, VTemp, VQuery, VContext, VThis, VPi, VTrue, VFalse, VOther };
+        enum VarKind : int8_t {
+            VUnset = -1,
+            VVariable,
+            VTemp,
+            VQuery,
+            VContext,
+            VThis,
+            VPi,
+            VTrue,
+            VFalse,
+            VOther
+        };
         mutable int8_t varKind = VUnset;
         mutable int8_t cacheable = -1;
         mutable int8_t isMath = -1;
@@ -63,7 +87,9 @@ namespace perlin::molang {
                 if (pos >= src.size())
                     return;
                 const char c = src[pos];
-                if (std::isdigit(static_cast<unsigned char>(c)) || (c == '.' && pos + 1 < src.size() && std::isdigit(static_cast<unsigned char>(src[pos + 1])))) {
+                if (std::isdigit(static_cast<unsigned char>(c)) ||
+                    (c == '.' && pos + 1 < src.size() &&
+                     std::isdigit(static_cast<unsigned char>(src[pos + 1])))) {
                     char* end = nullptr;
                     tok.number = std::strtod(src.c_str() + pos, &end);
                     pos = static_cast<size_t>(end - src.c_str());
@@ -83,7 +109,8 @@ namespace perlin::molang {
                 }
                 if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
                     size_t e = pos;
-                    while (e < src.size() && (std::isalnum(static_cast<unsigned char>(src[e])) || src[e] == '_' || src[e] == '.'))
+                    while (e < src.size() && (std::isalnum(static_cast<unsigned char>(src[e])) ||
+                                              src[e] == '_' || src[e] == '.'))
                         e++;
                     tok.type = Token::Ident;
                     tok.text = src.substr(pos, e - pos);
@@ -121,7 +148,8 @@ namespace perlin::molang {
                 const char* shortForm;
                 const char* longForm;
             };
-            static const Alias kAliases[] = {{"q.", "query."}, {"v.", "variable."}, {"c.", "context."}, {"t.", "temp."}};
+            static const Alias kAliases[] = {
+                {"q.", "query."}, {"v.", "variable."}, {"c.", "context."}, {"t.", "temp."}};
             for (const Alias& a : kAliases)
                 if (id.starts_with(a.shortForm))
                     return std::string(a.longForm) + id.substr(std::strlen(a.shortForm));
@@ -389,40 +417,67 @@ namespace perlin::molang {
             if (n.isMath) {
                 const std::string& f = n.key;
                 const double deg = kPi / 180.0;
-                if (f == "sin") return Value::Num(std::sin(a(0) * deg));
-                if (f == "cos") return Value::Num(std::cos(a(0) * deg));
-                if (f == "asin") return Value::Num(std::asin(a(0)) / deg);
-                if (f == "acos") return Value::Num(std::acos(a(0)) / deg);
-                if (f == "atan") return Value::Num(std::atan(a(0)) / deg);
-                if (f == "atan2") return Value::Num(std::atan2(a(0), a(1)) / deg);
-                if (f == "abs") return Value::Num(std::fabs(a(0)));
-                if (f == "sqrt") return Value::Num(std::sqrt(std::max(0.0, a(0))));
-                if (f == "exp") return Value::Num(std::exp(a(0)));
-                if (f == "ln") return Value::Num(std::log(a(0)));
-                if (f == "pow") return Value::Num(std::pow(a(0), a(1)));
-                if (f == "floor") return Value::Num(std::floor(a(0)));
-                if (f == "ceil") return Value::Num(std::ceil(a(0)));
-                if (f == "round") return Value::Num(std::round(a(0)));
-                if (f == "trunc") return Value::Num(std::trunc(a(0)));
-                if (f == "min") return Value::Num(std::min(a(0), a(1)));
-                if (f == "max") return Value::Num(std::max(a(0), a(1)));
-                if (f == "mod") return Value::Num(a(1) != 0 ? std::fmod(a(0), a(1)) : 0.0);
-                if (f == "clamp") return Value::Num(std::min(std::max(a(0), a(1)), a(2)));
-                if (f == "lerp") return Value::Num(a(0) + (a(1) - a(0)) * a(2));
+                if (f == "sin")
+                    return Value::Num(std::sin(a(0) * deg));
+                if (f == "cos")
+                    return Value::Num(std::cos(a(0) * deg));
+                if (f == "asin")
+                    return Value::Num(std::asin(a(0)) / deg);
+                if (f == "acos")
+                    return Value::Num(std::acos(a(0)) / deg);
+                if (f == "atan")
+                    return Value::Num(std::atan(a(0)) / deg);
+                if (f == "atan2")
+                    return Value::Num(std::atan2(a(0), a(1)) / deg);
+                if (f == "abs")
+                    return Value::Num(std::fabs(a(0)));
+                if (f == "sqrt")
+                    return Value::Num(std::sqrt(std::max(0.0, a(0))));
+                if (f == "exp")
+                    return Value::Num(std::exp(a(0)));
+                if (f == "ln")
+                    return Value::Num(std::log(a(0)));
+                if (f == "pow")
+                    return Value::Num(std::pow(a(0), a(1)));
+                if (f == "floor")
+                    return Value::Num(std::floor(a(0)));
+                if (f == "ceil")
+                    return Value::Num(std::ceil(a(0)));
+                if (f == "round")
+                    return Value::Num(std::round(a(0)));
+                if (f == "trunc")
+                    return Value::Num(std::trunc(a(0)));
+                if (f == "min")
+                    return Value::Num(std::min(a(0), a(1)));
+                if (f == "max")
+                    return Value::Num(std::max(a(0), a(1)));
+                if (f == "mod")
+                    return Value::Num(a(1) != 0 ? std::fmod(a(0), a(1)) : 0.0);
+                if (f == "clamp")
+                    return Value::Num(std::min(std::max(a(0), a(1)), a(2)));
+                if (f == "lerp")
+                    return Value::Num(a(0) + (a(1) - a(0)) * a(2));
                 if (f == "lerprotate") {
                     double d = std::fmod(a(1) - a(0), 360.0);
-                    if (d > 180) d -= 360;
-                    if (d < -180) d += 360;
+                    if (d > 180)
+                        d -= 360;
+                    if (d < -180)
+                        d += 360;
                     return Value::Num(a(0) + d * a(2));
                 }
                 if (f == "min_angle") {
                     double v = std::fmod(a(0), 360.0);
-                    if (v >= 180) v -= 360;
-                    if (v < -180) v += 360;
+                    if (v >= 180)
+                        v -= 360;
+                    if (v < -180)
+                        v += 360;
                     return Value::Num(v);
                 }
-                if (f == "pi") return Value::Num(kPi);
-                if (f == "random") return Value::Num(a(0) + (a(1) - a(0)) * std::uniform_real_distribution<double>(0, 1)(Rng()));
+                if (f == "pi")
+                    return Value::Num(kPi);
+                if (f == "random")
+                    return Value::Num(a(0) +
+                                      (a(1) - a(0)) * std::uniform_real_distribution<double>(0, 1)(Rng()));
                 if (f == "random_integer") {
                     const int lo = static_cast<int>(a(0)), hi = static_cast<int>(std::max(a(0), a(1)));
                     return Value::Num(std::uniform_int_distribution<int>(lo, hi)(Rng()));
@@ -433,32 +488,57 @@ namespace perlin::molang {
                         sum += a(1) + (a(2) - a(1)) * std::uniform_real_distribution<double>(0, 1)(Rng());
                     return Value::Num(f == "die_roll" ? sum : std::floor(sum));
                 }
-                if (f == "sign") return Value::Num(a(0) > 0 ? 1.0 : a(0) < 0 ? -1.0 : 0.0);
-                if (f == "copy_sign") return Value::Num(std::copysign(std::fabs(a(0)), a(1)));
-                if (f == "inverse_lerp") return Value::Num(a(1) == a(0) ? 0.0 : (a(2) - a(0)) / (a(1) - a(0)));
-                if (f == "sinh") return Value::Num(std::sinh(a(0)));
-                if (f == "cosh") return Value::Num(std::cosh(a(0)));
-                if (f == "tanh") return Value::Num(std::tanh(a(0)));
+                if (f == "sign")
+                    return Value::Num(a(0) > 0 ? 1.0 : a(0) < 0 ? -1.0 : 0.0);
+                if (f == "copy_sign")
+                    return Value::Num(std::copysign(std::fabs(a(0)), a(1)));
+                if (f == "inverse_lerp")
+                    return Value::Num(a(1) == a(0) ? 0.0 : (a(2) - a(0)) / (a(1) - a(0)));
+                if (f == "sinh")
+                    return Value::Num(std::sinh(a(0)));
+                if (f == "cosh")
+                    return Value::Num(std::cosh(a(0)));
+                if (f == "tanh")
+                    return Value::Num(std::tanh(a(0)));
                 if (f.starts_with("ease_")) {
                     const double t = std::clamp(a(2), 0.0, 1.0);
                     const std::string k = f.substr(5);
                     auto in = [&](const std::string& n, double x) {
-                        if (n == "sine") return 1 - std::cos(x * kPi / 2);
-                        if (n == "quad") return x * x;
-                        if (n == "cubic") return x * x * x;
-                        if (n == "quart") return x * x * x * x;
-                        if (n == "quint") return x * x * x * x * x;
-                        if (n == "expo") return x == 0 ? 0.0 : std::pow(2.0, 10 * x - 10);
-                        if (n == "circ") return 1 - std::sqrt(1 - x * x);
-                        if (n == "back") return 2.70158 * x * x * x - 1.70158 * x * x;
-                        if (n == "elastic") return x == 0 || x == 1 ? x : -std::pow(2.0, 10 * x - 10) * std::sin((x * 10 - 10.75) * (2 * kPi / 3));
+                        if (n == "sine")
+                            return 1 - std::cos(x * kPi / 2);
+                        if (n == "quad")
+                            return x * x;
+                        if (n == "cubic")
+                            return x * x * x;
+                        if (n == "quart")
+                            return x * x * x * x;
+                        if (n == "quint")
+                            return x * x * x * x * x;
+                        if (n == "expo")
+                            return x == 0 ? 0.0 : std::pow(2.0, 10 * x - 10);
+                        if (n == "circ")
+                            return 1 - std::sqrt(1 - x * x);
+                        if (n == "back")
+                            return 2.70158 * x * x * x - 1.70158 * x * x;
+                        if (n == "elastic")
+                            return x == 0 || x == 1 ? x
+                                                    : -std::pow(2.0, 10 * x - 10) *
+                                                          std::sin((x * 10 - 10.75) * (2 * kPi / 3));
                         if (n == "bounce") {
                             const double y = 1 - x;
                             double r;
-                            if (y < 1 / 2.75) r = 7.5625 * y * y;
-                            else if (y < 2 / 2.75) { const double z = y - 1.5 / 2.75; r = 7.5625 * z * z + 0.75; }
-                            else if (y < 2.5 / 2.75) { const double z = y - 2.25 / 2.75; r = 7.5625 * z * z + 0.9375; }
-                            else { const double z = y - 2.625 / 2.75; r = 7.5625 * z * z + 0.984375; }
+                            if (y < 1 / 2.75)
+                                r = 7.5625 * y * y;
+                            else if (y < 2 / 2.75) {
+                                const double z = y - 1.5 / 2.75;
+                                r = 7.5625 * z * z + 0.75;
+                            } else if (y < 2.5 / 2.75) {
+                                const double z = y - 2.25 / 2.75;
+                                r = 7.5625 * z * z + 0.9375;
+                            } else {
+                                const double z = y - 2.625 / 2.75;
+                                r = 7.5625 * z * z + 0.984375;
+                            }
                             return 1 - r;
                         }
                         return x;
@@ -480,7 +560,8 @@ namespace perlin::molang {
                 }
                 return Value::Num(0);
             }
-            if (name == "query.key_frame_lerp_time") return Value::Num(s.keyFrameLerpTime);
+            if (name == "query.key_frame_lerp_time")
+                return Value::Num(s.keyFrameLerpTime);
             if (s.host && name.starts_with("query.")) {
                 Value out;
                 if (s.host->Query(name.substr(6), args, out))
@@ -495,19 +576,35 @@ namespace perlin::molang {
                 return n.number;
             case Node::Binary: {
                 switch (n.op) {
-                case '+': return EvalNum(*n.kids[0], s, ret) + EvalNum(*n.kids[1], s, ret);
-                case '-': return EvalNum(*n.kids[0], s, ret) - EvalNum(*n.kids[1], s, ret);
-                case '*': return EvalNum(*n.kids[0], s, ret) * EvalNum(*n.kids[1], s, ret);
+                case '+':
+                    return EvalNum(*n.kids[0], s, ret) + EvalNum(*n.kids[1], s, ret);
+                case '-':
+                    return EvalNum(*n.kids[0], s, ret) - EvalNum(*n.kids[1], s, ret);
+                case '*':
+                    return EvalNum(*n.kids[0], s, ret) * EvalNum(*n.kids[1], s, ret);
                 case '/': {
                     const double l = EvalNum(*n.kids[0], s, ret);
                     const double r = EvalNum(*n.kids[1], s, ret);
                     return r != 0 ? l / r : 0.0;
                 }
-                case '<': { const double l = EvalNum(*n.kids[0], s, ret); return l < EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
-                case '>': { const double l = EvalNum(*n.kids[0], s, ret); return l > EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
-                case 'l': { const double l = EvalNum(*n.kids[0], s, ret); return l <= EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
-                case 'g': { const double l = EvalNum(*n.kids[0], s, ret); return l >= EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
-                default: return Eval(n, s, ret).n;
+                case '<': {
+                    const double l = EvalNum(*n.kids[0], s, ret);
+                    return l < EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0;
+                }
+                case '>': {
+                    const double l = EvalNum(*n.kids[0], s, ret);
+                    return l > EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0;
+                }
+                case 'l': {
+                    const double l = EvalNum(*n.kids[0], s, ret);
+                    return l <= EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0;
+                }
+                case 'g': {
+                    const double l = EvalNum(*n.kids[0], s, ret);
+                    return l >= EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0;
+                }
+                default:
+                    return Eval(n, s, ret).n;
                 }
             }
             case Node::Unary:
@@ -530,15 +627,28 @@ namespace perlin::molang {
             case Node::Var: {
                 if (n.varKind == Node::VUnset) {
                     const std::string& id = n.text;
-                    if (id.starts_with("variable.")) { n.varKind = Node::VVariable; n.key = id.substr(9); }
-                    else if (id.starts_with("temp.")) { n.varKind = Node::VTemp; n.key = id.substr(5); }
-                    else if (id.starts_with("query.")) { n.varKind = Node::VQuery; n.key = id.substr(6); }
-                    else if (id.starts_with("context.")) { n.varKind = Node::VContext; n.key = id.substr(8); }
-                    else if (id == "this") n.varKind = Node::VThis;
-                    else if (id == "math.pi") n.varKind = Node::VPi;
-                    else if (id == "true") n.varKind = Node::VTrue;
-                    else if (id == "false") n.varKind = Node::VFalse;
-                    else n.varKind = Node::VOther;
+                    if (id.starts_with("variable.")) {
+                        n.varKind = Node::VVariable;
+                        n.key = id.substr(9);
+                    } else if (id.starts_with("temp.")) {
+                        n.varKind = Node::VTemp;
+                        n.key = id.substr(5);
+                    } else if (id.starts_with("query.")) {
+                        n.varKind = Node::VQuery;
+                        n.key = id.substr(6);
+                    } else if (id.starts_with("context.")) {
+                        n.varKind = Node::VContext;
+                        n.key = id.substr(8);
+                    } else if (id == "this")
+                        n.varKind = Node::VThis;
+                    else if (id == "math.pi")
+                        n.varKind = Node::VPi;
+                    else if (id == "true")
+                        n.varKind = Node::VTrue;
+                    else if (id == "false")
+                        n.varKind = Node::VFalse;
+                    else
+                        n.varKind = Node::VOther;
                 }
                 switch (n.varKind) {
                 case Node::VVariable: {
@@ -550,7 +660,8 @@ namespace perlin::molang {
                     return it != s.temps.end() ? it->second : Value::Num(0);
                 }
                 case Node::VQuery: {
-                    if (n.key == "key_frame_lerp_time") return Value::Num(s.keyFrameLerpTime);
+                    if (n.key == "key_frame_lerp_time")
+                        return Value::Num(s.keyFrameLerpTime);
                     if (!s.host)
                         return Value::Str(n.text);
                     if (s.cacheQueries) {
@@ -580,11 +691,16 @@ namespace perlin::molang {
                         return out;
                     return Value::Num(0);
                 }
-                case Node::VThis: return Value::Num(s.thisValue);
-                case Node::VPi: return Value::Num(kPi);
-                case Node::VTrue: return Value::Num(1);
-                case Node::VFalse: return Value::Num(0);
-                default: return Value::Str(n.text);
+                case Node::VThis:
+                    return Value::Num(s.thisValue);
+                case Node::VPi:
+                    return Value::Num(kPi);
+                case Node::VTrue:
+                    return Value::Num(1);
+                case Node::VFalse:
+                    return Value::Num(0);
+                default:
+                    return Value::Str(n.text);
                 }
             }
             case Node::Call:
@@ -619,7 +735,8 @@ namespace perlin::molang {
                     if (l.isString || r.isString) {
                         const auto text = [](const Value& v) {
                             std::string t = v.isString ? v.s : std::string();
-                            for (char& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            for (char& c : t)
+                                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                             return t;
                         };
                         eq = l.isString && r.isString && text(l) == text(r);
@@ -629,19 +746,29 @@ namespace perlin::molang {
                     return Value::Num((n.op == '=') == eq ? 1.0 : 0.0);
                 }
                 switch (n.op) {
-                case '+': return Value::Num(l.n + r.n);
-                case '-': return Value::Num(l.n - r.n);
-                case '*': return Value::Num(l.n * r.n);
-                case '/': return Value::Num(r.n != 0 ? l.n / r.n : 0.0);
-                case '<': return Value::Num(l.n < r.n);
-                case '>': return Value::Num(l.n > r.n);
-                case 'l': return Value::Num(l.n <= r.n);
-                case 'g': return Value::Num(l.n >= r.n);
-                default: return Value::Num(0);
+                case '+':
+                    return Value::Num(l.n + r.n);
+                case '-':
+                    return Value::Num(l.n - r.n);
+                case '*':
+                    return Value::Num(l.n * r.n);
+                case '/':
+                    return Value::Num(r.n != 0 ? l.n / r.n : 0.0);
+                case '<':
+                    return Value::Num(l.n < r.n);
+                case '>':
+                    return Value::Num(l.n > r.n);
+                case 'l':
+                    return Value::Num(l.n <= r.n);
+                case 'g':
+                    return Value::Num(l.n >= r.n);
+                default:
+                    return Value::Num(0);
                 }
             }
             case Node::Ternary:
-                return Eval(*n.kids[0], s, ret).Truthy() ? Eval(*n.kids[1], s, ret) : Eval(*n.kids[2], s, ret);
+                return Eval(*n.kids[0], s, ret).Truthy() ? Eval(*n.kids[1], s, ret)
+                                                         : Eval(*n.kids[2], s, ret);
             case Node::Coalesce: {
                 const Value l = Eval(*n.kids[0], s, ret);
                 return l.isString && l.s.contains('.') ? Eval(*n.kids[1], s, ret) : l;

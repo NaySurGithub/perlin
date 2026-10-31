@@ -37,7 +37,7 @@ namespace perlin::ui {
         std::vector<FormButton> buttons;
         std::vector<FormElement> elements;
         int focus = -1;
-        int openDropdown = -1;  // element whose option list is open
+        int openDropdown = -1; // element whose option list is open
     };
 
     inline constexpr const char* kFormCloseId = "close";
@@ -50,12 +50,16 @@ namespace perlin::ui {
         void Warm(const std::vector<std::string>& packDirs);
         bool Ready() const { return state.load() == 2; }
         bool WaitReady(int timeoutMs);
-        bool Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight);
+        bool Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml,
+                   float& contentHeight, float& viewHeight);
         const std::string& Problem() const { return problem; }
         // server ui files still loading
         bool Building() const { return state.load() == 1; }
         // a non-vanilla pack defines server_form
-        bool ServerStyled() const { return Ready() && library.RootCount() > 3 && library.DefinedBefore("server_form", library.RootCount() - 3); }
+        bool ServerStyled() const {
+            return Ready() && library.RootCount() > 3 &&
+                   library.DefinedBefore("server_form", library.RootCount() - 3);
+        }
         // last form still animating
         bool Animating() const { return anim.animating; }
 
@@ -78,7 +82,8 @@ namespace perlin::ui {
     bool FormDrag(FormModel& form, int index, float guiX);
     int FormSliderAt(const std::string& hoverId);
     bool ParseForm(uint32_t id, const std::string& json, FormModel& out);
-    std::string BuildFormRml(const FormModel& form, int guiW, int guiH, float scroll, float& contentHeight, float& viewHeight);
+    std::string BuildFormRml(const FormModel& form, int guiW, int guiH, float scroll, float& contentHeight,
+                             float& viewHeight);
     bool FormClick(FormModel& form, const std::string& id, std::string& response);
     // an open dropdown takes the next click: true when the click only closed it (dropdown_exit)
     bool FormDismissDropdown(FormModel& form, const std::string& hoverId);

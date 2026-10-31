@@ -26,7 +26,8 @@ public:
     void RenewRenderSurface() override;
     void SetTitle(const std::string& title) override;
     bool HasProgressWindow() const override { return !progFailed; }
-    void SetProgressWindow(bool visible, const std::string& title, const std::string& line1, const std::string& line2, float fraction) override;
+    void SetProgressWindow(bool visible, const std::string& title, const std::string& line1,
+                           const std::string& line2, float fraction) override;
     bool TakeProgressCancel() override { return progCancel.exchange(false); }
     void ShowSignInCode(const std::string& url, const std::string& code) override;
     bool ConfirmDialog(const std::string& title, const std::string& message) override;
@@ -41,7 +42,7 @@ private:
     void PumpGamepad();
     struct SDL_Gamepad* gamepad = nullptr;
     bool padState[64] = {};
-    std::chrono::steady_clock::time_point padLast{};
+    std::chrono::steady_clock::time_point padLast;
     float padScroll = 0.0f;
     void SetClipboard(const std::string& text) override;
     std::string GetClipboard() override;
@@ -63,13 +64,15 @@ private:
     std::atomic<bool> surfaceChanged{false};
     void* lastNativeWindow = nullptr;
     bool surfaceLost = false;
+    bool backgrounded = false; // iOS: no gpu work allowed until the app is in front again
     bool recaptureAfterText = false;
     bool touchMode = false;
     perlin::TouchControls touch;
 
     SDL_Window* window = nullptr;
     void* metalView = nullptr;
-    void* renderSurface = nullptr; // windows: child window the swapchain lives on once a backend switch has happened
+    void* renderSurface =
+        nullptr; // windows: child window the swapchain lives on once a backend switch has happened
     void ResizeRenderSurface();
     NativeWindowInfo native;
     std::unique_ptr<perlin::Perlin> game;

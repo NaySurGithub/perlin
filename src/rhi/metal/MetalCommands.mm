@@ -5,14 +5,22 @@
 
 namespace rhi::metal {
     namespace {
-        MTLOrigin Origin(uint32_t x, uint32_t y, uint32_t z) { return MTLOriginMake(x, y, z); }
-        MTLSize Size(uint32_t w, uint32_t h, uint32_t d) { return MTLSizeMake(w, h, d); }
+        MTLOrigin Origin(uint32_t x, uint32_t y, uint32_t z) {
+            return MTLOriginMake(x, y, z);
+        }
+        MTLSize Size(uint32_t w, uint32_t h, uint32_t d) {
+            return MTLSizeMake(w, h, d);
+        }
 
         // cube faces and array layers are both slices; 3d textures have none
-        uint32_t SliceOf(const TextureDesc& d, uint32_t layer) { return d.dim == TextureDim::Tex3D ? 0 : layer; }
+        uint32_t SliceOf(const TextureDesc& d, uint32_t layer) {
+            return d.dim == TextureDim::Tex3D ? 0 : layer;
+        }
     }
 
-    CmdList::~CmdList() { EndEncoder(); }
+    CmdList::~CmdList() {
+        EndEncoder();
+    }
 
     void CmdList::Begin() {
         EndEncoder();
@@ -72,23 +80,34 @@ namespace rhi::metal {
     void CmdList::Barrier(std::span<const TextureBarrier> textures, std::span<const BufferBarrier> buffers) {
         device.MutableStats().barriers += textures.size() + buffers.size();
     }
-    void CmdList::UavBarrier(BufferHandle) { device.MutableStats().barriers++; }
-    void CmdList::UavBarrier(TextureHandle) { device.MutableStats().barriers++; }
+    void CmdList::UavBarrier(BufferHandle) {
+        device.MutableStats().barriers++;
+    }
+    void CmdList::UavBarrier(TextureHandle) {
+        device.MutableStats().barriers++;
+    }
 
-    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset, uint64_t size) {
+    void CmdList::CopyBuffer(BufferHandle dst, uint64_t dstOffset, BufferHandle src, uint64_t srcOffset,
+                             uint64_t size) {
         Buffer* d = device.buffers.Get(dst);
         Buffer* s = device.buffers.Get(src);
         if (!d || !s || !size) {
             device.ReportError("CopyBuffer: bad handle");
             return;
         }
-        size = std::min<uint64_t>({size, d->size - (std::min)(dstOffset, d->size), s->size - (std::min)(srcOffset, s->size)});
+        size = std::min<uint64_t>(
+            {size, d->size - (std::min)(dstOffset, d->size), s->size - (std::min)(srcOffset, s->size)});
         if (!size)
             return;
-        [Blit() copyFromBuffer:s->buffer sourceOffset:srcOffset toBuffer:d->buffer destinationOffset:dstOffset size:size];
+        [Blit() copyFromBuffer:s->buffer
+                  sourceOffset:srcOffset
+                      toBuffer:d->buffer
+             destinationOffset:dstOffset
+                          size:size];
     }
 
-    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyBufferToTexture(TextureHandle dst, BufferHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         Texture* t = device.textures.Get(dst);
         Buffer* b = device.buffers.Get(src);
         if (!t || !b) {
@@ -100,18 +119,19 @@ namespace rhi::metal {
             const uint32_t imagePitch = rowPitch * RowBlocks(t->desc.format, r.height);
             const uint32_t depth = (std::max)(1u, r.depth);
             [Blit() copyFromBuffer:b->buffer
-                      sourceOffset:r.bufferOffset
-                 sourceBytesPerRow:rowPitch
-               sourceBytesPerImage:imagePitch
-                        sourceSize:Size(r.width, r.height, depth)
-                         toTexture:t->texture
-                  destinationSlice:SliceOf(t->desc, r.layer)
-                  destinationLevel:r.mip
-                 destinationOrigin:Origin(r.x, r.y, r.z)];
+                       sourceOffset:r.bufferOffset
+                  sourceBytesPerRow:rowPitch
+                sourceBytesPerImage:imagePitch
+                         sourceSize:Size(r.width, r.height, depth)
+                          toTexture:t->texture
+                   destinationSlice:SliceOf(t->desc, r.layer)
+                   destinationLevel:r.mip
+                  destinationOrigin:Origin(r.x, r.y, r.z)];
         }
     }
 
-    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src, std::span<const BufferTextureCopy> regions) {
+    void CmdList::CopyTextureToBuffer(BufferHandle dst, TextureHandle src,
+                                      std::span<const BufferTextureCopy> regions) {
         Texture* t = device.textures.Get(src);
         Buffer* b = device.buffers.Get(dst);
         if (!t || !b) {
@@ -122,14 +142,14 @@ namespace rhi::metal {
             const uint32_t rowPitch = r.bufferRowPitch ? r.bufferRowPitch : RowBytes(t->desc.format, r.width);
             const uint32_t imagePitch = rowPitch * RowBlocks(t->desc.format, r.height);
             [Blit() copyFromTexture:t->texture
-                        sourceSlice:SliceOf(t->desc, r.layer)
-                        sourceLevel:r.mip
-                       sourceOrigin:Origin(r.x, r.y, r.z)
-                         sourceSize:Size(r.width, r.height, (std::max)(1u, r.depth))
-                           toBuffer:b->buffer
-                  destinationOffset:r.bufferOffset
-             destinationBytesPerRow:rowPitch
-           destinationBytesPerImage:imagePitch];
+                             sourceSlice:SliceOf(t->desc, r.layer)
+                             sourceLevel:r.mip
+                            sourceOrigin:Origin(r.x, r.y, r.z)
+                              sourceSize:Size(r.width, r.height, (std::max)(1u, r.depth))
+                                toBuffer:b->buffer
+                       destinationOffset:r.bufferOffset
+                  destinationBytesPerRow:rowPitch
+                destinationBytesPerImage:imagePitch];
         }
     }
 
@@ -217,14 +237,17 @@ namespace rhi::metal {
                 ca.slice = a.layer;
             }
             ca.level = a.mip;
-            ca.loadAction = a.load == LoadOp::Clear ? MTLLoadActionClear : a.load == LoadOp::Load ? MTLLoadActionLoad : MTLLoadActionDontCare;
+            ca.loadAction = a.load == LoadOp::Clear  ? MTLLoadActionClear
+                            : a.load == LoadOp::Load ? MTLLoadActionLoad
+                                                     : MTLLoadActionDontCare;
             ca.clearColor = MTLClearColorMake(a.clear[0], a.clear[1], a.clear[2], a.clear[3]);
             const bool store = a.store == StoreOp::Store;
             if (a.resolve) {
                 Texture* r = device.textures.Get(a.resolve);
                 if (r && r->texture) {
                     ca.resolveTexture = r->texture;
-                    ca.storeAction = store ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionMultisampleResolve;
+                    ca.storeAction =
+                        store ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionMultisampleResolve;
                 } else {
                     ca.storeAction = store ? MTLStoreActionStore : MTLStoreActionDontCare;
                 }
@@ -243,12 +266,14 @@ namespace rhi::metal {
                 return;
             }
             const bool stencil = HasStencil(t->desc.format);
-            const MTLLoadAction load = desc.depth.readOnly                        ? MTLLoadActionLoad
-                                       : desc.depth.load == LoadOp::Clear         ? MTLLoadActionClear
-                                       : desc.depth.load == LoadOp::Load          ? MTLLoadActionLoad
-                                                                                  : MTLLoadActionDontCare;
+            const MTLLoadAction load = desc.depth.readOnly                ? MTLLoadActionLoad
+                                       : desc.depth.load == LoadOp::Clear ? MTLLoadActionClear
+                                       : desc.depth.load == LoadOp::Load  ? MTLLoadActionLoad
+                                                                          : MTLLoadActionDontCare;
             // a read-only depth pass must not throw its contents away: later passes sample it
-            const MTLStoreAction store = desc.depth.readOnly || desc.depth.store == StoreOp::Store ? MTLStoreActionStore : MTLStoreActionDontCare;
+            const MTLStoreAction store = desc.depth.readOnly || desc.depth.store == StoreOp::Store
+                                             ? MTLStoreActionStore
+                                             : MTLStoreActionDontCare;
             MTLRenderPassDepthAttachmentDescriptor* da = pass.depthAttachment;
             da.texture = t->texture;
             da.level = desc.depth.mip;
@@ -279,7 +304,9 @@ namespace rhi::metal {
 
         // viewport and scissor persist across passes like in the other apis; a pass that never set them covers its targets
         const bool hadViewport = viewportSet, hadScissor = scissorSet;
-        SetViewport(hadViewport ? viewport : Viewport{0, 0, static_cast<float>(passWidth), static_cast<float>(passHeight), 0.0f, 1.0f});
+        SetViewport(hadViewport ? viewport
+                                : Viewport{0, 0, static_cast<float>(passWidth),
+                                           static_cast<float>(passHeight), 0.0f, 1.0f});
         SetScissor(hadScissor ? scissor : Rect{0, 0, passWidth, passHeight});
         viewportSet = hadViewport;
         scissorSet = hadScissor;
@@ -298,7 +325,8 @@ namespace rhi::metal {
         dirtySets = 0xF;
     }
 
-    void CmdList::SetBindGroup(uint32_t set, BindGroupHandle group, std::span<const uint32_t> dynamicOffsets) {
+    void CmdList::SetBindGroup(uint32_t set, BindGroupHandle group,
+                               std::span<const uint32_t> dynamicOffsets) {
         if (set >= kMaxBindGroups)
             return;
         BoundSet& s = sets[set];
@@ -314,7 +342,8 @@ namespace rhi::metal {
         static bool warned = false;
         if (!warned) {
             warned = true;
-            device.ReportError("PushConstants: not implemented on metal; per-draw data belongs in a uniform buffer");
+            device.ReportError(
+                "PushConstants: not implemented on metal; per-draw data belongs in a uniform buffer");
         }
     }
 
@@ -345,10 +374,13 @@ namespace rhi::metal {
             bottom = std::min<int64_t>(bottom, passHeight);
         }
         // a scissor outside the targets is a validation error; an empty one still has to be legal
-        const NSUInteger x = static_cast<NSUInteger>(std::min<int64_t>(left, passWidth ? passWidth - 1 : left));
-        const NSUInteger y = static_cast<NSUInteger>(std::min<int64_t>(top, passHeight ? passHeight - 1 : top));
-        const MTLScissorRect d{x, y, static_cast<NSUInteger>(std::max<int64_t>(1, right - static_cast<int64_t>(x))),
-                               static_cast<NSUInteger>(std::max<int64_t>(1, bottom - static_cast<int64_t>(y)))};
+        const NSUInteger x =
+            static_cast<NSUInteger>(std::min<int64_t>(left, passWidth ? passWidth - 1 : left));
+        const NSUInteger y =
+            static_cast<NSUInteger>(std::min<int64_t>(top, passHeight ? passHeight - 1 : top));
+        const MTLScissorRect d{
+            x, y, static_cast<NSUInteger>(std::max<int64_t>(1, right - static_cast<int64_t>(x))),
+            static_cast<NSUInteger>(std::max<int64_t>(1, bottom - static_cast<int64_t>(y)))};
         [render setScissorRect:d];
     }
 
@@ -403,7 +435,8 @@ namespace rhi::metal {
                     case ResourceKind::StorageBufferRW: {
                         Buffer* b = device.buffers.Get(e->buffer.buffer);
                         if (!b) {
-                            device.ReportError("bind group buffer at binding " + std::to_string(slot.binding) + " is gone");
+                            device.ReportError("bind group buffer at binding " +
+                                               std::to_string(slot.binding) + " is gone");
                             return false;
                         }
                         uint64_t offset = e->buffer.offset;
@@ -420,9 +453,12 @@ namespace rhi::metal {
                     case ResourceKind::SampledTexture:
                     case ResourceKind::StorageTexture: {
                         Texture* t = device.textures.Get(e->texture.texture);
-                        id<MTLTexture> view = t ? device.ViewOf(*t, e->texture.range, slot.dim, e->texture.format, e->texture.stencil) : nil;
+                        id<MTLTexture> view = t ? device.ViewOf(*t, e->texture.range, slot.dim,
+                                                                e->texture.format, e->texture.stencil)
+                                                : nil;
                         if (!view) {
-                            device.ReportError("bind group texture at binding " + std::to_string(slot.binding) + " is gone");
+                            device.ReportError("bind group texture at binding " +
+                                               std::to_string(slot.binding) + " is gone");
                             return false;
                         }
                         if (stage == kStageVertex)
@@ -436,7 +472,8 @@ namespace rhi::metal {
                     case ResourceKind::Sampler: {
                         Sampler* sm = device.samplers.Get(e->sampler);
                         if (!sm) {
-                            device.ReportError("bind group sampler at binding " + std::to_string(slot.binding) + " is gone");
+                            device.ReportError("bind group sampler at binding " +
+                                               std::to_string(slot.binding) + " is gone");
                             return false;
                         }
                         if (stage == kStageVertex)
@@ -498,15 +535,21 @@ namespace rhi::metal {
         return true;
     }
 
-    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
+    void CmdList::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
+                       uint32_t firstInstance) {
         if (!PrepareDraw())
             return;
         const Pipeline* p = device.pipelines.Get(pipeline);
-        [render drawPrimitives:p->primitive vertexStart:firstVertex vertexCount:vertexCount instanceCount:instanceCount baseInstance:firstInstance];
+        [render drawPrimitives:p->primitive
+                   vertexStart:firstVertex
+                   vertexCount:vertexCount
+                 instanceCount:instanceCount
+                  baseInstance:firstInstance];
         device.MutableStats().draws++;
     }
 
-    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    void CmdList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+                              int32_t vertexOffset, uint32_t firstInstance) {
         if (!PrepareDraw())
             return;
         Buffer* b = device.buffers.Get(indexBuffer);
@@ -527,7 +570,8 @@ namespace rhi::metal {
         device.MutableStats().draws++;
     }
 
-    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws, uint32_t stride) {
+    void CmdList::DrawIndexedIndirect(BufferHandle args, uint64_t offset, uint32_t maxDraws,
+                                      uint32_t stride) {
         if (!PrepareDraw())
             return;
         Buffer* a = device.buffers.Get(args);
@@ -539,16 +583,18 @@ namespace rhi::metal {
         const Pipeline* p = device.pipelines.Get(pipeline);
         // DrawIndexedIndirectCommand has the layout of MTLDrawIndexedPrimitivesIndirectArguments; one call per command
         for (uint32_t i = 0; i < maxDraws; i++)
-            [render drawIndexedPrimitives:p->primitive
-                                indexType:indexType == IndexType::U16 ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32
-                              indexBuffer:ib->buffer
-                        indexBufferOffset:indexOffset
-                           indirectBuffer:a->buffer
-                     indirectBufferOffset:offset + static_cast<uint64_t>(i) * stride];
+            [render
+                drawIndexedPrimitives:p->primitive
+                            indexType:indexType == IndexType::U16 ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32
+                          indexBuffer:ib->buffer
+                    indexBufferOffset:indexOffset
+                       indirectBuffer:a->buffer
+                 indirectBufferOffset:offset + static_cast<uint64_t>(i) * stride];
         device.MutableStats().indirectDraws += maxDraws;
     }
 
-    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle, uint64_t, uint32_t maxDraws, uint32_t stride) {
+    void CmdList::DrawIndexedIndirectCount(BufferHandle args, uint64_t offset, BufferHandle, uint64_t,
+                                           uint32_t maxDraws, uint32_t stride) {
         // the count lives on the gpu and an indirect call cannot read it: run every slot, the culling pass zeroes the unused ones
         DrawIndexedIndirect(args, offset, maxDraws, stride);
     }
@@ -592,7 +638,9 @@ namespace rhi::metal {
         }
         if (!BindSets(*p))
             return;
-        [enc dispatchThreadgroupsWithIndirectBuffer:a->buffer indirectBufferOffset:offset threadsPerThreadgroup:p->threads];
+        [enc dispatchThreadgroupsWithIndirectBuffer:a->buffer
+                               indirectBufferOffset:offset
+                              threadsPerThreadgroup:p->threads];
         device.MutableStats().dispatches++;
     }
 

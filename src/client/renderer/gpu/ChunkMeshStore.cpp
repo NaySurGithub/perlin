@@ -130,12 +130,13 @@ namespace perlin::gpu {
 
     int ChunkMeshStore::CreatePage(uint32_t vCap, const std::array<uint32_t, kRenderLayerCount>& iCap) {
         Page p;
-        bool ok = p.vb.Create(gpu->Dev(), vCap, sizeof(Vertex), rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage, "chunk vertices");
+        bool ok = p.vb.Create(gpu->Dev(), vCap, sizeof(Vertex),
+                              rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage, "chunk vertices");
         if (ok && extBytes)
             ok = p.ext.Create(gpu->Dev(), vCap, extBytes, rhi::BufferUsage::Vertex, "chunk vertex extras");
         for (size_t l = 0; l < kRenderLayerCount && ok; l++)
-            ok = p.ib[l].Create(gpu->Dev(), std::max(1u, iCap[l]), sizeof(uint32_t), rhi::BufferUsage::Index | rhi::BufferUsage::Storage,
-                                "chunk indices");
+            ok = p.ib[l].Create(gpu->Dev(), std::max(1u, iCap[l]), sizeof(uint32_t),
+                                rhi::BufferUsage::Index | rhi::BufferUsage::Storage, "chunk indices");
         if (!ok) {
             p.vb.Destroy(gpu->Dev());
             p.ext.Destroy(gpu->Dev());
@@ -179,7 +180,8 @@ namespace perlin::gpu {
         for (size_t pi = 0; pi < pages.size(); pi++)
             if (tryPage(pages[pi], static_cast<int>(pi)))
                 return true;
-        const uint32_t pageVerts = std::min<uint32_t>(kPageVerts, (1u << 18) << std::min<size_t>(pages.size(), 2));
+        const uint32_t pageVerts =
+            std::min<uint32_t>(kPageVerts, (1u << 18) << std::min<size_t>(pages.size(), 2));
         const uint32_t base = (pageVerts / 4) * 6;
         std::array<uint32_t, kRenderLayerCount> caps = {base, base / 2, base / 2, base / 4, base / 8};
         for (size_t l = 0; l < kRenderLayerCount; l++)
@@ -210,7 +212,8 @@ namespace perlin::gpu {
     }
 
     void ChunkMeshStore::Free(Chunk& c) {
-        if (c.page >= 0 && c.page < static_cast<int>(pages.size()) && pages[static_cast<size_t>(c.page)].live) {
+        if (c.page >= 0 && c.page < static_cast<int>(pages.size()) &&
+            pages[static_cast<size_t>(c.page)].live) {
             Page& pg = pages[static_cast<size_t>(c.page)];
             pg.vb.Free(c.vOff, c.vCount);
             for (size_t l = 0; l < kRenderLayerCount; l++)
@@ -220,7 +223,8 @@ namespace perlin::gpu {
         c.page = -1;
     }
 
-    void ChunkMeshStore::Update(bool lod, int cx, int cz, int size, const Tessellator& tess, uint64_t version) {
+    void ChunkMeshStore::Update(bool lod, int cx, int cz, int size, const Tessellator& tess,
+                                uint64_t version) {
         Upload(lod ? lods : chunks, lod, cx, cz, size, tess, version);
     }
 
@@ -243,12 +247,20 @@ namespace perlin::gpu {
             const float s = static_cast<float>(m->size);
             const float x0 = m->cx * s, z0 = m->cz * s;
             if (first) {
-                g.x0 = x0; g.z0 = z0; g.x1 = x0 + s; g.z1 = z0 + s; g.minY = m->minY; g.maxY = m->maxY;
+                g.x0 = x0;
+                g.z0 = z0;
+                g.x1 = x0 + s;
+                g.z1 = z0 + s;
+                g.minY = m->minY;
+                g.maxY = m->maxY;
                 first = false;
             } else {
-                g.x0 = std::min(g.x0, x0); g.z0 = std::min(g.z0, z0);
-                g.x1 = std::max(g.x1, x0 + s); g.z1 = std::max(g.z1, z0 + s);
-                g.minY = std::min(g.minY, m->minY); g.maxY = std::max(g.maxY, m->maxY);
+                g.x0 = std::min(g.x0, x0);
+                g.z0 = std::min(g.z0, z0);
+                g.x1 = std::max(g.x1, x0 + s);
+                g.z1 = std::max(g.z1, z0 + s);
+                g.minY = std::min(g.minY, m->minY);
+                g.maxY = std::max(g.maxY, m->maxY);
             }
         }
     }
@@ -275,8 +287,8 @@ namespace perlin::gpu {
             Recalc(it->second);
     }
 
-    void ChunkMeshStore::Upload(std::unordered_map<int64_t, Chunk>& target, bool lod, int cx, int cz, int size, const Tessellator& tess,
-                                uint64_t version) {
+    void ChunkMeshStore::Upload(std::unordered_map<int64_t, Chunk>& target, bool lod, int cx, int cz,
+                                int size, const Tessellator& tess, uint64_t version) {
         const int64_t key = Key(cx, cz);
         const auto& verts = tess.Vertices();
         auto it = target.find(key);
@@ -308,13 +320,15 @@ namespace perlin::gpu {
             return;
         Page& pg = pages[static_cast<size_t>(g.page)];
 
-        gpu->WriteBuffer(pg.vb, static_cast<uint64_t>(g.vOff) * sizeof(Vertex), verts.data(), static_cast<uint64_t>(g.vCount) * sizeof(Vertex));
+        gpu->WriteBuffer(pg.vb, static_cast<uint64_t>(g.vOff) * sizeof(Vertex), verts.data(),
+                         static_cast<uint64_t>(g.vCount) * sizeof(Vertex));
         if (extBytes && extConvert && pg.ext.Buffer()) {
             static thread_local std::vector<uint8_t> extra;
             extra.clear();
             extConvert(tess, extra);
             if (extra.size() == static_cast<size_t>(g.vCount) * extBytes)
-                gpu->WriteBuffer(pg.ext, static_cast<uint64_t>(g.vOff) * extBytes, extra.data(), extra.size());
+                gpu->WriteBuffer(pg.ext, static_cast<uint64_t>(g.vOff) * extBytes, extra.data(),
+                                 extra.size());
         }
         static thread_local std::vector<uint32_t> shifted;
         for (size_t l = 0; l < kRenderLayerCount; l++) {
@@ -324,7 +338,8 @@ namespace perlin::gpu {
             shifted.resize(list.size());
             for (size_t i = 0; i < list.size(); i++)
                 shifted[i] = list[i] + g.vOff;
-            gpu->WriteBuffer(pg.ib[l], static_cast<uint64_t>(g.iOff[l]) * sizeof(uint32_t), shifted.data(), shifted.size() * sizeof(uint32_t));
+            gpu->WriteBuffer(pg.ib[l], static_cast<uint64_t>(g.iOff[l]) * sizeof(uint32_t), shifted.data(),
+                             shifted.size() * sizeof(uint32_t));
         }
 
         float lo = verts[0].y, hi = verts[0].y;
@@ -346,7 +361,8 @@ namespace perlin::gpu {
         } else {
             g.sections.reserve(secs.size());
             for (const MeshSection& ms : secs) {
-                Section section{static_cast<float>(ms.sy * 16), static_cast<float>(ms.sy * 16 + 16), ms.sy, {}, {}};
+                Section section{
+                    static_cast<float>(ms.sy * 16), static_cast<float>(ms.sy * 16 + 16), ms.sy, {}, {}};
                 for (size_t l = 0; l < kRenderLayerCount; l++) {
                     section.start[l] = ms.start[l];
                     section.count[l] = ms.count[l];
@@ -400,21 +416,24 @@ namespace perlin::gpu {
         return bit < 0 || bit >= 32 || (it->second.secVis & (1u << bit)) != 0;
     }
 
-    void ChunkMeshStore::Select(const Frustum& frustum, float camX, float camY, float camZ, int cullRadius, bool caveCulling, double now) {
+    void ChunkMeshStore::Select(const Frustum& frustum, float camX, float camY, float camZ, int cullRadius,
+                                bool caveCulling, double now) {
         visible.clear();
         visibleSections.clear();
         if (chunks.empty() && lods.empty())
             return;
         if (caveCulling)
             UpdateCave(camX, camY, camZ, now);
-        const int cullCx = static_cast<int>(std::floor(camX / 16.0f)), cullCz = static_cast<int>(std::floor(camZ / 16.0f));
+        const int cullCx = static_cast<int>(std::floor(camX / 16.0f)),
+                  cullCz = static_cast<int>(std::floor(camZ / 16.0f));
         for (const auto& entry : chunks) {
             const Chunk& g = entry.second;
             if (g.page < 0 || g.sections.empty())
                 continue;
             if (cullRadius > 0) {
                 const int ddx = g.cx - cullCx, ddz = g.cz - cullCz;
-                if (std::abs(ddx) > cullRadius || std::abs(ddz) > cullRadius || ddx * ddx + ddz * ddz > (cullRadius + 1) * (cullRadius + 1))
+                if (std::abs(ddx) > cullRadius || std::abs(ddz) > cullRadius ||
+                    ddx * ddx + ddz * ddz > (cullRadius + 1) * (cullRadius + 1))
                     continue;
             }
             const float x0 = g.cx * 16.0f, z0 = g.cz * 16.0f;
@@ -425,10 +444,12 @@ namespace perlin::gpu {
             visible.push_back({dx * dx + dz * dz, &g, result == Frustum::Result::Inside});
         }
         // real chunks are drawn near to far; lod tiles go after them grouped by buffer range, which merges them into few draws
-        std::sort(visible.begin(), visible.end(), [](const Visible& x, const Visible& y) { return x.distance < y.distance; });
+        std::sort(visible.begin(), visible.end(),
+                  [](const Visible& x, const Visible& y) { return x.distance < y.distance; });
         const size_t realCount = visible.size();
         for (const auto& [gkey, group] : lodGroups) {
-            const auto groupResult = frustum.Test(group.x0, group.minY, group.z0, group.x1, group.maxY, group.z1);
+            const auto groupResult =
+                frustum.Test(group.x0, group.minY, group.z0, group.x1, group.maxY, group.z1);
             if (groupResult == Frustum::Result::Outside)
                 continue;
             for (const Chunk* g : group.members) {
@@ -446,11 +467,12 @@ namespace perlin::gpu {
                 visible.push_back({dx * dx + dz * dz, g, result == Frustum::Result::Inside});
             }
         }
-        std::sort(visible.begin() + static_cast<std::ptrdiff_t>(realCount), visible.end(), [](const Visible& x, const Visible& y) {
-            if (x.chunk->page != y.chunk->page)
-                return x.chunk->page < y.chunk->page;
-            return x.chunk->iOff[0] < y.chunk->iOff[0];
-        });
+        std::sort(visible.begin() + static_cast<std::ptrdiff_t>(realCount), visible.end(),
+                  [](const Visible& x, const Visible& y) {
+                      if (x.chunk->page != y.chunk->page)
+                          return x.chunk->page < y.chunk->page;
+                      return x.chunk->iOff[0] < y.chunk->iOff[0];
+                  });
         for (Visible& item : visible) {
             const Chunk& g = *item.chunk;
             const float x0 = g.cx * static_cast<float>(g.size), z0 = g.cz * static_cast<float>(g.size);
@@ -462,7 +484,8 @@ namespace perlin::gpu {
                     if (bit >= 0 && bit < 32 && !(g.secVis & (1u << bit)))
                         continue;
                 }
-                if (!item.fullyInside && !frustum.Visible(x0, sec.minY, z0, x0 + extent, sec.maxY, z0 + extent))
+                if (!item.fullyInside &&
+                    !frustum.Visible(x0, sec.minY, z0, x0 + extent, sec.maxY, z0 + extent))
                     continue;
                 visibleSections.push_back(&sec);
             }
@@ -498,7 +521,8 @@ namespace perlin::gpu {
     }
 
     void ChunkMeshStore::UpdateCave(float camX, float camY, float camZ, double now) {
-        const int ccx = static_cast<int>(std::floor(camX / 16.0f)), ccz = static_cast<int>(std::floor(camZ / 16.0f));
+        const int ccx = static_cast<int>(std::floor(camX / 16.0f)),
+                  ccz = static_cast<int>(std::floor(camZ / 16.0f));
         const int csy = static_cast<int>(std::floor(camY / 16.0f));
         const bool camMoved = caveCam[0] != ccx || caveCam[1] != csy || caveCam[2] != ccz;
         if (!camMoved) {
@@ -593,7 +617,8 @@ namespace perlin::gpu {
                     continue;
                 if (!connected(nx, nz, ns, entry, d))
                     continue;
-                moves.push_back({nx, nz, ns, static_cast<uint8_t>(d), static_cast<uint8_t>(m.dirs | (1u << d))});
+                moves.push_back(
+                    {nx, nz, ns, static_cast<uint8_t>(d), static_cast<uint8_t>(m.dirs | (1u << d))});
             }
         }
         for (int dz = -1; dz <= 1; dz++)

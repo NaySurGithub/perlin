@@ -63,8 +63,10 @@ namespace {
     bool VerifyRaw(EC_KEY* key, const std::string& digest, const std::string& rs) {
         ECDSA_SIG* sig = ECDSA_SIG_new();
         const size_t half = rs.size() / 2;
-        BIGNUM* r = BN_bin2bn(reinterpret_cast<const unsigned char*>(rs.data()), static_cast<int>(half), nullptr);
-        BIGNUM* s = BN_bin2bn(reinterpret_cast<const unsigned char*>(rs.data()) + half, static_cast<int>(half), nullptr);
+        BIGNUM* r =
+            BN_bin2bn(reinterpret_cast<const unsigned char*>(rs.data()), static_cast<int>(half), nullptr);
+        BIGNUM* s = BN_bin2bn(reinterpret_cast<const unsigned char*>(rs.data()) + half,
+                              static_cast<int>(half), nullptr);
         ECDSA_SIG_set0(sig, r, s);
         const int ok = ECDSA_do_verify(reinterpret_cast<const unsigned char*>(digest.data()),
                                        static_cast<int>(digest.size()), sig, key);
@@ -74,8 +76,9 @@ namespace {
 
     std::string StdB64Decode(const std::string& s) {
         std::string out(s.size() / 4 * 3 + 3, '\0');
-        const int n = EVP_DecodeBlock(reinterpret_cast<unsigned char*>(out.data()),
-                                      reinterpret_cast<const unsigned char*>(s.data()), static_cast<int>(s.size()));
+        const int n =
+            EVP_DecodeBlock(reinterpret_cast<unsigned char*>(out.data()),
+                            reinterpret_cast<const unsigned char*>(s.data()), static_cast<int>(s.size()));
         size_t pad = 0;
         while (pad < s.size() && s[s.size() - 1 - pad] == '=')
             pad++;
@@ -86,7 +89,8 @@ namespace {
     void WritePng(const std::string& path, int w, int h, const std::vector<unsigned char>& rgba) {
         size_t len = 0;
         void* png = tdefl_write_image_to_png_file_in_memory(rgba.data(), w, h, 4, &len);
-        std::ofstream(path, std::ios::binary).write(static_cast<const char*>(png), static_cast<std::streamsize>(len));
+        std::ofstream(path, std::ios::binary)
+            .write(static_cast<const char*>(png), static_cast<std::streamsize>(len));
         mz_free(png);
     }
 
@@ -111,10 +115,12 @@ namespace {
 static void TestSignatures() {
     const std::string x = FromHex("063f059c42433992182ab753c50e2cae04e48de93a0c89770d4f29297384ce7b");
     const std::string y = FromHex("cab5b6658b20be402fa3f2ea003464c15541e2a45595cc049dbe6baeb930c39b");
-    const std::string sig = FromHex(
-        "0000000101dc38fa295d5687d8fce073e3d52f8ba5de2eab06359c72ac53e858d987dd8ad9ad55127307d4abc1f4cc8f8a32ff8dd91c953fc92ac73c7e131ff9eaa51ef0d841ee08b59237ff");
-    const std::string sig2 = FromHex(
-        "0000000101dc38fa295d5687c99704eaa97b3060d2252e6d79638d0e4391148aeec5ba432f85b41dae602cd2115cdae61538c28b0ff71f74201393c392ba645711f27c4f202ffe3a9d6413e0");
+    const std::string sig =
+        FromHex("0000000101dc38fa295d5687d8fce073e3d52f8ba5de2eab06359c72ac53e858d987dd8ad9ad55127307d4abc1f4"
+                "cc8f8a32ff8dd91c953fc92ac73c7e131ff9eaa51ef0d841ee08b59237ff");
+    const std::string sig2 =
+        FromHex("0000000101dc38fa295d5687c99704eaa97b3060d2252e6d79638d0e4391148aeec5ba432f85b41dae602cd2115c"
+                "dae61538c28b0ff71f74201393c392ba645711f27c4f202ffe3a9d6413e0");
     const int64_t nanos = 1760000000123456700LL;
     EC_KEY* key = KeyFromXY(x, y);
     const std::string body = R"({"hello":"world"})";
@@ -124,7 +130,8 @@ static void TestSignatures() {
     CHECK(sig.size() == 12 + 64);
     CHECK(VerifyRaw(key, xbox::detail::RequestDigest("POST", path, auth, body, nanos), sig.substr(12)));
     CHECK(VerifyRaw(key, xbox::detail::RequestDigest("POST", path, auth, body, nanos, 5), sig2.substr(12)));
-    CHECK(!VerifyRaw(key, xbox::detail::RequestDigest("POST", path, auth, body + " ", nanos), sig.substr(12)));
+    CHECK(
+        !VerifyRaw(key, xbox::detail::RequestDigest("POST", path, auth, body + " ", nanos), sig.substr(12)));
     CHECK(!VerifyRaw(key, xbox::detail::RequestDigest("POST", path, "", body, nanos), sig.substr(12)));
     EC_KEY_free(key);
 
@@ -171,7 +178,8 @@ static void TestSkins() {
     const std::string id64 = out.skinId;
 
     cfg.skinPath = (dir / "skin128.png").string();
-    CHECK(LoadSkinConfig(cfg, out, err) && out.skinWidth == 128 && out.skinHeight == 128 && out.skinId != id64);
+    CHECK(LoadSkinConfig(cfg, out, err) && out.skinWidth == 128 && out.skinHeight == 128 &&
+          out.skinId != id64);
 
     cfg.skinPath = (dir / "skin32.png").string();
     CHECK(LoadSkinConfig(cfg, out, err) && out.skinWidth == 64 && out.skinHeight == 64);
@@ -229,10 +237,10 @@ static void TestIdentity() {
     CHECK(offline && offline->root()["Token"].str() == id.MultiplayerToken());
 
     const std::string mojangA = "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEAAAA";
-    const std::string chainJson = "{\"chain\":[\"" + Jwt("{\"alg\":\"ES384\",\"x5u\":\"" + mojangA + "\"}",
-                                                         "{\"identityPublicKey\":\"B\"}") +
-                                  "\",\"" + Jwt("{\"alg\":\"ES384\",\"x5u\":\"B\"}", "{\"extraData\":{\"displayName\":\"Tester\"}}") +
-                                  "\"]}";
+    const std::string chainJson =
+        "{\"chain\":[\"" +
+        Jwt("{\"alg\":\"ES384\",\"x5u\":\"" + mojangA + "\"}", "{\"identityPublicKey\":\"B\"}") + "\",\"" +
+        Jwt("{\"alg\":\"ES384\",\"x5u\":\"B\"}", "{\"extraData\":{\"displayName\":\"Tester\"}}") + "\"]}";
     id.SetMultiplayerToken("oidc.token.value");
     const std::string online = BuildIdentityJson(id, &chainJson, err);
     CHECK(!online.empty());
@@ -268,19 +276,24 @@ namespace {
         std::string lastMcAuthorization, lastChainAuthorization, lastPublicKeyForToken;
 
         static std::string Token(const char* name, const char* extra = "") {
-            return std::string("{\"IssueInstant\":\"2025-10-09T08:53:20.0000000Z\",\"NotAfter\":\"2099-01-01T00:00:00.0000000Z\","
-                               "\"Token\":\"") + name + "\"" + extra + "}";
+            return std::string("{\"IssueInstant\":\"2025-10-09T08:53:20.0000000Z\",\"NotAfter\":\"2099-01-"
+                               "01T00:00:00.0000000Z\","
+                               "\"Token\":\"") +
+                   name + "\"" + extra + "}";
         }
 
         Mock() {
             auto note = [this](const httplib::Request& r) { seen.insert(r.path); };
-            server.Post("/login.live.com/oauth20_connect.srf", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Post("/login.live.com/oauth20_connect.srf", [=](const httplib::Request& r,
+                                                                   httplib::Response& res) {
                 note(r);
-                res.set_content("{\"user_code\":\"ABCD1234\",\"device_code\":\"dev-code\",\"verification_uri\":"
-                                "\"https://www.microsoft.com/link\",\"interval\":1,\"expires_in\":900}",
-                                "application/json");
+                res.set_content(
+                    "{\"user_code\":\"ABCD1234\",\"device_code\":\"dev-code\",\"verification_uri\":"
+                    "\"https://www.microsoft.com/link\",\"interval\":1,\"expires_in\":900}",
+                    "application/json");
             });
-            server.Post("/login.live.com/oauth20_token.srf", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Post("/login.live.com/oauth20_token.srf", [=](const httplib::Request& r,
+                                                                 httplib::Response& res) {
                 note(r);
                 const std::string grant = r.get_param_value("grant_type");
                 if (grant == "refresh_token") {
@@ -290,8 +303,9 @@ namespace {
                         res.set_content("{\"error\":\"invalid_grant\"}", "application/json");
                         return;
                     }
-                    res.set_content("{\"access_token\":\"access-2\",\"refresh_token\":\"refresh-1\",\"expires_in\":3600}",
-                                    "application/json");
+                    res.set_content(
+                        "{\"access_token\":\"access-2\",\"refresh_token\":\"refresh-1\",\"expires_in\":3600}",
+                        "application/json");
                     return;
                 }
                 if (devicePolls++ == 0) {
@@ -299,54 +313,70 @@ namespace {
                     res.set_content("{\"error\":\"authorization_pending\"}", "application/json");
                     return;
                 }
-                res.set_content("{\"access_token\":\"access-1\",\"refresh_token\":\"refresh-1\",\"expires_in\":3600}",
-                                "application/json");
+                res.set_content(
+                    "{\"access_token\":\"access-1\",\"refresh_token\":\"refresh-1\",\"expires_in\":3600}",
+                    "application/json");
             });
-            server.Get("/title.mgt.xboxlive.com/titles/default/endpoints", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Get("/title.mgt.xboxlive.com/titles/default/endpoints", [=](const httplib::Request& r,
+                                                                               httplib::Response& res) {
                 note(r);
-                res.set_content("{\"EndPoints\":[{\"Protocol\":\"https\",\"Host\":\"*.xboxlive.com\",\"HostType\":\"wildcard\","
-                                "\"RelyingParty\":\"http://xboxlive.com\",\"SignaturePolicyIndex\":0},"
-                                "{\"Protocol\":\"https\",\"Host\":\"sisu.xboxlive.com\",\"HostType\":\"fqdn\","
-                                "\"RelyingParty\":\"http://xboxlive.com\",\"SignaturePolicyIndex\":1},"
-                                "{\"Protocol\":\"https\",\"Host\":\"*.playfabapi.com\",\"HostType\":\"wildcard\","
-                                "\"RelyingParty\":\"rp://playfabapi.com/\",\"SignaturePolicyIndex\":0}],"
-                                "\"SignaturePolicies\":[{\"Version\":1,\"MaxBodyBytes\":8192,\"SupportedAlgorithms\":[\"ES256\"]},"
-                                "{\"Version\":1,\"MaxBodyBytes\":0,\"ExtraHeaders\":[\"User-Agent\"]}]}",
-                                "application/json");
+                res.set_content(
+                    "{\"EndPoints\":[{\"Protocol\":\"https\",\"Host\":\"*.xboxlive.com\",\"HostType\":"
+                    "\"wildcard\","
+                    "\"RelyingParty\":\"http://xboxlive.com\",\"SignaturePolicyIndex\":0},"
+                    "{\"Protocol\":\"https\",\"Host\":\"sisu.xboxlive.com\",\"HostType\":\"fqdn\","
+                    "\"RelyingParty\":\"http://xboxlive.com\",\"SignaturePolicyIndex\":1},"
+                    "{\"Protocol\":\"https\",\"Host\":\"*.playfabapi.com\",\"HostType\":\"wildcard\","
+                    "\"RelyingParty\":\"rp://playfabapi.com/\",\"SignaturePolicyIndex\":0}],"
+                    "\"SignaturePolicies\":[{\"Version\":1,\"MaxBodyBytes\":8192,\"SupportedAlgorithms\":["
+                    "\"ES256\"]},"
+                    "{\"Version\":1,\"MaxBodyBytes\":0,\"ExtraHeaders\":[\"User-Agent\"]}]}",
+                    "application/json");
             });
-            server.Post("/device.auth.xboxlive.com/device/authenticate", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Post("/device.auth.xboxlive.com/device/authenticate", [=](const httplib::Request& r,
+                                                                             httplib::Response& res) {
                 note(r);
                 deviceAuths++;
                 auto doc = json::Document::Parse(r.body);
-                if (!doc || doc->root()["Properties"]["ProofKey"]["crv"].str() != "P-256" || !r.has_header("Signature") ||
+                if (!doc || doc->root()["Properties"]["ProofKey"]["crv"].str() != "P-256" ||
+                    !r.has_header("Signature") ||
                     doc->root()["Properties"]["AuthMethod"].str() != "ProofOfPossession") {
                     res.status = 400;
                     return;
                 }
                 res.set_header("Date", "Thu, 09 Oct 2025 08:53:20 GMT");
-                res.set_content(Token("device-token", ",\"DisplayClaims\":{\"xdi\":{\"did\":\"1\"}}"), "application/json");
+                res.set_content(Token("device-token", ",\"DisplayClaims\":{\"xdi\":{\"did\":\"1\"}}"),
+                                "application/json");
             });
-            server.Post("/sisu.xboxlive.com/authorize", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Post("/sisu.xboxlive.com/authorize", [=](const httplib::Request& r,
+                                                            httplib::Response& res) {
                 note(r);
                 auto doc = json::Document::Parse(r.body);
-                if (!doc || doc->root()["AccessToken"].str() != "t=access-1" && doc->root()["AccessToken"].str() != "t=access-2" ||
+                if (!doc ||
+                    doc->root()["AccessToken"].str() != "t=access-1" &&
+                        doc->root()["AccessToken"].str() != "t=access-2" ||
                     doc->root()["DeviceToken"].str() != "device-token" || !r.has_header("Signature") ||
                     doc->root()["AppId"].str() != "0000000048183522") {
                     res.status = 400;
                     res.set_header("X-Err", "2148916233");
                     return;
                 }
-                res.set_content("{\"TitleToken\":" + Token("title-token", ",\"DisplayClaims\":{\"xti\":{\"tid\":\"1\"}}") +
-                                    ",\"UserToken\":" + Token("user-token", ",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"uhs1\"}]}") +
+                res.set_content("{\"TitleToken\":" +
+                                    Token("title-token", ",\"DisplayClaims\":{\"xti\":{\"tid\":\"1\"}}") +
+                                    ",\"UserToken\":" +
+                                    Token("user-token", ",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"uhs1\"}]}") +
                                     ",\"AuthorizationToken\":" +
-                                    Token("sisu-xsts", ",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"uhs1\"}]}") + "}",
+                                    Token("sisu-xsts", ",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"uhs1\"}]}") +
+                                    "}",
                                 "application/json");
             });
-            server.Post("/xsts.auth.xboxlive.com/xsts/authorize", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Post("/xsts.auth.xboxlive.com/xsts/authorize", [=](const httplib::Request& r,
+                                                                      httplib::Response& res) {
                 note(r);
                 auto doc = json::Document::Parse(r.body);
                 const json::View props = doc ? doc->root()["Properties"] : json::View();
-                if (!doc || props["DeviceToken"].str() != "device-token" || props["TitleToken"].str() != "title-token" ||
+                if (!doc || props["DeviceToken"].str() != "device-token" ||
+                    props["TitleToken"].str() != "title-token" ||
                     props["UserTokens"][0].str() != "user-token" || !r.has_header("Signature")) {
                     res.status = 401;
                     res.set_content("{\"XErr\":2148916233}", "application/json");
@@ -354,30 +384,38 @@ namespace {
                 }
                 const std::string rp = doc->root()["RelyingParty"].str();
                 const bool xboxLive = rp == "http://xboxlive.com";
-                res.set_content(Token(rp == "rp://playfabapi.com/" ? "xsts-playfab" : xboxLive ? "xsts-xbl" : "xsts-multiplayer",
-                                      xboxLive ? ",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"uhs1\",\"gtg\":\"MockGamer\",\"xid\":\"2535400000000001\"}]}"
+                res.set_content(Token(rp == "rp://playfabapi.com/" ? "xsts-playfab"
+                                      : xboxLive                   ? "xsts-xbl"
+                                                                   : "xsts-multiplayer",
+                                      xboxLive ? ",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"uhs1\",\"gtg\":"
+                                                 "\"MockGamer\",\"xid\":\"2535400000000001\"}]}"
                                                : ",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"uhs1\"}]}"),
                                 "application/json");
             });
-            server.Post("/20ca2.playfabapi.com/Client/LoginWithXbox", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Post("/20ca2.playfabapi.com/Client/LoginWithXbox", [=](const httplib::Request& r,
+                                                                          httplib::Response& res) {
                 note(r);
                 auto doc = json::Document::Parse(r.body);
-                if (!doc || doc->root()["XboxToken"].str() != "XBL3.0 x=uhs1;xsts-playfab" || !doc->root()["CreateAccount"].boolean()) {
+                if (!doc || doc->root()["XboxToken"].str() != "XBL3.0 x=uhs1;xsts-playfab" ||
+                    !doc->root()["CreateAccount"].boolean()) {
                     res.status = 400;
                     res.set_content("{\"code\":400,\"errorMessage\":\"bad xbox token\"}", "application/json");
                     return;
                 }
-                res.set_content("{\"code\":200,\"status\":\"OK\",\"data\":{\"SessionTicket\":\"ticket-1\",\"PlayFabId\":\"PF1\"}}",
+                res.set_content("{\"code\":200,\"status\":\"OK\",\"data\":{\"SessionTicket\":\"ticket-1\","
+                                "\"PlayFabId\":\"PF1\"}}",
                                 "application/json");
             });
-            server.Get(R"(/client.discovery.minecraft-services.net/api/v1.0/discovery/MinecraftPE/builds/(.*))",
-                       [=](const httplib::Request& r, httplib::Response& res) {
-                           note(r);
-                           res.set_content("{\"result\":{\"serviceEnvironments\":{\"auth\":{\"prod\":{\"serviceUri\":"
-                                           "\"https://authorization.franchise.minecraft-services.net\",\"issuer\":\"x\","
-                                           "\"playFabTitleId\":\"20CA2\"}}}}}",
-                                           "application/json");
-                       });
+            server.Get(
+                R"(/client.discovery.minecraft-services.net/api/v1.0/discovery/MinecraftPE/builds/(.*))",
+                [=](const httplib::Request& r, httplib::Response& res) {
+                    note(r);
+                    res.set_content(
+                        "{\"result\":{\"serviceEnvironments\":{\"auth\":{\"prod\":{\"serviceUri\":"
+                        "\"https://authorization.franchise.minecraft-services.net\",\"issuer\":\"x\","
+                        "\"playFabTitleId\":\"20CA2\"}}}}}",
+                        "application/json");
+                });
             server.Post("/authorization.franchise.minecraft-services.net/api/v1.0/session/start",
                         [=](const httplib::Request& r, httplib::Response& res) {
                             note(r);
@@ -389,9 +427,10 @@ namespace {
                                 res.status = 400;
                                 return;
                             }
-                            res.set_content("{\"result\":{\"authorizationHeader\":\"MCToken session.jwt.value\","
-                                            "\"validUntil\":\"2099-01-01T00:00:00Z\"}}",
-                                            "application/json");
+                            res.set_content(
+                                "{\"result\":{\"authorizationHeader\":\"MCToken session.jwt.value\","
+                                "\"validUntil\":\"2099-01-01T00:00:00Z\"}}",
+                                "application/json");
                         });
             server.Post("/authorization.franchise.minecraft-services.net/api/v1.0/multiplayer/session/start",
                         [=](const httplib::Request& r, httplib::Response& res) {
@@ -399,17 +438,23 @@ namespace {
                             lastMcAuthorization = r.get_header_value("Authorization");
                             auto doc = json::Document::Parse(r.body);
                             lastPublicKeyForToken = doc ? doc->root()["publicKey"].str() : "";
-                            res.set_content("{\"result\":{\"signedToken\":\"oidc.multiplayer.token\"}}", "application/json");
+                            res.set_content("{\"result\":{\"signedToken\":\"oidc.multiplayer.token\"}}",
+                                            "application/json");
                         });
-            server.Post("/multiplayer.minecraft.net/authentication", [=](const httplib::Request& r, httplib::Response& res) {
+            server.Post("/multiplayer.minecraft.net/authentication", [=](const httplib::Request& r,
+                                                                         httplib::Response& res) {
                 note(r);
                 lastChainAuthorization = r.get_header_value("Authorization");
                 auto doc = json::Document::Parse(r.body);
                 chainKey = doc ? doc->root()["identityPublicKey"].str() : "";
-                res.set_content("{\"chain\":[\"" + Jwt("{\"alg\":\"ES384\",\"x5u\":\"AAAA\"}", "{\"identityPublicKey\":\"BBBB\"}") +
-                                    "\",\"" + Jwt("{\"alg\":\"ES384\",\"x5u\":\"BBBB\"}",
-                                                  "{\"extraData\":{\"displayName\":\"MockGamer\",\"XUID\":\"2535400000000001\"}}") + "\"]}",
-                                "application/json");
+                res.set_content(
+                    "{\"chain\":[\"" +
+                        Jwt("{\"alg\":\"ES384\",\"x5u\":\"AAAA\"}", "{\"identityPublicKey\":\"BBBB\"}") +
+                        "\",\"" +
+                        Jwt("{\"alg\":\"ES384\",\"x5u\":\"BBBB\"}",
+                            "{\"extraData\":{\"displayName\":\"MockGamer\",\"XUID\":\"2535400000000001\"}}") +
+                        "\"]}",
+                    "application/json");
             });
             port = server.bind_to_any_port("127.0.0.1");
             thread = std::thread([this] { server.listen_after_bind(); });
@@ -437,7 +482,12 @@ static void TestFlow() {
     {
         xbox::Account account(cache);
         CHECK(!account.HasSavedLogin());
-        CHECK(account.SignIn([&](const std::string& u, const std::string& c) { promptUrl = u; promptCode = c; }, err));
+        CHECK(account.SignIn(
+            [&](const std::string& u, const std::string& c) {
+                promptUrl = u;
+                promptCode = c;
+            },
+            err));
         CHECK(promptUrl == "https://www.microsoft.com/link" && promptCode == "ABCD1234");
         CHECK(mock.devicePolls >= 2);
         CHECK(account.HasSavedLogin());
@@ -453,12 +503,13 @@ static void TestFlow() {
         CHECK(mock.lastMcAuthorization == "MCToken session.jwt.value");
         CHECK(mock.lastChainAuthorization == "XBL3.0 x=uhs1;xsts-multiplayer");
         CHECK(mock.chainKey == id.PublicKeyB64() && mock.lastPublicKeyForToken == id.PublicKeyB64());
-        for (const char* path : {"/login.live.com/oauth20_connect.srf", "/sisu.xboxlive.com/authorize",
-                                 "/device.auth.xboxlive.com/device/authenticate", "/xsts.auth.xboxlive.com/xsts/authorize",
-                                 "/20ca2.playfabapi.com/Client/LoginWithXbox",
-                                 "/authorization.franchise.minecraft-services.net/api/v1.0/session/start",
-                                 "/authorization.franchise.minecraft-services.net/api/v1.0/multiplayer/session/start",
-                                 "/multiplayer.minecraft.net/authentication"})
+        for (const char* path :
+             {"/login.live.com/oauth20_connect.srf", "/sisu.xboxlive.com/authorize",
+              "/device.auth.xboxlive.com/device/authenticate", "/xsts.auth.xboxlive.com/xsts/authorize",
+              "/20ca2.playfabapi.com/Client/LoginWithXbox",
+              "/authorization.franchise.minecraft-services.net/api/v1.0/session/start",
+              "/authorization.franchise.minecraft-services.net/api/v1.0/multiplayer/session/start",
+              "/multiplayer.minecraft.net/authentication"})
             CHECK(mock.seen.count(path) == 1);
     }
 
@@ -503,7 +554,9 @@ static void TestFlow() {
     fs::remove_all(dir);
 }
 
-static std::vector<uint8_t> Bytes(const std::string& s) { return std::vector<uint8_t>(s.begin(), s.end()); }
+static std::vector<uint8_t> Bytes(const std::string& s) {
+    return std::vector<uint8_t>(s.begin(), s.end());
+}
 
 static void TestCipher() {
     uint8_t key[32];
@@ -512,10 +565,12 @@ static void TestCipher() {
     PacketCipher c;
     CHECK(c.InitWithKey(key));
     const auto c1 = c.Encrypt(Bytes(std::string(1, '\0') + "hello batch one"));
-    const auto c2 = c.Encrypt(Bytes(std::string(1, '\xff') + "second, a bit longer batch payload 0123456789"));
+    const auto c2 =
+        c.Encrypt(Bytes(std::string(1, '\xff') + "second, a bit longer batch payload 0123456789"));
     auto hex = [](const std::vector<uint8_t>& v) { return Hex(std::string(v.begin(), v.end())); };
     CHECK(hex(c1) == "25a37bff9dee666daffeaccc2c7e64266bbb1932258d960a");
-    CHECK(hex(c2) == "1af35bde0ebdaf1b7a7ee4e3a170dd667f3d8ce6ff53da4f8b55e345df65c4ae2805f4af9394dddfab0d101ab1fd445ecdadd4d09d94");
+    CHECK(hex(c2) == "1af35bde0ebdaf1b7a7ee4e3a170dd667f3d8ce6ff53da4f8b55e345df65c4ae2805f4af9394dddfab0d101"
+                     "ab1fd445ecdadd4d09d94");
     PacketCipher d;
     CHECK(d.InitWithKey(key));
     std::vector<uint8_t> plain;
@@ -540,7 +595,8 @@ static void TestCipher() {
     EVP_PKEY* pk = d2i_PUBKEY(nullptr, &p, static_cast<long>(clientDer.size()));
     EC_KEY* clientPub = EVP_PKEY_get1_EC_KEY(pk);
     unsigned char secret[64];
-    const int n = ECDH_compute_key(secret, sizeof(secret), EC_KEY_get0_public_key(clientPub), server.Key(), nullptr);
+    const int n =
+        ECDH_compute_key(secret, sizeof(secret), EC_KEY_get0_public_key(clientPub), server.Key(), nullptr);
     CHECK(n == 48);
     std::string input = salt + std::string(reinterpret_cast<char*>(secret), size_t(n));
     uint8_t derived[32];

@@ -24,7 +24,16 @@ namespace perlin::server {
     // one connected player: the bedrock login handshake, chunk streaming and packet handling
     class Session {
     public:
-        enum class State : uint8_t { AwaitSettings, AwaitLogin, ResourcePacks, ResourceStack, Loading, InGame, Closing, Closed };
+        enum class State : uint8_t {
+            AwaitSettings,
+            AwaitLogin,
+            ResourcePacks,
+            ResourceStack,
+            Loading,
+            InGame,
+            Closing,
+            Closed
+        };
 
         Session(Server& server, std::shared_ptr<Connection> connection, uint64_t runtimeId);
         ~Session();
@@ -72,7 +81,7 @@ namespace perlin::server {
         void SendMove(const Session& other, uint8_t mode);
         // sends a chunk to the player if inside their radius and not already sent
         bool WantsChunk(ChunkPos pos) const;
-        bool HasSent(ChunkPos pos) const { return sent.count(pos) != 0; }
+        bool HasSent(ChunkPos pos) const { return sent.contains(pos); }
         PlayerInventory& Inventory() { return inventory; }
         bool Creative() const { return creative; }
         int GameMode() const { return gameMode; }

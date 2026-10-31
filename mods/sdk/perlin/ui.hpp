@@ -42,18 +42,31 @@ namespace perlin::ui {
         }
 
         Canvas& line(float x0, float y0, float x1, float y1, Rgba color, float thickness = 1.0f) {
-            buffer.put<uint8_t>(static_cast<uint8_t>(abi::Draw::Line)).put(x0).put(y0).put(x1).put(y1).put(color.packed()).put(thickness);
+            buffer.put<uint8_t>(static_cast<uint8_t>(abi::Draw::Line))
+                .put(x0)
+                .put(y0)
+                .put(x1)
+                .put(y1)
+                .put(color.packed())
+                .put(thickness);
             return *this;
         }
 
         Canvas& text(float x, float y, std::string_view value, const TextStyle& style = {}) {
-            buffer.put<uint8_t>(static_cast<uint8_t>(abi::Draw::Text)).put(x).put(y).put(style.color.packed()).put(style.scale)
-                .put<uint8_t>(style.shadow ? 1 : 0).put<uint8_t>(static_cast<uint8_t>(style.align)).str(value);
+            buffer.put<uint8_t>(static_cast<uint8_t>(abi::Draw::Text))
+                .put(x)
+                .put(y)
+                .put(style.color.packed())
+                .put(style.scale)
+                .put<uint8_t>(style.shadow ? 1 : 0)
+                .put<uint8_t>(static_cast<uint8_t>(style.align))
+                .str(value);
             return *this;
         }
 
         template <class... Args>
-        Canvas& text(float x, float y, const TextStyle& style, std::format_string<Args...> fmt, Args&&... args) {
+        Canvas& text(float x, float y, const TextStyle& style, std::format_string<Args...> fmt,
+                     Args&&... args) {
             return text(x, y, std::format(fmt, std::forward<Args>(args)...), style);
         }
 
@@ -62,7 +75,8 @@ namespace perlin::ui {
             return *this;
         }
 
-        Canvas& image(float x, float y, float width, float height, std::string_view path, Rgba tint = Rgba::white) {
+        Canvas& image(float x, float y, float width, float height, std::string_view path,
+                      Rgba tint = Rgba::white) {
             begin(abi::Draw::Image, x, y, width, height).put(tint.packed()).str(path);
             return *this;
         }

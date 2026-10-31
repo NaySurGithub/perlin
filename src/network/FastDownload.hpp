@@ -17,7 +17,8 @@ namespace perlin::download {
         int timeoutSecs = 30;
     };
 
-    bool Fetch(const std::string& url, const std::filesystem::path& target, Progress* progress = nullptr, const Options& options = {});
+    bool Fetch(const std::string& url, const std::filesystem::path& target, Progress* progress = nullptr,
+               const Options& options = {});
 
     std::string Resolve(const std::string& url, int timeoutSecs = 20);
 }

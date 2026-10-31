@@ -8,13 +8,18 @@ namespace rhi {
         return (value + alignment - 1) / alignment * alignment;
     }
 
-    constexpr uint32_t MipExtent(uint32_t extent, uint32_t mip) { return (std::max)(1u, extent >> mip); }
+    constexpr uint32_t MipExtent(uint32_t extent, uint32_t mip) {
+        return (std::max)(1u, extent >> mip);
+    }
 
     inline uint32_t LayerCountOf(const TextureDesc& desc) {
         switch (desc.dim) {
-        case TextureDim::Tex2DArray: return (std::max)(1u, desc.depthOrLayers);
-        case TextureDim::Cube: return 6;
-        default: return 1;
+        case TextureDim::Tex2DArray:
+            return (std::max)(1u, desc.depthOrLayers);
+        case TextureDim::Cube:
+            return 6;
+        default:
+            return 1;
         }
     }
 
@@ -29,7 +34,8 @@ namespace rhi {
         out.baseMip = (std::min)(out.baseMip, mips - 1);
         out.baseLayer = (std::min)(out.baseLayer, layers - 1);
         out.mipCount = out.mipCount ? (std::min)(out.mipCount, mips - out.baseMip) : mips - out.baseMip;
-        out.layerCount = out.layerCount ? (std::min)(out.layerCount, layers - out.baseLayer) : layers - out.baseLayer;
+        out.layerCount =
+            out.layerCount ? (std::min)(out.layerCount, layers - out.baseLayer) : layers - out.baseLayer;
         return out;
     }
 

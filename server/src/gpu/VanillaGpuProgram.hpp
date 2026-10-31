@@ -22,14 +22,16 @@ namespace perlin::server::vanilla {
         // the corner grid is fixed: cells 4 blocks across and 8 up, so a chunk has 5 x 5 x 49 corners
         static constexpr uint32_t kCellXz = 4, kCellY = 8, kCornersXz = 5, kCornersY = 49;
 
-        std::vector<uint32_t> nodes;    // kNodeStride words per node, in dependency order
-        std::vector<uint32_t> aux;      // splines and interval-select tables
-        std::vector<uint32_t> noises;   // per noise: first layer, layer count
-        std::vector<uint32_t> layers;   // kLayerStride words per perlin layer
-        std::vector<uint32_t> perms;    // 256 words per layer
-        std::vector<uint32_t> blends;   // kBlendStride words per old_blended_noise
-        std::vector<uint32_t> order;    // node indices: first `innerCount` run at the cell corners, the rest per block
-        std::vector<uint32_t> interpolatedInputs;  // node whose value each interpolated node samples at the corners
+        std::vector<uint32_t> nodes;  // kNodeStride words per node, in dependency order
+        std::vector<uint32_t> aux;    // splines and interval-select tables
+        std::vector<uint32_t> noises; // per noise: first layer, layer count
+        std::vector<uint32_t> layers; // kLayerStride words per perlin layer
+        std::vector<uint32_t> perms;  // 256 words per layer
+        std::vector<uint32_t> blends; // kBlendStride words per old_blended_noise
+        std::vector<uint32_t>
+            order; // node indices: first `innerCount` run at the cell corners, the rest per block
+        std::vector<uint32_t>
+            interpolatedInputs; // node whose value each interpolated node samples at the corners
         uint32_t nodeCount = 0, innerCount = 0, outerCount = 0, root = 0;
         // the graph node behind each flattened node (tests and debugging; valid while the graph lives)
         std::vector<const DfNode*> source;
@@ -40,14 +42,27 @@ namespace perlin::server::vanilla {
 
         // header words of the packed tables: where each section starts (the kernel's H_* constants)
         static constexpr uint32_t kHeaderWords = 16;
-        enum Header : uint32_t { HNodes, HAux, HNoises, HLayers, HPerms, HBlends, HOrder, HInterp, HClimate, HBiomes, HMaterials };
+        enum Header : uint32_t {
+            HNodes,
+            HAux,
+            HNoises,
+            HLayers,
+            HPerms,
+            HBlends,
+            HOrder,
+            HInterp,
+            HClimate,
+            HBiomes,
+            HMaterials
+        };
 
         // everything the kernel reads in one buffer: the header, then nodes, aux, noises, layers, perms, blends, order, interpolated inputs and the climate list
         // ([count, order..., six roots]). the biome table and materials are appended by the host (see GpuVanillaRhi.cpp)
         std::vector<uint32_t> Pack() const;
 
         // null with `error` set when the graph uses something the kernel cannot do
-        static std::unique_ptr<GpuProgram> Build(const DfPtr& root, const std::array<DfPtr, 6>& climate, std::string& error);
+        static std::unique_ptr<GpuProgram> Build(const DfPtr& root, const std::array<DfPtr, 6>& climate,
+                                                 std::string& error);
     };
 
     // the whole tables buffer the kernel reads: the program's own sections, then the biome placement table ([count], then per point the 13 climate words and

@@ -54,7 +54,15 @@ namespace perlin::gpu {
         size_t operator()(const PipelineKey& k) const;
     };
 
-    enum class SamplerKind : uint8_t { PointClamp, PointRepeat, LinearClamp, LinearRepeat, LinearMipRepeat, PointMipClamp, Count };
+    enum class SamplerKind : uint8_t {
+        PointClamp,
+        PointRepeat,
+        LinearClamp,
+        LinearRepeat,
+        LinearMipRepeat,
+        PointMipClamp,
+        Count
+    };
 
     constexpr uint32_t kTextureSlots = 48;
 
@@ -80,7 +88,8 @@ namespace perlin::gpu {
     // gpu-only buffer carved up by a range allocator; contents change through Gpu::Write
     class Arena {
     public:
-        bool Create(rhi::Device& device, uint32_t elements, uint32_t elementBytes, rhi::BufferUsage usage, const char* name);
+        bool Create(rhi::Device& device, uint32_t elements, uint32_t elementBytes, rhi::BufferUsage usage,
+                    const char* name);
         void Destroy(rhi::Device& device);
         bool Alloc(uint32_t count, uint32_t& first) { return ranges.Alloc(count, first); }
         void Free(uint32_t first, uint32_t count) { ranges.Free(first, count); }
@@ -138,7 +147,9 @@ namespace perlin::gpu {
 
         // -1 when the pack has no such program
         int Program(std::string_view name) const;
-        const rhi::ProgramInfo& ProgramInfo(int program) const { return library.Programs()[static_cast<size_t>(program)]; }
+        const rhi::ProgramInfo& ProgramInfo(int program) const {
+            return library.Programs()[static_cast<size_t>(program)];
+        }
         bool PipelineReady(const PipelineKey& key);
         rhi::PipelineHandle Pipeline(const PipelineKey& key);
         // every pipeline compiled so far: a renderer switch builds the same set on the new device before the first frame
@@ -185,10 +196,12 @@ namespace perlin::gpu {
         void WriteBuffer(const Arena& arena, uint64_t byteOffset, const void* data, uint64_t bytes) {
             WriteBuffer(arena.Buffer(), arena.BarrierState(), byteOffset, data, bytes);
         }
-        void WriteBuffer(rhi::BufferHandle buffer, rhi::State resting, uint64_t byteOffset, const void* data, uint64_t bytes);
+        void WriteBuffer(rhi::BufferHandle buffer, rhi::State resting, uint64_t byteOffset, const void* data,
+                         uint64_t bytes);
         // immutable vertex or index data uploaded at the next flush
         void ForgetBuffer(rhi::BufferHandle buffer) { bufferStates.erase(buffer.value); }
-        rhi::BufferHandle CreateStatic(const void* data, uint64_t bytes, rhi::BufferUsage usage, const char* name);
+        rhi::BufferHandle CreateStatic(const void* data, uint64_t bytes, rhi::BufferUsage usage,
+                                       const char* name);
         struct ImageWrite {
             rhi::TextureHandle texture;
             uint32_t mip = 0, layer = 0, x = 0, y = 0, width = 0, height = 0;
@@ -196,8 +209,8 @@ namespace perlin::gpu {
             uint32_t rowBytes = 0;
         };
         // data is copied now; rows are tightly packed unless rowBytes says otherwise
-        void WriteTexture(rhi::TextureHandle texture, uint32_t layer, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
-                          const void* data, uint32_t rowBytes = 0, uint32_t mip = 0);
+        void WriteTexture(rhi::TextureHandle texture, uint32_t layer, uint32_t x, uint32_t y, uint32_t width,
+                          uint32_t height, const void* data, uint32_t rowBytes = 0, uint32_t mip = 0);
         // texture was created by the caller in this state after the first upload
         rhi::TextureHandle CreateSampled(rhi::TextureDesc desc);
         void DestroyTexture(rhi::TextureHandle texture);

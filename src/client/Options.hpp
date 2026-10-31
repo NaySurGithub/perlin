@@ -41,8 +41,8 @@ namespace perlin {
     };
 
     struct SoundSettings {
-        float master = 1.0f, music = 1.0f, record = 1.0f, weather = 1.0f, block = 1.0f, hostile = 1.0f, neutral = 1.0f,
-              player = 1.0f, ambient = 1.0f, voice = 1.0f;
+        float master = 1.0f, music = 1.0f, record = 1.0f, weather = 1.0f, block = 1.0f, hostile = 1.0f,
+              neutral = 1.0f, player = 1.0f, ambient = 1.0f, voice = 1.0f;
         bool subtitles = false;
     };
 

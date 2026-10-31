@@ -6,27 +6,36 @@ Drop `name.wasm` (and optionally `name.json` and `name.png`) into `<data dir>/mo
 
 ## Quick start
 
+A plugin is one class. Override what you need; every `onXxx` method named after an event is subscribed for you.
+
 ```cpp
 #include <perlin/perlin.hpp>
 
 using namespace perlin;
 
-PERLIN_PLUGIN(ctx) {
-    // The lambda's parameters are the command's arguments: `/here`, `/tp 10 64 -3`, `/mode creative`.
-    ctx.command<"here">("prints your block position", [] {
-        if (auto p = game::player())
-            (void)act::message("you are at {}", BlockPos(game::position(*p)));
-    });
+class Hello : public Plugin {
+public:
+    void registerCommands(Context& ctx) override {
+        // The parameters are the command's arguments: `/here`, `/tp 10 64 -3`, `/mode creative`.
+        ctx.command<"here">("prints your block position", [] {
+            if (auto p = game::player())
+                (void)act::message("you are at {}", BlockPos(game::position(*p)));
+        });
+    }
 
-    ctx.on<event::ChatReceived>([](const abi::EventChat& e) {
+    void onEnable(Context& ctx) override {
+        ctx.hud<"clock">(this, &Hello::drawClock);
+    }
+
+    void onChatReceived(const abi::EventChat& e) {
         if (e.message.contains("creeper"))
             (void)act::toast("someone said creeper");
-    });
+    }
 
-    ctx.hud("clock", [](ui::Canvas& g) {
-        g.text(4, 4, "hello from a plugin", {.color = Rgba::gold});
-    });
-}
+private:
+    void drawClock(ui::Canvas& g) { g.text(4, 4, "hello from a plugin", {.color = Rgba::gold}); }
+};
+PERLIN_REGISTER(Hello)
 ```
 
 Plugins are 64-bit WebAssembly (memory64) by default. Build one with Emscripten (<https://emscripten.org>, activate emsdk first):
@@ -40,7 +49,7 @@ mods/build.sh my_plugin.cpp
 
 Classic 32-bit plugins still work everywhere. `mods/build.sh --wasm32 my_plugin.cpp` builds one with a wasi-sdk install (<https://github.com/WebAssembly/wasi-sdk>, version 25 or newer, `WASI_SDK_PATH`); wasi-sdk has no 64-bit target. Any compiler that targets `wasm64` or `wasm32-wasip1` and exports `perlin_alloc`, `perlin_free`, `perlin_event` and `perlin_subscriptions` works; the headers in `mods/sdk/perlin` provide those exports and compile unchanged for both.
 
-Perlin runs plugins on [WasmEdge](https://wasmedge.org) (desktop and Android) and on wasm3 in the browser build; both take 32-bit and 64-bit modules, and the Mods screen's log line says which one loaded (`waila: wasm64 on WasmEdge 0.18.0`).
+Perlin runs plugins on [WasmEdge](https://wasmedge.org) (desktop and Android) and on wasm3 in the browser and iOS builds; both take 32-bit and 64-bit modules, and the Mods screen's log line says which one loaded (`waila: wasm64 on WasmEdge 0.18.0`).
 
 ## Modern C++ API
 
@@ -54,23 +63,23 @@ The SDK leans on the compiler instead of strings:
 * **Chrono timers.** `ctx.after(2s, fn)`, `ctx.every(20_ticks, fn)` return a `TimerId`.
 * **Flags and sets.** `Permissions` is `meta::Flags<Permission>`; entity flags are a `meta::IndexSet<EntityFlag>`. `std::format("{}", abi::Screen::Mods)` prints `Mods`.
 
-## Class-style plugins
+## Plugins are classes
 
-The manifest (name, description, permissions, settings) stays in `name.json`, exactly as above; the class is only the code.
+`perlin::Plugin` is the only entry point (the old `PERLIN_PLUGIN(ctx)` function macro is gone). The manifest (name, description, permissions, settings) stays in `name.json`; the class is only the code.
 
 ```cpp
-#include <perlin/plugin.hpp>
+#include <perlin/perlin.hpp>
 #include <mod_settings.hpp>
 
 struct Hello : perlin::Plugin {
-    void registerCommands(perlin::PluginCtx& ctx) override {   // called first; parameter types are the command grammar
+    void registerCommands(perlin::Context& ctx) override {   // called first; parameter types are the command grammar
         ctx.command<"greet">("Say hello", this, &Hello::greet);
     }
-    void onEnable(perlin::PluginCtx& ctx) override {
+    void onEnable(perlin::Context& ctx) override {
         ctx.bind<"wave">("Wave", perlin::Key::R, this, &Hello::wave);
         ctx.on_change(settings::shout, [this] { /* ... */ });
     }
-    void onDisable(perlin::PluginCtx&) override {}
+    void onDisable(perlin::Context&) override {}
     void onChatReceived(const perlin::abi::EventChat& chat);   // any onXxx for an event is subscribed automatically
     void greet(std::string who, std::optional<int> times);
     void wave();
@@ -78,7 +87,34 @@ struct Hello : perlin::Plugin {
 PERLIN_REGISTER(Hello)
 ```
 
-`PluginCtx` forwards everything on `Context` (`on`, `after`, `every`, `command`, `bind`, `hud`, `on_change`, `on_press`, `config`, `print`, `raw()`); `command`, `bind` and `hud` also take an object and a member function. Event methods are `onTick`, `onFrame`, `onChatReceived`, `onChatSending`, `onConnected`, `onDisconnected`, `onKey`, `onDamage`, `onDeath`, `onRespawned`, `onDimensionChanged`, `onScreenChanged`, `onSlotChanged`, `onEntityAdded`, `onEntityRemoved`, `onSound`, `onPacket`, `onTitle`, `onSettingChanged`, `onLook`, `onMouseMove`, `onMouseButton`, `onMouseWheel`, `onKeyRaw`, `onTextInput`; each takes the payload or nothing, and may return `Flow`. `mods/waila` and `mods/barrel_roll` are written this way; the classic `PERLIN_PLUGIN(ctx)` style keeps working.
+`Context` (also spelled `PluginCtx`) has `on`, `after`, `every`, `command`, `bind`, `hud`, `on_change`, `on_press`, `config`, `print` and `raw()`; `command`, `bind` and `hud` also take an object and a member function, and `ctx()` reaches it from any method. The event methods are generated from the ABI table, one `onName` per event (`onTick`, `onFrame`, `onChatReceived`, ..., and on the server `onPlayerJoin`, `onPlayerQuit`, `onPlayerChat`, `onBlockBreak`, `onBlockPlace`); each takes the payload or nothing, and may return `Flow` to cancel. `mods/waila`, `mods/examples/barrel_roll` and `mods/tests/sdk_test.cpp` are complete examples.
+
+## One ABI for client and server (`perlin/abi_table.h`)
+
+Every operation and event, for both the client and the server, is one line in `mods/sdk/perlin/abi_table.h`:
+
+```c
+X(Teleport, 0x7004, ServerTeleport, Nothing, None, Server)   // name, id, request, response, permission, hosts
+X(PlayerChat, 49, EventPlayerChat, Server, Method)           // name, id, payload, hosts, wiring
+```
+
+From that line the SDK gets `abi::Op::Teleport` / `abi::Event::PlayerChat`, the C names `PERLIN_OP_TELEPORT` / `PERLIN_EVENT_PLAYER_CHAT` in `perlin.h`, the payload and response types (`abi::OpSpec<Op>`, `abi::payload_t<E>`), the permission the host checks, the `onPlayerChat` method on `Plugin`, and the subscription bit. The hosts read the same table: the client's `ModManager` and the server's `PluginHost` both register typed handlers with `Handle<Op>(fn)` and deliver events with `Dispatch<Event>(payload)` (`perlin/host.hpp`), so a request is decoded and a response encoded in exactly one way everywhere. Adding an operation is: one table line, the request/response structs in `abi.hpp` if they are new, and one `Handle<Op>` in the host that serves it.
+
+Calling an operation directly is `rpc::call<abi::Op::BlockName>(abi::BlockCoord{x, y, z})`, which returns `Result<abi::TextMessage>`. Server plugins have friendlier wrappers in `perlin/server.hpp`:
+
+```cpp
+using namespace perlin;
+
+struct Greeter : Plugin {
+    void onPlayerJoin(const abi::EventPlayer& p) { (void)server::broadcast("welcome, {}!", p.name); }
+    Flow onPlayerChat(const abi::EventPlayerChat& c) {
+        return c.message.contains("creeper") ? Flow::cancel : Flow::pass;
+    }
+};
+PERLIN_REGISTER(Greeter)
+```
+
+`server::broadcast`, `message`, `kick` (all `std::format`-style), `players()`, `teleport`, `set_block`, `block`, `info` and `give` are available; the same `.wasm` can serve both hosts, each calling only what its host provides (`abi::HostsOf(op)`).
 
 ## Bringing your own renderer (`perlin/gfx.hpp`, `perlin/input.hpp`)
 
@@ -93,7 +129,7 @@ Enough is exposed to hook up Dear ImGui or any other immediate-mode library:
 
 ## Everything is exposed
 
-The wire format is derived from the member list of each struct (`abi.hpp`), so adding a field to a struct the host already sends, such as an entity's attributes, exposes it to every plugin and every language with no wrapper to write. `tools/check_api.py` (run by CTest as `mod_api_check`) fails when an operation is declared without a host or without an SDK wrapper, or an event is never delivered. Every enumeration in `perlin::abi` prints by name with `std::format` without being listed anywhere. `perlin/json.hpp` is a small JSON reader for the text the game hands over (block entity tags, option dumps, HTTP bodies): `json::parse(text)` then `tag["Items"][0]["Name"].string()`; missing keys read as null, so chains never fail.
+The wire format is derived from the member list of each struct (`abi.hpp`) and the operation list from `abi_table.h`, so adding a field to a struct the host already sends, such as an entity's attributes, exposes it to every plugin and every language with no wrapper to write. `tools/check_api.py` (run by CTest as `mod_api_check`) fails when an operation is declared without a host or without an SDK wrapper, or an event is never delivered. Every enumeration in `perlin::abi` prints by name with `std::format` without being listed anywhere. `perlin/json.hpp` is a small JSON reader for the text the game hands over (block entity tags, option dumps, HTTP bodies): `json::parse(text)` then `tag["Items"][0]["Name"].string()`; missing keys read as null, so chains never fail.
 
 ## Client hooks (`perlin/hooks.hpp`)
 

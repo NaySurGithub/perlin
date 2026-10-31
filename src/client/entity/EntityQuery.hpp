@@ -30,5 +30,6 @@ namespace perlin::entity {
         std::function<bool(const std::string&, int, double&)> bonePivot;
     };
 
-    bool EvalEntityQuery(const QueryContext& c, const std::string& name, const molang::Args& args, molang::Value& out);
+    bool EvalEntityQuery(const QueryContext& c, const std::string& name, const molang::Args& args,
+                         molang::Value& out);
 }

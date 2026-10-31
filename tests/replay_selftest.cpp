@@ -12,12 +12,12 @@ using namespace perlin::replay;
 namespace fs = std::filesystem;
 
 static int failures = 0;
-#define CHECK(cond) \
-    do { \
-        if (!(cond)) { \
-            std::cout << "FAIL line " << __LINE__ << ": " #cond << std::endl; \
-            failures++; \
-        } \
+#define CHECK(cond)                                                                                          \
+    do {                                                                                                     \
+        if (!(cond)) {                                                                                       \
+            std::cout << "FAIL line " << __LINE__ << ": " #cond << std::endl;                                \
+            failures++;                                                                                      \
+        }                                                                                                    \
     } while (0)
 
 int main(int argc, char** argv) {
@@ -75,7 +75,13 @@ int main(int argc, char** argv) {
     CHECK(anySnapshotChunk);
 
     int injected = 0, chat = 0;
-    c.Advance(1e9, [&](const Record& r) { injected++; chat += r.id == 9; }, 0);
+    c.Advance(
+        1e9,
+        [&](const Record& r) {
+            injected++;
+            chat += r.id == 9;
+        },
+        0);
     CHECK(chat == 10);
     CHECK(injected == 5 + 10);
     CHECK(c.RecordedPose().known && c.RecordedPose().x == 39.0f && c.RecordedPose().yaw == 20.0f);
@@ -84,7 +90,13 @@ int main(int argc, char** argv) {
     c.Seek(c.DurationMs() - 20);
     CHECK(c.NeedsRestart());
     int afterSeek = 0, chunks = 0;
-    c.Advance(0, [&](const Record& r) { afterSeek++; chunks += r.id == 58; }, 0);
+    c.Advance(
+        0,
+        [&](const Record& r) {
+            afterSeek++;
+            chunks += r.id == 58;
+        },
+        0);
     CHECK(chunks == 2);
     CHECK(afterSeek < injected + 20);
 
@@ -103,7 +115,10 @@ int main(int argc, char** argv) {
         c.Close();
         again.Close();
         const fs::path fake = base / "pack.zip";
-        { std::ofstream f(fake, std::ios::binary); f << "PK-fake-pack-bytes"; }
+        {
+            std::ofstream f(fake, std::ios::binary);
+            f << "PK-fake-pack-bytes";
+        }
         std::vector<ArchiveAdd> adds;
         ArchiveAdd a;
         a.name = "packs/pack.zip";

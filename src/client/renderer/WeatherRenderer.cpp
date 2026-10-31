@@ -17,7 +17,8 @@ namespace perlin {
         }
 
         uint32_t Hash(int x, int z) {
-            return static_cast<uint32_t>(x * x * 3121 + x * 45238971) ^ static_cast<uint32_t>(z * z * 418711 + z * 13761);
+            return static_cast<uint32_t>(x * x * 3121 + x * 45238971) ^
+                   static_cast<uint32_t>(z * z * 418711 + z * 13761);
         }
 
         class JavaRandom {
@@ -26,11 +27,10 @@ namespace perlin {
                 state = (static_cast<uint64_t>(seed) ^ 0x5DEECE66Dull) & ((1ull << 48) - 1);
                 haveGaussian = false;
             }
-            float NextFloat() {
-                return static_cast<float>(Next(24)) / static_cast<float>(1 << 24);
-            }
+            float NextFloat() { return static_cast<float>(Next(24)) / static_cast<float>(1 << 24); }
             double NextDouble() {
-                return static_cast<double>((static_cast<int64_t>(Next(26)) << 27) + Next(27)) * (1.0 / static_cast<double>(1ll << 53));
+                return static_cast<double>((static_cast<int64_t>(Next(26)) << 27) + Next(27)) *
+                       (1.0 / static_cast<double>(1ll << 53));
             }
             double NextGaussian() {
                 if (haveGaussian) {
@@ -60,7 +60,9 @@ namespace perlin {
         };
 
         uint32_t Pack(float brightness, float alpha) {
-            const auto q = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+            const auto q = [](float v) {
+                return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
+            };
             return (q(alpha) << 24) | (q(brightness) << 16) | (q(brightness) << 8) | q(brightness);
         }
     }
@@ -88,10 +90,12 @@ namespace perlin {
             }
             return false;
         };
-        static const char* const kThrough[] = {"air",  "short_grass", "tallgrass", "tall_grass", "fern",   "flower", "poppy", "dandelion",
-                                               "torch", "sapling",     "vine",      "sugar_cane", "wheat",  "rail",   "button", "lever",
-                                               "tripwire", "web",      "fire",      "mushroom",   "sweet_berry", "carpet",
-                                               "snow_layer", "sign", "painting", "button", "pressure_plate"};
+        static const char* const kThrough[] = {
+            "air",      "short_grass", "tallgrass",     "tall_grass", "fern",       "flower",
+            "poppy",    "dandelion",   "torch",         "sapling",    "vine",       "sugar_cane",
+            "wheat",    "rail",        "button",        "lever",      "tripwire",   "web",
+            "fire",     "mushroom",    "sweet_berry",   "carpet",     "snow_layer", "sign",
+            "painting", "button",      "pressure_plate"};
         bool blocks = true;
         for (const char* word : kThrough)
             if (hasToken(word)) {
@@ -105,15 +109,19 @@ namespace perlin {
     void WeatherRenderer::LoadTextures(RenderContext& renderer) {
         texturesTried = true;
         Texture t;
-        if (!ui::UiAssets::Instance().Image("textures/environment/weather", t) || t.width < 32 || t.height < 20)
+        if (!ui::UiAssets::Instance().Image("textures/environment/weather", t) || t.width < 32 ||
+            t.height < 20)
             return;
         constexpr int kTile = 64;
         const auto tile = [&](int firstRow, int rows, int copies) {
             std::vector<uint8_t> px(static_cast<size_t>(kTile) * kTile * 4, 0);
             for (int c = 0; c < copies; c++)
                 for (int y = 0; y < rows; y++)
-                    std::copy_n(t.pixels.begin() + (static_cast<size_t>(firstRow + y) * t.width) * 4, static_cast<size_t>(t.width) * 4,
-                                px.begin() + (static_cast<size_t>((y + c * 40) % kTile) * kTile + static_cast<size_t>(c) * 32) * 4);
+                    std::copy_n(t.pixels.begin() + (static_cast<size_t>(firstRow + y) * t.width) * 4,
+                                static_cast<size_t>(t.width) * 4,
+                                px.begin() + (static_cast<size_t>((y + c * 40) % kTile) * kTile +
+                                              static_cast<size_t>(c) * 32) *
+                                                 4);
             return px;
         };
         const std::vector<uint8_t> rainPx = tile(4, 16, 1);
@@ -131,13 +139,15 @@ namespace perlin {
             return;
         Level& level = *in.level;
         const int radius = std::clamp(in.radius, 3, 15);
-        const int cx = static_cast<int>(std::floor(in.camera.x)), cz = static_cast<int>(std::floor(in.camera.z));
+        const int cx = static_cast<int>(std::floor(in.camera.x)),
+                  cz = static_cast<int>(std::floor(in.camera.z));
         const int camY = static_cast<int>(std::floor(in.camera.y));
 
         int budget = 48;
         if (columns.size() > static_cast<size_t>((2 * radius + 1) * (2 * radius + 1) * 3)) {
             for (auto it = columns.begin(); it != columns.end();) {
-                const int x = static_cast<int>(it->first >> 32), z = static_cast<int>(static_cast<int32_t>(it->first & 0xffffffff));
+                const int x = static_cast<int>(it->first >> 32),
+                          z = static_cast<int>(static_cast<int32_t>(it->first & 0xffffffff));
                 if (std::abs(x - cx) > radius + 4 || std::abs(z - cz) > radius + 4)
                     it = columns.erase(it);
                 else
@@ -161,7 +171,8 @@ namespace perlin {
                 if (found != level.chunks.end()) {
                     const Chunk& chunk = found->second;
                     for (int y = highest; y >= lowest; y--) {
-                        if (Blocks(level, chunk.Get(x & 15, y, z & 15)) || chunk.GetLiquid(x & 15, y, z & 15) != 0) {
+                        if (Blocks(level, chunk.Get(x & 15, y, z & 15)) ||
+                            chunk.GetLiquid(x & 15, y, z & 15) != 0) {
                             top = y + 1;
                             break;
                         }
@@ -172,7 +183,8 @@ namespace perlin {
             c.kind = 1;
             if (in.tints && in.tints->Ready()) {
                 float temperature = 0.5f, downfall = 0.5f;
-                const std::string name = in.tints->NameForId(level.GetBiome(x, std::clamp(top - 1, -64, 318), z));
+                const std::string name =
+                    in.tints->NameForId(level.GetBiome(x, std::clamp(top - 1, -64, 318), z));
                 if (in.tints->Climate(name, temperature, downfall)) {
                     if (downfall <= 0.0f)
                         c.kind = 0;
@@ -211,7 +223,8 @@ namespace perlin {
                 if (yTop - yBottom == 0)
                     continue;
                 random.SetSeed(static_cast<int64_t>(static_cast<int32_t>(Hash(x, z))));
-                const float px = static_cast<float>(x + 0.5 - in.camera.x), pz = static_cast<float>(z + 0.5 - in.camera.z);
+                const float px = static_cast<float>(x + 0.5 - in.camera.x),
+                            pz = static_cast<float>(z + 0.5 - in.camera.z);
                 const float distSq = px * px + pz * pz;
                 const float mixed = std::min(distSq / radiusSq, 1.0f);
                 const float base = c.kind == 1 ? 1.0f : 0.8f;
@@ -219,7 +232,8 @@ namespace perlin {
                 if (alpha < 0.01f)
                     continue;
                 const float len = std::sqrt(static_cast<float>(dx * dx + dz * dz));
-                const float ax = -static_cast<float>(dz) / len * 0.5f, az = static_cast<float>(dx) / len * 0.5f;
+                const float ax = -static_cast<float>(dz) / len * 0.5f,
+                            az = static_cast<float>(dx) / len * 0.5f;
                 const float lightBright = c.kind == 2 ? std::min(1.0f, brightness + 0.1f) : brightness;
                 const uint32_t color = Pack(lightBright, alpha);
                 const float x0 = static_cast<float>(x + 0.5) - ax, x1 = static_cast<float>(x + 0.5) + ax;
@@ -229,9 +243,13 @@ namespace perlin {
                 float uOffset = 0.0f, uSpan = 1.0f, vOffset;
                 if (c.kind == 1) {
                     uOffset = static_cast<float>((Hash(x, z) >> 3) & 255u) / 256.0f;
-                    const uint32_t mix = static_cast<uint32_t>(x * x * 3121 + x * 45238971 + z * z * 418711 + z * 13761) & 255u;
+                    const uint32_t mix =
+                        static_cast<uint32_t>(x * x * 3121 + x * 45238971 + z * z * 418711 + z * 13761) &
+                        255u;
                     const float speed = 3.0f + random.NextFloat();
-                    const float raw = -(static_cast<float>(gameTime & 131071) + static_cast<float>(mix) + partial) / 32.0f * speed;
+                    const float raw =
+                        -(static_cast<float>(gameTime & 131071) + static_cast<float>(mix) + partial) / 32.0f *
+                        speed;
                     vOffset = std::fmod(raw, 32.0f);
                 } else {
                     // hash-seeded drift, stable per column instead of per-frame noise
@@ -255,11 +273,12 @@ namespace perlin {
                     is.push_back(first + k);
             }
         }
-        const auto submit = [&](const std::vector<UiVertex>& vs, const std::vector<uint32_t>& is, uint32_t texture) {
+        const auto submit = [&](const std::vector<UiVertex>& vs, const std::vector<uint32_t>& is,
+                                uint32_t texture) {
             if (vs.empty())
                 return;
-            const uint32_t mesh = in.renderer->UiCreateFrameMesh(vs.data(), static_cast<uint32_t>(vs.size()), is.data(),
-                                                                 static_cast<uint32_t>(is.size()));
+            const uint32_t mesh = in.renderer->UiCreateFrameMesh(vs.data(), static_cast<uint32_t>(vs.size()),
+                                                                 is.data(), static_cast<uint32_t>(is.size()));
             if (!mesh)
                 return;
             UiDraw draw;

@@ -46,7 +46,8 @@ namespace perlin::ui {
         Target fluid;
     };
 
-    void BuildDebugLines(const DebugInfo& info, std::vector<std::string>& left, std::vector<std::string>& right);
+    void BuildDebugLines(const DebugInfo& info, std::vector<std::string>& left,
+                         std::vector<std::string>& right);
 
     std::string FacingText(float javaYaw);
 }

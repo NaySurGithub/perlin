@@ -64,8 +64,9 @@ int main(int argc, char** argv) {
                 if (!(row >> word))
                     return 1;
             const auto state = SeedPositionRandom(position);
-            const std::array<uint32_t, 4> actual{static_cast<uint32_t>(state.first), static_cast<uint32_t>(state.first >> 32),
-                                                static_cast<uint32_t>(state.second), static_cast<uint32_t>(state.second >> 32)};
+            const std::array<uint32_t, 4> actual{
+                static_cast<uint32_t>(state.first), static_cast<uint32_t>(state.first >> 32),
+                static_cast<uint32_t>(state.second), static_cast<uint32_t>(state.second >> 32)};
             if (actual != expected) {
                 if (failures < 20)
                     std::fprintf(stderr, "Position seed %d differs from BDS\n", seeds);
@@ -86,8 +87,9 @@ int main(int argc, char** argv) {
                 if (!(row >> word))
                     return 1;
             const auto offset = GenerateBlockOffset(component, position);
-            const std::array<uint32_t, 3> actual{std::bit_cast<uint32_t>(offset.x), std::bit_cast<uint32_t>(offset.y),
-                                                std::bit_cast<uint32_t>(offset.z)};
+            const std::array<uint32_t, 3> actual{std::bit_cast<uint32_t>(offset.x),
+                                                 std::bit_cast<uint32_t>(offset.y),
+                                                 std::bit_cast<uint32_t>(offset.z)};
             if (actual != expected) {
                 if (failures < 20)
                     std::fprintf(stderr, "Block offset %d differs from BDS\n", offsets);

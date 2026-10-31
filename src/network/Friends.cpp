@@ -67,11 +67,17 @@ namespace perlin::friends {
             out.push_back(std::move(f));
         }
         {
-            const std::string query = "{\"type\":\"activity\",\"scid\":\"4fc10100-5f7a-4470-899b-280835760c07\",\"owners\":{\"people\":{\"moniker\":\"people\",\"monikerXuid\":\"" +
-                                      xuid + "\"}}}";
+            const std::string query =
+                "{\"type\":\"activity\",\"scid\":\"4fc10100-5f7a-4470-899b-280835760c07\",\"owners\":{"
+                "\"people\":{\"moniker\":\"people\",\"monikerXuid\":\"" +
+                xuid + "\"}}}";
             const http::Response h = http::Request("sessiondirectory.xboxlive.com", 443, true, "POST",
-                                                   "/handles/query?include=relatedInfo,customProperties", query, "application/json",
-                                                   {{"Authorization", authorization}, {"x-xbl-contract-version", "107"}, {"Accept", "application/json"}}, 20);
+                                                   "/handles/query?include=relatedInfo,customProperties",
+                                                   query, "application/json",
+                                                   {{"Authorization", authorization},
+                                                    {"x-xbl-contract-version", "107"},
+                                                    {"Accept", "application/json"}},
+                                                   20);
             if (auto handles = h.status == 200 ? json::Document::Parse(h.body) : std::nullopt) {
                 for (const json::View handle : handles->root()["results"].items()) {
                     if (handle["relatedInfo"]["closed"].boolean())

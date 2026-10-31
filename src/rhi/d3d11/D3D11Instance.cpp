@@ -16,7 +16,8 @@ namespace rhi::d3d11 {
         class SwapchainImpl final : public Swapchain {
         public:
             SwapchainImpl(Device& device, const SwapchainDesc& desc)
-                : device(device), desc(desc), width(desc.width), height(desc.height), presentMode(desc.present), hdr(desc.hdr) {}
+                : device(device), desc(desc), width(desc.width), height(desc.height),
+                  presentMode(desc.present), hdr(desc.hdr) {}
 
             ~SwapchainImpl() override {
                 device.WaitIdle();
@@ -37,7 +38,9 @@ namespace rhi::d3d11 {
                 }
                 format = hdr ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_B8G8R8A8_UNORM;
                 // flip models need windows 8 / 10; older systems fall back to the blit model
-                const DXGI_SWAP_EFFECT effects[] = {DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_SWAP_EFFECT_DISCARD};
+                const DXGI_SWAP_EFFECT effects[] = {DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                                                    DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+                                                    DXGI_SWAP_EFFECT_DISCARD};
                 for (const DXGI_SWAP_EFFECT effect : effects) {
                     const bool flip = effect != DXGI_SWAP_EFFECT_DISCARD;
                     DXGI_SWAP_CHAIN_DESC1 sd{};
@@ -45,14 +48,16 @@ namespace rhi::d3d11 {
                     sd.Height = height;
                     sd.Format = format;
                     sd.SampleDesc.Count = 1;
-                    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | (desc.allowSampling ? DXGI_USAGE_SHADER_INPUT : 0);
+                    sd.BufferUsage =
+                        DXGI_USAGE_RENDER_TARGET_OUTPUT | (desc.allowSampling ? DXGI_USAGE_SHADER_INPUT : 0);
                     sd.BufferCount = flip ? std::clamp(desc.imageCount, 2u, 4u) : 1;
                     sd.SwapEffect = effect;
                     sd.Scaling = DXGI_SCALING_STRETCH;
                     tearing = flip && device.Inst().tearing;
                     flags = tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
                     sd.Flags = flags;
-                    if (SUCCEEDED(device.Inst().factory->CreateSwapChainForHwnd(device.Dev(), hwnd, &sd, nullptr, nullptr, chain.put())))
+                    if (SUCCEEDED(device.Inst().factory->CreateSwapChainForHwnd(
+                            device.Dev(), hwnd, &sd, nullptr, nullptr, chain.put())))
                         break;
                     chain = nullptr;
                 }
@@ -75,7 +80,9 @@ namespace rhi::d3d11 {
 
             void Present() override {
                 const UINT interval = presentMode == PresentMode::Fifo ? 1 : 0;
-                const UINT presentFlags = interval == 0 && tearing && presentMode == PresentMode::Immediate ? DXGI_PRESENT_ALLOW_TEARING : 0;
+                const UINT presentFlags = interval == 0 && tearing && presentMode == PresentMode::Immediate
+                                              ? DXGI_PRESENT_ALLOW_TEARING
+                                              : 0;
                 auto lock = device.LockContext();
                 chain->Present(interval, presentFlags);
             }
@@ -124,7 +131,9 @@ namespace rhi::d3d11 {
                 td.width = width;
                 td.height = height;
                 td.format = GetFormat();
-                td.usage = TextureUsage::ColorTarget | (desc.allowSampling ? TextureUsage::Sampled : TextureUsage::None) | TextureUsage::CopySrc;
+                td.usage = TextureUsage::ColorTarget |
+                           (desc.allowSampling ? TextureUsage::Sampled : TextureUsage::None) |
+                           TextureUsage::CopySrc;
                 handle = device.WrapBackbuffer(buffer.get(), td);
                 return static_cast<bool>(handle);
             }
@@ -152,8 +161,10 @@ namespace rhi::d3d11 {
                 lib.dxgi = LoadLibraryW(L"dxgi.dll");
                 if (!lib.d3d11 || !lib.dxgi)
                     return false;
-                lib.createDevice = reinterpret_cast<PFN_D3D11_CREATE_DEVICE>(GetProcAddress(lib.d3d11, "D3D11CreateDevice"));
-                lib.createFactory1 = reinterpret_cast<decltype(lib.createFactory1)>(GetProcAddress(lib.dxgi, "CreateDXGIFactory1"));
+                lib.createDevice =
+                    reinterpret_cast<PFN_D3D11_CREATE_DEVICE>(GetProcAddress(lib.d3d11, "D3D11CreateDevice"));
+                lib.createFactory1 = reinterpret_cast<decltype(lib.createFactory1)>(
+                    GetProcAddress(lib.dxgi, "CreateDXGIFactory1"));
                 if (!lib.createDevice || !lib.createFactory1)
                     return false;
                 // shaders are hlsl source: without the compiler no pipeline can be built
@@ -166,7 +177,8 @@ namespace rhi::d3d11 {
 
                 BOOL tearing = FALSE;
                 if (auto f5 = state->factory.try_as<IDXGIFactory5>())
-                    if (SUCCEEDED(f5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing, sizeof(tearing))))
+                    if (SUCCEEDED(f5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing,
+                                                          sizeof(tearing))))
                         state->tearing = tearing != FALSE;
                 EnumerateAdapters();
                 return true;
@@ -176,9 +188,11 @@ namespace rhi::d3d11 {
             const std::vector<AdapterInfo>& Adapters() const override { return adapters; }
 
             std::unique_ptr<rhi::Device> CreateDevice(const DeviceOptions& deviceOptions) override {
-                if (deviceOptions.adapterIndex >= adapters.size() || !adapters[deviceOptions.adapterIndex].usable)
+                if (deviceOptions.adapterIndex >= adapters.size() ||
+                    !adapters[deviceOptions.adapterIndex].usable)
                     return nullptr;
-                auto device = std::make_unique<Device>(state, native[deviceOptions.adapterIndex], adapters[deviceOptions.adapterIndex], deviceOptions);
+                auto device = std::make_unique<Device>(state, native[deviceOptions.adapterIndex],
+                                                       adapters[deviceOptions.adapterIndex], deviceOptions);
                 std::string error;
                 if (!device->Init(error)) {
                     std::fprintf(stderr, "[d3d11] device creation failed: %s\n", error.c_str());
@@ -201,17 +215,21 @@ namespace rhi::d3d11 {
                 a.sharedMemory = d.SharedSystemMemory;
                 a.luid = (static_cast<uint64_t>(d.AdapterLuid.HighPart) << 32) | d.AdapterLuid.LowPart;
                 const bool software = (d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
-                a.type = software ? AdapterType::Cpu : (d.DedicatedVideoMemory > (512ull << 20) ? AdapterType::Discrete : AdapterType::Integrated);
+                a.type = software ? AdapterType::Cpu
+                                  : (d.DedicatedVideoMemory > (512ull << 20) ? AdapterType::Discrete
+                                                                             : AdapterType::Integrated);
                 LARGE_INTEGER umd{};
                 if (SUCCEEDED(adapter->CheckInterfaceSupport(winrt::guid_of<IDXGIDevice>(), &umd)))
                     a.driverVersion = static_cast<uint64_t>(umd.QuadPart);
 
                 const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
                 D3D_FEATURE_LEVEL got{};
-                HRESULT hr = state->lib.createDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 2,
+                HRESULT hr = state->lib.createDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+                                                     D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 2,
                                                      D3D11_SDK_VERSION, nullptr, &got, nullptr);
                 if (FAILED(hr))
-                    hr = state->lib.createDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels + 1, 1,
+                    hr = state->lib.createDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+                                                 D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels + 1, 1,
                                                  D3D11_SDK_VERSION, nullptr, &got, nullptr);
                 if (FAILED(hr)) {
                     a.usable = false;
@@ -242,7 +260,9 @@ namespace rhi::d3d11 {
                 if (auto f6 = state->factory.try_as<IDXGIFactory6>()) {
                     for (UINT i = 0;; i++) {
                         winrt::com_ptr<IDXGIAdapter1> a;
-                        if (FAILED(f6->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, winrt::guid_of<IDXGIAdapter1>(), a.put_void())))
+                        if (FAILED(f6->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                                                                  winrt::guid_of<IDXGIAdapter1>(),
+                                                                  a.put_void())))
                             break;
                         handle(a);
                     }

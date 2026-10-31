@@ -6,17 +6,22 @@
 #include <stb_image_write.h>
 
 namespace perlin::replay {
-    AviMjpegWriter::~AviMjpegWriter() { Abort(); }
+    AviMjpegWriter::~AviMjpegWriter() {
+        Abort();
+    }
 
     void AviMjpegWriter::Put32(uint32_t v) {
-        const uint8_t b[4] = {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v >> 16), static_cast<uint8_t>(v >> 24)};
+        const uint8_t b[4] = {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8),
+                              static_cast<uint8_t>(v >> 16), static_cast<uint8_t>(v >> 24)};
         std::fwrite(b, 1, 4, f);
     }
     void AviMjpegWriter::Put16(uint16_t v) {
         const uint8_t b[2] = {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8)};
         std::fwrite(b, 1, 2, f);
     }
-    void AviMjpegWriter::PutTag(const char* t) { std::fwrite(t, 1, 4, f); }
+    void AviMjpegWriter::PutTag(const char* t) {
+        std::fwrite(t, 1, 4, f);
+    }
     void AviMjpegWriter::Patch32(long pos, uint32_t v) {
         const long cur = std::ftell(f);
         std::fseek(f, pos, SEEK_SET);
@@ -24,7 +29,8 @@ namespace perlin::replay {
         std::fseek(f, cur, SEEK_SET);
     }
 
-    bool AviMjpegWriter::Open(const std::string& path, int width, int height, double framesPerSecond, int jpegQuality, std::string& error) {
+    bool AviMjpegWriter::Open(const std::string& path, int width, int height, double framesPerSecond,
+                              int jpegQuality, std::string& error) {
         Abort();
         f = std::fopen(path.c_str(), "wb");
         if (!f) {
@@ -60,7 +66,8 @@ namespace perlin::replay {
         Put32(0);
         Put32(static_cast<uint32_t>(w));
         Put32(static_cast<uint32_t>(h));
-        for (int i = 0; i < 4; i++) Put32(0);
+        for (int i = 0; i < 4; i++)
+            Put32(0);
         PutTag("LIST");
         Put32(4 + 8 + 56 + 8 + 40);
         PutTag("strl");
@@ -80,7 +87,10 @@ namespace perlin::replay {
         Put32(0);
         Put32(0xFFFFFFFFu);
         Put32(0);
-        Put16(0); Put16(0); Put16(static_cast<uint16_t>(w)); Put16(static_cast<uint16_t>(h));
+        Put16(0);
+        Put16(0);
+        Put16(static_cast<uint16_t>(w));
+        Put16(static_cast<uint16_t>(h));
         PutTag("strf");
         Put32(40);
         Put32(40);
@@ -90,7 +100,10 @@ namespace perlin::replay {
         Put16(24);
         PutTag("MJPG");
         Put32(static_cast<uint32_t>(w * h * 3));
-        Put32(0); Put32(0); Put32(0); Put32(0);
+        Put32(0);
+        Put32(0);
+        Put32(0);
+        Put32(0);
         PutTag("LIST");
         moviSizePos = std::ftell(f);
         Put32(0);
