@@ -499,6 +499,11 @@ mcimg { display: block; position: absolute; }
                 const int bw = std::clamp(textX + TextWidth(m.accountUser) + 7, 40, std::max(40, w - 8));
                 d += HeadBtn(kTitleAccounts, 4, 4, bw, m.accountUser, m.accountHead);
             }
+            if (m.updateAction)
+                d += Btn(kTitleUpdate, 2, h - 34, std::clamp(TextWidth(m.updateText) + 12, 120, w / 2),
+                         m.updateText);
+            else if (!m.updateText.empty())
+                d += Text(2, h - 20, w / 2, m.updateText);
             d += Text(2, h - 10, w / 2, m.version);
             d += "<div class=\"txt\" style=\"left:" + N(w / 2) + "px;top:" + N(h - 10) +
                  "px;width:" + N(w / 2 - 1) + "px;height:9px;text-align:right;\">" + EscapeRml(m.copyright) +
@@ -580,6 +585,11 @@ mcimg { display: block; position: absolute; }
             }
             d += Button(kTitleQuit, bx + blockW - 60, barY, 60, 22, "Quit", Kind::Neutral);
 
+            if (m.updateAction)
+                d += Button(kTitleUpdate, 4, h - 40, std::clamp(TextWidth(m.updateText) + 16, 120, w / 2), 22,
+                            m.updateText, Kind::Neutral);
+            else if (!m.updateText.empty())
+                d += Label(4, h - 24, w / 2, m.updateText, "left", true);
             d += Label(4, h - 12, w / 2, m.version, "left", true);
             d += Label(w / 2, h - 12, w / 2 - 4, m.copyright, "right", true);
             return d;

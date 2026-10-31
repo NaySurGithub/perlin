@@ -5,6 +5,7 @@
 #include "util/Paths.hpp"
 
 #include <SDL3/SDL_main.h>
+#include "client/update/Updater.hpp"
 
 #include <cstdio>
 #if defined(__GLIBC__)
@@ -248,6 +249,7 @@ int main(int argc, char** argv) {
     perlin::RememberCommandLine(argc, argv);
     AttachParentConsole();
     perlin::RegisterEmbeddedResources();
+    perlin::update::OnStartup();
 
     const std::string dataDir = perlin::paths::DataDir();
     perlin::paths::EnsureDir(dataDir);
@@ -279,6 +281,7 @@ int main(int argc, char** argv) {
 
     platform.Run();
     platform.Shutdown();
+    perlin::update::OnExit();
     return 0;
 #endif
 }

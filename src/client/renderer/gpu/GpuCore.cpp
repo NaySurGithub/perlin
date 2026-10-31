@@ -136,6 +136,7 @@ namespace perlin::gpu {
         dop.framesInFlight = std::max(1u, s.framesInFlight);
         dop.hooks = s.hooks;
         dop.pipelineCacheData = s.pipelineCache;
+        dop.asyncPipelines = !s.offscreen;
         device = instance->CreateDevice(dop);
         if (!device)
             return fail("could not create a " + std::string(ApiName(s.api)) + " device");

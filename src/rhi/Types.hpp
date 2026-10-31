@@ -666,5 +666,7 @@ namespace rhi {
         uint32_t liveTextures = 0;
         uint32_t livePipelines = 0;
         uint32_t liveBindGroups = 0;
+        // draws dropped because their pipeline was still compiling (metal's async pipelines)
+        uint64_t pipelinesPending = 0;
     };
 }

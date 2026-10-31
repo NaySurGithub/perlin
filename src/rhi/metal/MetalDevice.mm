@@ -55,11 +55,19 @@ namespace rhi::metal {
         : device(dev), options(opts) {
         caps.adapter = info;
         options.framesInFlight = std::clamp(options.framesInFlight, 1u, 4u);
+        if (options.asyncPipelines) {
+            // a concurrent queue: several pipelines compile at once on the efficiency and performance cores
+            compileQueue = dispatch_queue_create(
+                "perlin.metal.pipelines",
+                dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_CONCURRENT, QOS_CLASS_USER_INITIATED, 0));
+            compileGroup = dispatch_group_create();
+        }
     }
 
     Device::~Device() {
         if (!device)
             return;
+        WaitForCompiles();
         WaitIdle();
         lists.clear();
     }
@@ -466,8 +474,8 @@ namespace rhi::metal {
     }
 
     // slang numbers samplers 2*slot+1, past metal's 16 sampler slots: they are compacted in declaration order
-    id<MTLFunction> Device::CompileStage(const Shader& sh, const PipelineLayoutDesc& layout,
-                                         std::vector<StageSlot>& slots, std::string& error) {
+    std::string Device::PrepareStage(const Shader& sh, const PipelineLayoutDesc& layout, std::vector<StageSlot>& slots,
+                                     std::string& error) {
         std::vector<const ShaderResource*> resources;
         for (const ShaderResource& r : sh.iface.resources)
             resources.push_back(&r);
@@ -491,7 +499,7 @@ namespace rhi::metal {
             if (r->kind == ResourceKind::Sampler) {
                 if (nextSampler >= 16) {
                     error = "more than 16 samplers in " + sh.entry;
-                    return nil;
+                    return {};
                 }
                 s.index = nextSampler++;
                 edits.push_back(
@@ -518,6 +526,10 @@ namespace rhi::metal {
         for (const Edit& e : edits)
             patched.replace(e.begin, e.end - e.begin, e.text);
 
+        return patched;
+    }
+
+    id<MTLFunction> Device::LoadFunction(const std::string& patched, const std::string& entry, std::string& error) {
         id<MTLLibrary> lib = nil;
         {
             std::lock_guard lock(libraryMutex);
@@ -537,10 +549,40 @@ namespace rhi::metal {
             std::lock_guard lock(libraryMutex);
             libraries[patched] = lib;
         }
-        id<MTLFunction> function = [lib newFunctionWithName:[NSString stringWithUTF8String:sh.entry.c_str()]];
+        id<MTLFunction> function = [lib newFunctionWithName:[NSString stringWithUTF8String:entry.c_str()]];
         if (!function)
-            error = "entry point " + sh.entry + " not found";
+            error = "entry point " + entry + " not found";
         return function;
+    }
+
+    id<MTLFunction> Device::CompileStage(const Shader& sh, const PipelineLayoutDesc& layout,
+                                         std::vector<StageSlot>& slots, std::string& error) {
+        const std::string source = PrepareStage(sh, layout, slots, error);
+        return source.empty() ? nil : LoadFunction(source, sh.entry, error);
+    }
+
+    id<MTLRenderPipelineState> Device::ReadyPipeline(const Pipeline& p) {
+        if (!p.build)
+            return p.render;
+        PipelineBuild& b = *p.build;
+        int state = b.state.load(std::memory_order_acquire);
+        // the first draw that needs it may wait a moment: most compiles finish well inside a frame
+        if (state == 0 && !b.waited.exchange(true)) {
+            b.done.Wait(1, 4'000'000ull);
+            state = b.state.load(std::memory_order_acquire);
+        }
+        if (state == 1)
+            return b.render;
+        if (state < 0 && !b.reported.exchange(true))
+            ReportError(b.error);
+        if (state == 0)
+            stats.pipelinesPending++;
+        return nil;
+    }
+
+    void Device::WaitForCompiles() {
+        if (compileGroup)
+            dispatch_group_wait(compileGroup, DISPATCH_TIME_FOREVER);
     }
 
     PipelineHandle Device::CreateGraphicsPipeline(const GraphicsPipelineDesc& desc) {
@@ -553,18 +595,16 @@ namespace rhi::metal {
         }
         Pipeline p;
         std::string error;
-        id<MTLFunction> vsFn = CompileStage(*vs, layout->desc, p.stages[kStageVertex], error);
-        id<MTLFunction> fsFn =
-            vsFn && fs ? CompileStage(*fs, layout->desc, p.stages[kStageFragment], error) : nil;
-        if (!vsFn || (fs && !fsFn)) {
+        const std::string vsSource = PrepareStage(*vs, layout->desc, p.stages[kStageVertex], error);
+        const std::string fsSource =
+            !vsSource.empty() && fs ? PrepareStage(*fs, layout->desc, p.stages[kStageFragment], error) : std::string();
+        if (vsSource.empty() || (fs && fsSource.empty())) {
             ReportError(std::string("shader compile failed (") + (desc.name ? desc.name : "?") +
                         "): " + error);
             return {};
         }
 
         MTLRenderPipelineDescriptor* pd = [MTLRenderPipelineDescriptor new];
-        pd.vertexFunction = vsFn;
-        pd.fragmentFunction = fsFn;
         if (desc.name)
             pd.label = [NSString stringWithUTF8String:desc.name];
 
@@ -631,12 +671,45 @@ namespace rhi::metal {
             break;
         }
 
-        NSError* err = nil;
-        p.render = [device newRenderPipelineStateWithDescriptor:pd error:&err];
-        if (!p.render) {
-            ReportError(std::string("pipeline creation failed (") + (desc.name ? desc.name : "?") +
-                        "): " + (err ? [[err localizedDescription] UTF8String] : "unknown"));
-            return {};
+        // the msl compile and the pipeline build are the slow part (tens of milliseconds for a shader pack program):
+        // off the render thread when allowed, so a pipeline first needed mid-game costs a skipped draw, not a hitch
+        const std::string name = desc.name ? desc.name : "?";
+        const std::string vsEntry = vs->entry, fsEntry = fs ? fs->entry : std::string();
+        auto build = std::make_shared<PipelineBuild>();
+        const auto compile = [this, build, pd, vsSource, fsSource, vsEntry, fsEntry, name] {
+            std::string why;
+            id<MTLFunction> vsFn = LoadFunction(vsSource, vsEntry, why);
+            id<MTLFunction> fsFn = vsFn && !fsSource.empty() ? LoadFunction(fsSource, fsEntry, why) : nil;
+            if (vsFn && (fsSource.empty() || fsFn)) {
+                pd.vertexFunction = vsFn;
+                pd.fragmentFunction = fsFn;
+                NSError* err = nil;
+                build->render = [device newRenderPipelineStateWithDescriptor:pd error:&err];
+                if (!build->render)
+                    why = err ? [[err localizedDescription] UTF8String] : "unknown";
+            }
+            if (build->render) {
+                build->state.store(1, std::memory_order_release);
+            } else {
+                build->error = "pipeline creation failed (" + name + "): " + why;
+                build->state.store(-1, std::memory_order_release);
+            }
+            build->done.Raise(1);
+        };
+        if (options.asyncPipelines && compileQueue) {
+            dispatch_group_async(compileGroup, compileQueue, ^{
+              @autoreleasepool {
+                  compile();
+              }
+            });
+            p.build = build;
+        } else {
+            compile();
+            if (!build->render) {
+                ReportError(build->error);
+                return {};
+            }
+            p.render = build->render;
         }
 
         const DepthStencilState& ds = desc.depthStencil;
@@ -706,46 +779,32 @@ namespace rhi::metal {
 
     FenceHandle Device::CreateFence(uint64_t initialValue) {
         Fence f;
-        f.value->store(initialValue);
+        f.value->value.store(initialValue);
         return fences.Alloc(std::move(f));
     }
 
     uint64_t Device::FenceValue(FenceHandle fence) {
         Fence* f = fences.Get(fence);
-        return f ? f->value->load() : 0;
+        return f ? f->value->value.load() : 0;
     }
 
     void Device::SignalFence(FenceHandle fence, uint64_t value) {
-        if (Fence* f = fences.Get(fence)) {
-            uint64_t cur = f->value->load();
-            while (cur < value && !f->value->compare_exchange_weak(cur, value)) {}
-        }
+        if (Fence* f = fences.Get(fence))
+            f->value->Raise(value);
     }
 
     bool Device::WaitFence(FenceHandle fence, uint64_t value, uint64_t timeoutNs) {
         Fence* f = fences.Get(fence);
-        if (!f)
-            return true;
-        const auto start = std::chrono::steady_clock::now();
-        while (f->value->load() < value) {
-            if (timeoutNs != ~0ull &&
-                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                          std::chrono::steady_clock::now() - start)
-                                          .count()) >= timeoutNs)
-                return false;
-            std::this_thread::yield();
-        }
-        return true;
+        return !f || f->value->Wait(value, timeoutNs);
     }
 
     void Device::SignalWhenDone(id<MTLCommandBuffer> after, FenceHandle fence, uint64_t value) {
         Fence* f = fences.Get(fence);
         if (!f)
             return;
-        std::shared_ptr<std::atomic<uint64_t>> counter = f->value;
+        std::shared_ptr<Timeline> timeline = f->value;
         [after addCompletedHandler:^(id<MTLCommandBuffer>) {
-          uint64_t cur = counter->load();
-          while (cur < value && !counter->compare_exchange_weak(cur, value)) {}
+          timeline->Raise(value);
         }];
     }
 

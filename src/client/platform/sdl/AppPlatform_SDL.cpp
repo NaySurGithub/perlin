@@ -22,6 +22,9 @@
 #include <thread>
 #include "util/Log.hpp"
 #include "util/Platform.hpp"
+#ifdef PERLIN_IOS
+#include "client/platform/ios/DocumentPicker.hpp"
+#endif
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -454,19 +457,92 @@ void AppPlatform_SDL::OpenUrl(const std::string& url) {
         new std::string(url), false);
 }
 
+namespace {
+    // a picked file is copied into <data>/imports/ and handed to the game as if it had been dropped on the window
+    std::string ImportName(const std::string& kind, const unsigned char* b, size_t size, std::string ext) {
+        if (ext.empty()) {
+            ext = ".png";
+            if (size >= 4 && b[0] == 'P' && b[1] == 'K')
+                ext = ".zip";
+            else if (size >= 4 && b[0] == 0 && b[1] == 'a' && b[2] == 's' && b[3] == 'm')
+                ext = ".wasm";
+        }
+        const std::string prefix = kind == "cape" ? "cape_" : kind == "skin" ? "skin_" : "import_";
+        return prefix + std::to_string(SDL_GetTicks()) + ext;
+    }
+
+    std::string ImportDir() {
+        const std::string dir = perlin::paths::DataDir() + "/imports";
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        return dir;
+    }
+
+#ifdef __EMSCRIPTEN__
+    AppPlatform_SDL* gWebPicker = nullptr;
+#endif
+}
+
+#ifdef __EMSCRIPTEN__
+// the browser's file chooser: the chosen file is written straight into the virtual file system, then reported back
+// clang-format off
+EM_JS(void, perlin_js_pick_file, (const char* accept, const char* dir, const char* prefix), {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = UTF8ToString(accept);
+    const folder = UTF8ToString(dir), pre = UTF8ToString(prefix);
+    input.onchange = async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const data = new Uint8Array(await file.arrayBuffer());
+        const dot = file.name.lastIndexOf('.');
+        const path = folder + '/' + pre + Date.now() + (dot >= 0 ? file.name.substring(dot).toLowerCase() : '');
+        FS.writeFile(path, data);
+        const size = lengthBytesUTF8(path) + 1, ptr = _malloc(size);
+        stringToUTF8(path, ptr, size);
+        _perlin_web_file_picked(ptr);
+        _free(ptr);
+    };
+    input.click();
+});
+// clang-format on
+
+extern "C" EMSCRIPTEN_KEEPALIVE void perlin_web_file_picked(const char* path) {
+    if (gWebPicker && path)
+        gWebPicker->PushDropped(path);
+}
+#endif
+
 bool AppPlatform_SDL::PickFile(const std::string& kind) {
-#ifdef SDL_PLATFORM_ANDROID
+    const bool image = kind == "skin" || kind == "cape";
+#if defined(PERLIN_IOS)
+    return perlin::ios::PickDocument(kind, [this, kind](std::vector<uint8_t> bytes, std::string ext) {
+        const std::string path =
+            ImportDir() + "/" + ImportName(kind, bytes.data(), bytes.size(), std::move(ext));
+        if (FILE* out = std::fopen(path.c_str(), "wb")) {
+            std::fwrite(bytes.data(), 1, bytes.size(), out);
+            std::fclose(out);
+            PushDropped(path);
+        }
+    });
+#elif defined(__EMSCRIPTEN__)
+    gWebPicker = this;
+    const std::string prefix = kind == "cape" ? "cape_" : kind == "skin" ? "skin_" : "import_";
+    perlin_js_pick_file(image ? "image/png" : ".zip,.mcpack,.mcaddon,.mcworld,.mctemplate,.wasm,.png",
+                        ImportDir().c_str(), prefix.c_str());
+    return true;
+#elif defined(SDL_PLATFORM_ANDROID)
     struct Request {
         AppPlatform_SDL* self;
         std::string kind;
+        bool image;
     };
     SDL_RunOnMainThread(
         [](void* data) {
             std::unique_ptr<Request> request(static_cast<Request*>(data));
             static const SDL_DialogFileFilter kImages[] = {{"PNG image", "png"}};
-            const bool image = request->kind == "skin" || request->kind == "cape";
             SDL_PropertiesID props = SDL_CreateProperties();
-            if (image) {
+            if (request->image) {
                 SDL_SetPointerProperty(props, SDL_PROP_FILE_DIALOG_FILTERS_POINTER,
                                        const_cast<SDL_DialogFileFilter*>(kImages));
                 SDL_SetNumberProperty(props, SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, 1);
@@ -483,20 +559,8 @@ bool AppPlatform_SDL::PickFile(const std::string& kind) {
                         void* bytes = SDL_LoadFile(*f, &size);
                         if (!bytes)
                             continue;
-                        const unsigned char* b = static_cast<const unsigned char*>(bytes);
-                        std::string ext = ".png";
-                        if (size >= 4 && b[0] == 'P' && b[1] == 'K')
-                            ext = ".zip";
-                        else if (size >= 4 && b[0] == 0 && b[1] == 'a' && b[2] == 's' && b[3] == 'm')
-                            ext = ".wasm";
-                        const std::string dir = perlin::paths::DataDir() + "/imports";
-                        std::error_code ec;
-                        std::filesystem::create_directories(dir, ec);
-                        const std::string name = (req->kind == "cape"   ? "cape_"
-                                                  : req->kind == "skin" ? "skin_"
-                                                                        : "import_") +
-                                                 std::to_string(SDL_GetTicks()) + ext;
-                        const std::string path = dir + "/" + name;
+                        const auto* b = static_cast<const unsigned char*>(bytes);
+                        const std::string path = ImportDir() + "/" + ImportName(req->kind, b, size, {});
                         if (FILE* out = std::fopen(path.c_str(), "wb")) {
                             std::fwrite(bytes, 1, size, out);
                             std::fclose(out);
@@ -508,10 +572,11 @@ bool AppPlatform_SDL::PickFile(const std::string& kind) {
                 new Request(*request), props);
             SDL_DestroyProperties(props);
         },
-        new Request{this, kind}, false);
+        new Request{this, kind, image}, false);
     return true;
 #else
-    (void)kind;
+    // desktop: the caller opens the folder in the file manager instead, where files can simply be dropped
+    (void)image;
     return false;
 #endif
 }

@@ -36,7 +36,9 @@ namespace rhi::metal {
                 layer.device = device.Dev();
                 layer.pixelFormat = hdr ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
                 layer.framebufferOnly = !desc.allowSampling;
-                layer.maximumDrawableCount = std::clamp(desc.imageCount, 2u, 3u);
+                // three drawables whatever was asked: with two, nextDrawable blocks whenever the display holds one and
+                // the gpu the other, which is a whole refresh of stall every time a frame runs a little long
+                layer.maximumDrawableCount = 3;
 #if TARGET_OS_OSX
                 if (hdr) {
                     layer.wantsExtendedDynamicRangeContent = YES;

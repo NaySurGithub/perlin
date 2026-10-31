@@ -492,8 +492,8 @@ namespace rhi::metal {
         return true;
     }
 
-    void CmdList::ApplyPipelineState(const Pipeline& p) {
-        [render setRenderPipelineState:p.render];
+    void CmdList::ApplyPipelineState(const Pipeline& p, id<MTLRenderPipelineState> state) {
+        [render setRenderPipelineState:state];
         if (p.depthStencil)
             [render setDepthStencilState:p.depthStencil];
         [render setCullMode:p.cull];
@@ -515,7 +515,10 @@ namespace rhi::metal {
             return false;
         }
         if (pipelineDirty) {
-            ApplyPipelineState(*p);
+            id<MTLRenderPipelineState> state = device.ReadyPipeline(*p);
+            if (!state)
+                return false; // still compiling: this draw is dropped, the next frame tries again
+            ApplyPipelineState(*p, state);
             pipelineDirty = false;
             device.MutableStats().pipelineBinds++;
         }

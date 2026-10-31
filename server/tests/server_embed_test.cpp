@@ -1,4 +1,4 @@
-// the client's singleplayer path without the client: EmbeddedServer loads the shared library, starts a loopback-only
+// the client's singleplayer path without the client: EmbeddedServer starts the linked-in server as a loopback-only
 // world and hands out a perlin::Transport, which is what BedrockSession gets
 #include "test_util.hpp"
 #include "test_auth.hpp"
@@ -45,11 +45,7 @@ static bool WaitFor(Transport& t, server::BatchCodec& codec, uint32_t id,
     return false;
 }
 
-int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::fprintf(stderr, "usage: server_embed_test <path to the perlin_server library>\n");
-        return 2;
-    }
+int main() {
     const std::filesystem::path dir = std::filesystem::temp_directory_path() / "perlin_embed_test";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -57,9 +53,7 @@ int main(int argc, char** argv) {
     EmbeddedServer embedded;
     CHECK(!embedded.Running());
     std::string error;
-    // a library that is not there is an error, not a crash
-    CHECK(!embedded.Start((dir / "missing.so").string(), dir.string(), "", error) && !error.empty());
-    CHECK(embedded.Start(argv[1], dir.string(),
+    CHECK(embedded.Start(dir.string(),
                          "{\"terrain_backend\":\"cpu\",\"generator\":\"flat\",\"view_distance\":4}", error));
     if (!embedded.Running()) {
         std::fprintf(stderr, "start: %s\n", error.c_str());

@@ -1,7 +1,6 @@
 #pragma once
-// client side of singleplayer: loads the perlin_server library and exposes a world as an ordinary perlin::Transport,
-// so BedrockSession joins it like any NetherNet server, without sockets
-// (not wired into the title screen yet; BedrockSession needs `usedRak = false` for it, same as a NetherNet join)
+// client side of singleplayer: the server is linked into the client (every platform, the web included) and a world
+// is exposed as an ordinary perlin::Transport, so BedrockSession joins it like any NetherNet server, without sockets
 #include "network/Transport.hpp"
 
 #include <cstdint>
@@ -18,10 +17,8 @@ namespace perlin {
         EmbeddedServer(const EmbeddedServer&) = delete;
         EmbeddedServer& operator=(const EmbeddedServer&) = delete;
 
-        // libraryPath: perlin_server.dll / libperlin_server.so / .dylib next to the executable
         // dataDir: world and config directory; configJson overrides config file keys (server.json names) (may be empty)
-        bool Start(const std::string& libraryPath, const std::string& dataDir, const std::string& configJson,
-                   std::string& error);
+        bool Start(const std::string& dataDir, const std::string& configJson, std::string& error);
         void Stop();
         bool Running() const;
         // one tick on the caller's thread when `ownThread` was false

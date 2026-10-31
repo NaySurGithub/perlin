@@ -143,6 +143,9 @@ namespace rhi {
         // serialised pipeline cache from a previous run
         std::span<const uint8_t> pipelineCacheData;
         bool allowAsyncCompute = true;
+        // compile graphics pipelines on worker threads: a draw whose pipeline is not ready yet is skipped instead of
+        // stalling the frame (metal; the other backends build synchronously and ignore it). Off for headless captures.
+        bool asyncPipelines = false;
         VendorHooks hooks;
     };
 

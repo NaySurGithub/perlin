@@ -99,6 +99,9 @@ namespace perlin::ui {
         int spinner = 0;
         std::string version;
         std::string copyright;
+        // auto update: a line above the version; a button when there is something to do (restart, install, reload)
+        std::string updateText;
+        bool updateAction = false;
         bool nativePanorama = false;
         std::string logoSrc;
         int logoW = 256, logoH = 64;
@@ -125,6 +128,7 @@ namespace perlin::ui {
     };
 
     inline constexpr const char* kTitleMulti = "title_multi";
+    inline constexpr const char* kTitleUpdate = "title_update";
     inline constexpr const char* kTitleSingle = "title_single";
     // shown on hover over the singleplayer buttons
     inline constexpr const char* kSingleplayerTip =

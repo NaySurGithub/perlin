@@ -16,6 +16,9 @@ concurrency:
 
 env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+  # builds of main are what the nightly release carries: they know their commit and where to look for a newer one,
+  # which is what the in-game updater compares against. Pull requests and tags build without it (no auto-update).
+  PERLIN_UPDATE_FLAGS: ${{ github.ref == 'refs/heads/main' && format('-DPERLIN_BUILD_COMMIT={0} -DPERLIN_UPDATE_REPO={1} -DPERLIN_BUNDLE_VERSION=1.0.{2}', github.sha, github.repository, github.run_number) || '' }}
   EMSDK_VERSION: 4.0.10
   OPENSSL_VERSION: openssl-3.0.15
   SDL_REF: release-3.4.18
@@ -168,6 +171,7 @@ jobs:
           -DOPENSSL_ROOT_DIR="$env:GITHUB_WORKSPACE/openssl-install/x64-windows-static"
           -DPERLIN_WINDOWS_FFMPEG=${{ env.WINDOWS_FFMPEG }}
           -DFFMPEG_ROOT="$env:GITHUB_WORKSPACE/ffmpeg-install/x64-windows-static"
+          ${{ env.PERLIN_UPDATE_FLAGS }}
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
@@ -175,6 +179,7 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPERLIN_BUILD_TESTS=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          ${{ env.PERLIN_UPDATE_FLAGS }}
           ${{ runner.os == 'macOS' && format('-DOPENSSL_ROOT_DIR={0}/ossl-mac -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON', github.workspace) || '' }}
 
       - name: Build
@@ -201,6 +206,57 @@ jobs:
           bin=$(find dist -type f -perm +111 -name 'Perlin*' | head -1)
           echo "$bin"; otool -L "$bin"; otool -l "$bin" | grep -A3 LC_BUILD_VERSION
           if otool -L "$bin" | tail -n +2 | grep -Ev '^\s+(/usr/lib/|/System/Library/)' ; then echo "::error::links a non-system dylib"; exit 1; fi
+
+      # Apple silicon refuses to run code whose signature does not cover the bundle ("Perlin is damaged"): cmake
+      # --install adds files after the linker signed the executable, so the finished bundle is signed again here.
+      # With a Developer ID (repository secrets below) it is also notarized and opens with no warning at all;
+      # without one it is ad-hoc signed and opens after right-click > Open (or System Settings > Open Anyway).
+      - name: Sign macOS app
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          app=$(find dist -maxdepth 1 -name '*.app' | head -1)
+          chmod -R u+w,go-w "$app"; chmod +x "$app/Contents/MacOS/"*
+          xattr -cr "$app"
+          if [ -n "$MACOS_CERTIFICATE_P12" ]; then
+            kc="$RUNNER_TEMP/sign.keychain-db"
+            security create-keychain -p ci "$kc" && security set-keychain-settings "$kc" && security unlock-keychain -p ci "$kc"
+            echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple: -s -k ci "$kc"
+            security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+            codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$app"
+            for exe in dist/perlin-server; do [ -f "$exe" ] && codesign --force --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$exe"; done
+            if [ -n "$APPLE_ID" ]; then
+              ditto -c -k --keepParent "$app" "$RUNNER_TEMP/notarize.zip"
+              xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+              xcrun stapler staple "$app"
+            fi
+          else
+            codesign --force --deep --sign - "$app"
+            [ -f dist/perlin-server ] && codesign --force --sign - dist/perlin-server
+          fi
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      # archives are made here, on the runner that built them: upload-artifact drops unix permissions and macOS
+      # extended attributes, so a bundle zipped later by the release job would lose its executable bit and signature
+      - name: Archive
+        shell: bash
+        run: |
+          mkdir -p pkg
+          out="$PWD/pkg/Perlin-${{ matrix.name }}.zip"
+          case "${{ runner.os }}" in
+            macOS) (cd dist && ditto -c -k --sequesterRsrc . "$out") ;;
+            Windows) (cd dist && 7z a -tzip -bso0 "$out" .) ;;
+            *) (cd dist && zip -qry "$out" .) ;;
+          esac
+          ls -l pkg
 
       - name: Save dependency cache
         # Failed configuration can leave incomplete submodule checkouts that
@@ -230,7 +286,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Perlin-${{ matrix.name }}
-          path: dist
+          path: pkg/Perlin-${{ matrix.name }}.zip
+          compression-level: 0
           if-no-files-found: error
 
   web:
@@ -275,7 +332,8 @@ jobs:
             -DOPENSSL_ROOT_DIR="$GITHUB_WORKSPACE/ossl-wasm" \
             -DOPENSSL_INCLUDE_DIR="$GITHUB_WORKSPACE/ossl-wasm/include" \
             -DOPENSSL_CRYPTO_LIBRARY="$GITHUB_WORKSPACE/ossl-wasm/lib/libcrypto.a" \
-            -DOPENSSL_SSL_LIBRARY="$GITHUB_WORKSPACE/ossl-wasm/lib/libssl.a"
+            -DOPENSSL_SSL_LIBRARY="$GITHUB_WORKSPACE/ossl-wasm/lib/libssl.a" \
+            ${{ env.PERLIN_UPDATE_FLAGS }}
       - name: Build
         run: cmake --build build-web
       - name: Check build output
@@ -295,6 +353,8 @@ jobs:
           cp build-web/*.data site/ 2>/dev/null || true
           cp build-web/perlin-*.js build-web/coi-sw.js build-web/perlin.css build-web/assets-manifest.json site/
           cp tools/web/serve.py tools/web/HOSTING.txt site/
+          # the running page compares this with the commit it was built from and offers a reload when they differ
+          printf '{"commit":"%s","run":%s}\n' "$GITHUB_SHA" "$GITHUB_RUN_NUMBER" > site/version.json
       # the artifact is zipped by the action itself; the release job makes Perlin-web.zip from it
       - uses: actions/upload-artifact@v4
         with:
@@ -370,6 +430,27 @@ jobs:
           git clone --depth 1 --filter=blob:none --no-checkout https://github.com/Mojang/bedrock-samples bedrock-samples-index
           mkdir -p android/app/src/main/assets
           python3 tools/web/gen_manifest.py --repo bedrock-samples-index --out android/app/src/main/assets/assets-manifest.json
+      # every nightly apk must carry the same signature or Android refuses it as an update: set the
+      # ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD secrets
+      # (without them each build is signed with that runner's throwaway debug key)
+      - name: Signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/perlin.jks"
+            {
+              echo "PERLIN_KEYSTORE=$RUNNER_TEMP/perlin.jks"
+              echo "PERLIN_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+              echo "PERLIN_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+              echo "PERLIN_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::no ANDROID_KEYSTORE_BASE64 secret: this apk cannot update an install from another run"
+          fi
       - name: Build APK
         working-directory: android
         run: |
@@ -383,7 +464,8 @@ jobs:
             -Pabis="arm64-v8a" \
             --build-cache \
             -PappVersionCode="$GITHUB_RUN_NUMBER" \
-            -PappVersionName="1.0.$GITHUB_RUN_NUMBER"
+            -PappVersionName="1.0.$GITHUB_RUN_NUMBER" \
+            ${{ github.ref == 'refs/heads/main' && format('-PbuildCommit={0} -PupdateRepo={1}', github.sha, github.repository) || '' }}
       - name: Check APK contents
         run: |
           apk=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
@@ -403,8 +485,6 @@ jobs:
   ios:
     name: ios
     runs-on: macos-15
-    # new platform: a failure shows up red on the job but does not hold back the nightly release of the others
-    continue-on-error: true
     env:
       IOS_DEPLOYMENT_TARGET: "15.0"
     steps:
@@ -460,6 +540,7 @@ jobs:
           -DOPENSSL_CRYPTO_LIBRARY="$GITHUB_WORKSPACE/ossl-ios/lib/libcrypto.a"
           -DOPENSSL_SSL_LIBRARY="$GITHUB_WORKSPACE/ossl-ios/lib/libssl.a"
           -DPERLIN_ASSET_MANIFEST="$GITHUB_WORKSPACE/assets-manifest.json"
+          ${{ env.PERLIN_UPDATE_FLAGS }}
       - name: Build
         run: cmake --build build-ios --target Perlin --parallel
       - name: Check app bundle
@@ -487,6 +568,29 @@ jobs:
           path: dist/Perlin.ipa
           if-no-files-found: error
 
+  # the web build on GitHub Pages, redeployed by every nightly: the site is always the newest build and the page
+  # offers a reload when it notices it (Settings > Pages > Source: GitHub Actions must be selected once)
+  pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: web
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Perlin-web
+          path: site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
   release:
     if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     needs: [native, web, android, ios]
@@ -508,10 +612,45 @@ jobs:
           for dir in */; do
             name="${dir%/}"
             case "$name" in
-              Perlin-android | Perlin-ios) cp "$name"/* ../release/ ;;
-              *) (cd "$name" && zip -qr "../../release/$name.zip" .) ;;
+              # web and debug symbols are plain folders; everything else is already its final archive
+              Perlin-web | *-symbols) (cd "$name" && zip -qr "../../release/$name.zip" .) ;;
+              *) cp "$name"/* ../release/ ;;
             esac
           done
+
+      # AltStore / SideStore source: add
+      # https://github.com/<owner>/<repo>/releases/download/nightly/altstore-source.json and iOS updates itself
+      - name: iOS app source
+        if: github.ref == 'refs/heads/main'
+        run: |
+          [ -f release/Perlin.ipa ] || exit 0
+          size=$(stat -c %s release/Perlin.ipa)
+          python3 - "$size" <<'PY'
+          import json, sys, datetime, os
+          repo = os.environ["GITHUB_REPOSITORY"]
+          version = "1.0." + os.environ["GITHUB_RUN_NUMBER"]
+          source = {
+              "name": "Perlin nightly",
+              "identifier": "io.perlin.client.source",
+              "sourceURL": f"https://github.com/{repo}/releases/download/nightly/altstore-source.json",
+              "apps": [{
+                  "name": "Perlin",
+                  "bundleIdentifier": "io.perlin.client",
+                  "developerName": repo.split("/")[0],
+                  "localizedDescription": "Nightly build of Perlin.",
+                  "iconURL": f"https://raw.githubusercontent.com/{repo}/main/packaging/icon/perlin.png",
+                  "versions": [{
+                      "version": version,
+                      "date": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                      "downloadURL": f"https://github.com/{repo}/releases/download/nightly/Perlin.ipa",
+                      "size": int(sys.argv[1]),
+                      "minOSVersion": "15.0",
+                  }],
+              }],
+              "news": [],
+          }
+          open("release/altstore-source.json", "w").write(json.dumps(source, indent=2))
+          PY
 
       - name: Move the nightly tag
         if: github.ref == 'refs/heads/main'

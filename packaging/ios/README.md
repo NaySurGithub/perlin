@@ -13,7 +13,10 @@ Perlin builds for iPhone and iPad (arm64, iOS 15+) from the same CMake project. 
 | Data        | `Documents/` in the app sandbox, visible in the Files app (packs, worlds, mods, imports)       |
 | TLS         | `cacert.pem` shipped in the bundle (iOS has no trust store OpenSSL can read)                  |
 | Assets      | `assets-manifest.json` in the bundle, one bulk download of the vanilla samples (as on Android)|
-| Not on iOS  | Singleplayer server (no loadable libraries), FFmpeg video export, the local control server    |
+| Singleplayer| The server is linked into the app, as on every platform                                      |
+| Importing   | The system document picker (Files, iCloud Drive) for skins, capes, packs and mods            |
+| Updates     | Add the AltStore / SideStore source `…/releases/download/nightly/altstore-source.json`       |
+| Not on iOS  | FFmpeg video export, the local control server                                                |
 
 `src/util/Platform.hpp` defines `PERLIN_IOS` and `PERLIN_MOBILE`; code that is about phones rather than Android
 specifically tests `PERLIN_MOBILE`.

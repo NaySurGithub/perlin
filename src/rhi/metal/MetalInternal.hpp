@@ -1,4 +1,6 @@
 #pragma once
+#include <chrono>
+#include <condition_variable>
 // metal backend: one queue, implicit hazard tracking, so barriers are statistics only. Buffers the cpu touches are shared storage
 // and need no flush; commands record straight into encoders and the encoder kind is switched lazily. Objective-C++ with ARC.
 #import <Metal/Metal.h>
@@ -104,9 +106,46 @@ namespace rhi::metal {
     // vertex streams live at the top of the buffer table so uniforms keep their low indices
     constexpr uint32_t kVertexBufferBase = 30;
 
+    // a timeline value the gpu raises from a completion handler; waiters sleep on the condition variable instead of
+    // spinning, which on a laptop kept a performance core busy for the whole gpu frame (heat, then throttled frames)
+    struct Timeline {
+        std::atomic<uint64_t> value{0};
+        std::mutex mutex;
+        std::condition_variable cv;
+
+        void Raise(uint64_t v) {
+            uint64_t cur = value.load();
+            while (cur < v && !value.compare_exchange_weak(cur, v)) {}
+            std::lock_guard lock(mutex);
+            cv.notify_all();
+        }
+        bool Wait(uint64_t v, uint64_t timeoutNs) {
+            if (value.load(std::memory_order_acquire) >= v)
+                return true;
+            std::unique_lock lock(mutex);
+            const auto ready = [&] { return value.load(std::memory_order_acquire) >= v; };
+            if (timeoutNs == ~0ull) {
+                cv.wait(lock, ready);
+                return true;
+            }
+            return cv.wait_for(lock, std::chrono::nanoseconds(timeoutNs), ready);
+        }
+    };
+
+    // a render pipeline being compiled on a worker: state 0 = pending, 1 = ready, -1 = failed
+    struct PipelineBuild {
+        std::atomic<int> state{0};
+        std::atomic<bool> waited{false};
+        std::atomic<bool> reported{false};
+        id<MTLRenderPipelineState> render = nil;
+        std::string error;
+        Timeline done;
+    };
+
     struct Pipeline {
         bool compute = false;
         id<MTLRenderPipelineState> render = nil;
+        std::shared_ptr<PipelineBuild> build;
         id<MTLComputePipelineState> comp = nil;
         id<MTLDepthStencilState> depthStencil = nil;
         MTLCullMode cull = MTLCullModeNone;
@@ -126,7 +165,7 @@ namespace rhi::metal {
 
     // completion handlers outlive the handle, so the counter is shared
     struct Fence {
-        std::shared_ptr<std::atomic<uint64_t>> value = std::make_shared<std::atomic<uint64_t>>(0);
+        std::shared_ptr<Timeline> value = std::make_shared<Timeline>();
     };
 
     class Device;
@@ -193,7 +232,7 @@ namespace rhi::metal {
         id<MTLComputeCommandEncoder> Compute();
         bool PrepareDraw();
         bool BindSets(const Pipeline& p);
-        void ApplyPipelineState(const Pipeline& p);
+        void ApplyPipelineState(const Pipeline& p, id<MTLRenderPipelineState> state);
 
         Device& device;
         QueueType queue;
@@ -321,6 +360,11 @@ namespace rhi::metal {
         void FillCaps();
         id<MTLFunction> CompileStage(const Shader& shader, const PipelineLayoutDesc& layout,
                                      std::vector<StageSlot>& slots, std::string& error);
+        // binding slots for a stage and its source with the sampler indices rewritten (cheap, no compiler)
+        std::string PrepareStage(const Shader& shader, const PipelineLayoutDesc& layout, std::vector<StageSlot>& slots,
+                                 std::string& error);
+        // the compiler half: msl source -> function, libraries cached by source (thread safe)
+        id<MTLFunction> LoadFunction(const std::string& source, const std::string& entry, std::string& error);
 
         id<MTLDevice> device = nil;
         id<MTLCommandQueue> queue = nil;
@@ -335,6 +379,13 @@ namespace rhi::metal {
         std::mutex libraryMutex;
         std::unordered_map<std::string, id<MTLLibrary>> libraries;
         std::mutex errorMutex;
+        dispatch_queue_t compileQueue = nullptr;
+        dispatch_group_t compileGroup = nullptr;
+
+    public:
+        // the pipeline a draw may use now: nil while it is still compiling (the draw is skipped) or if it failed
+        id<MTLRenderPipelineState> ReadyPipeline(const Pipeline& p);
+        void WaitForCompiles();
     };
 
     std::unique_ptr<rhi::Swapchain> MakeSwapchain(Device& device, const SwapchainDesc& desc);

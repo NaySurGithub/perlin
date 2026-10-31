@@ -220,18 +220,11 @@ namespace perlin {
                                                      std::filesystem::file_size(path, ec) != bytes.size()))
                     std::ofstream(path, std::ios::binary) << bytes;
             }
-#if defined(_WIN32)
-            const char* library = "perlin_server.dll";
-#elif defined(__APPLE__)
-            const char* library = "libperlin_server.dylib";
-#else
-            const char* library = "libperlin_server.so";
-#endif
             const std::string config =
                 "{\"view_distance\":" + std::to_string(std::clamp(options.renderDistance, 2, 32)) +
                 ",\"block_data_dir\":\"" + dir + "\"}";
             std::string error;
-            if (!singleplayerServer->Start(paths::ExeDir() + "/" + library, dir, config, error)) {
+            if (!singleplayerServer->Start(dir, config, error)) {
                 Log("singleplayer", "{}", error);
                 SetStatusHint("Singleplayer could not start: " + error);
                 return;

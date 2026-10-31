@@ -90,6 +90,7 @@ namespace perlin {
             std::map<std::string, TouchPlace> touchLayout;
             bool fullscreen = false;
             bool centerCursor = true;
+            bool autoUpdate = true;
         };
     }
 
@@ -336,6 +337,7 @@ namespace perlin {
         o.touchLayout = stored.touchLayout;
         o.fullscreen = stored.fullscreen;
         o.centerCursor = stored.centerCursor;
+        o.autoUpdate = stored.autoUpdate;
         return o;
     }
 
@@ -420,6 +422,7 @@ namespace perlin {
         stored.touchLayout = touchLayout;
         stored.fullscreen = fullscreen;
         stored.centerCursor = centerCursor;
+        stored.autoUpdate = autoUpdate;
 
         std::string out;
         if (glz::write<glz::opts{.prettify = true}>(stored, out))
