@@ -37,8 +37,6 @@ namespace perlin::server {
     }
 
     Server::Server(ServerConfig cfg) : config(std::move(cfg)) {
-        spawnY = FlatSurfaceY(config);
-        InitGameRules();
         tickRateTarget = std::max<uint32_t>(1, config.tickRate);
         loopback = std::make_unique<LoopbackListener>();
         plugins = std::make_unique<PluginHost>(*this);
@@ -95,17 +93,6 @@ namespace perlin::server {
             return false;
         }
         LogInfo("terrain: " + std::string(choice.backend->Name()) + (choice.note.empty() ? "" : " (" + choice.note + ")"));
-        {
-            // the spawn: the backend's dry land nearest the origin, or the origin on the flat surface
-            int x = 0, y = FlatSurfaceY(config), z = 0;
-            const auto spawnStart = std::chrono::steady_clock::now();
-            if (config.generator == "vanilla" && choice.backend->FindSpawn(x, y, z))
-                LogInfo("spawn at " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + " (" +
-                        std::to_string(static_cast<int>(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - spawnStart).count())) + " ms)");
-            spawnX = x;
-            spawnY = y;
-            spawnZ = z;
-        }
         chunks = std::make_unique<ChunkManager>(std::move(choice.backend), config.maxThreads);
 
         RegisterBuiltins();
@@ -134,7 +121,6 @@ namespace perlin::server {
         {
             const bool persist = !config.loopbackOnly;
             allowList.Load(persist ? AllowlistPath() : std::string());
-            banList.Load(persist ? config.dataDir + "/banned-players.json" : std::string());
             const std::string permissionsPath = PermissionsPath();
             const bool fresh = persist && !std::filesystem::exists(permissionsPath);
             permissionList.Load(persist ? permissionsPath : std::string());
@@ -168,12 +154,6 @@ namespace perlin::server {
         if (!started)
             return;
         started = false;
-        // searches in flight stop at their next sample
-        locateCancel = true;
-        for (std::thread& t : locateThreads)
-            if (t.joinable())
-                t.join();
-        locateThreads.clear();
         for (auto& [id, session] : sessions)
             session->Kick("Server closed");
         sessions.clear();
@@ -210,15 +190,10 @@ namespace perlin::server {
         const auto began = std::chrono::steady_clock::now();
         chunks->Pump();
         Pump();
-        DrainLocate();
         // frozen: the game clock holds still but the network, chat and commands keep working; a step lets single ticks through
         const bool advance = !frozen || stepRemaining > 0 || sprintRemaining > 0;
         if (advance) {
             tick++;
-            if (RuleValue("dodaylightcycle"))
-                dayTime++;
-            if (weatherTicks > 0 && --weatherTicks == 0 && (raining || thundering))
-                SetWeather("clear", 0);
             if (frozen && stepRemaining > 0)
                 stepRemaining--;
             TickItems();
@@ -447,9 +422,6 @@ namespace perlin::server {
             bool gone = false;
             if (it.age >= it.pickupDelay)
                 for (Session* s : players) {
-                    // spectators pass through items
-                    if (s->Spectator())
-                        continue;
                     const double dx = it.x - s->X(), dy = it.y - (s->Y() - 0.9), dz = it.z - s->Z();
                     if (dx * dx + dy * dy + dz * dz > 1.5 * 1.5)
                         continue;
@@ -581,6 +553,8 @@ namespace perlin::server {
         return n > config.maxPlayers;
     }
 
+    double Server::SpawnY() const { return static_cast<double>(FlatSurfaceY(config)); }
+
     void Server::OnPlayerJoined(Session& joined) {
         LogInfo(joined.Name() + " joined (" + joined.Conn().Describe() + ")");
         for (Session* other : InGamePlayers()) {
@@ -591,7 +565,6 @@ namespace perlin::server {
         }
         for (const ItemEntity& item : itemEntities)
             joined.ShowItem(item);
-        SendWorldState(joined);
         PayloadWriter w;
         w.U64(joined.Id());
         w.Str(joined.Name());
@@ -629,55 +602,281 @@ namespace perlin::server {
             s->SendText(1, from.Name(), message);
     }
 
-    namespace {
-        // java answers an unknown command, and one you may not use, the same way
-        void UnknownCommand(const std::string& name, const std::function<void(const std::string&)>& say) {
-            say("§cUnknown or incomplete command, see below for error");
-            say("§c/" + name + "<--[HERE]");
-        }
-    }
-
     void Server::RunPlayerCommand(Session& from, const std::string& line) {
-        RunCommand(&from, line);
+        std::string text = Trim(line);
+        if (!text.empty() && text[0] == '/')
+            text.erase(0, 1);
+        const size_t space = text.find(' ');
+        const std::string name = Lower(text.substr(0, space));
+        const std::string args = space == std::string::npos ? "" : Trim(text.substr(space + 1));
+        const auto it = commands.find(name);
+        if (it == commands.end()) {
+            from.SendRaw("§cUnknown command: /" + name + ". Try /help");
+            return;
+        }
+        if (it->second.operatorOnly && !from.Operator()) {
+            from.SendRaw("§cYou do not have permission to use /" + name);
+            return;
+        }
+        if (!it->second.plugin.empty()) {
+            plugins->DispatchCommand(it->second.plugin, from.Id(), name, args);
+            return;
+        }
+        it->second.run(&from, args);
     }
 
-    void Server::RunConsoleCommand(const std::string& line) { RunCommand(nullptr, line); }
-
-    void Server::RunCommand(Session* from, const std::string& line) {
+    void Server::RunConsoleCommand(const std::string& line) {
         std::string text = Trim(line);
         if (!text.empty() && text[0] == '/')
             text.erase(0, 1);
         if (text.empty())
             return;
-        const auto say = [from](const std::string& m) {
-            if (from)
-                from->SendRaw(m);
-            else
-                LogInfo(m);
-        };
         const size_t space = text.find(' ');
         const std::string name = Lower(text.substr(0, space));
         const std::string args = space == std::string::npos ? "" : Trim(text.substr(space + 1));
         const auto it = commands.find(name);
-        if (it == commands.end() || (it->second.operatorOnly && from && !from->Operator())) {
-            UnknownCommand(name, say);
+        if (it == commands.end()) {
+            LogWarn("unknown command: " + name);
             return;
         }
-        const CommandDef& def = it->second;
-        if (!def.plugin.empty()) {
-            plugins->DispatchCommand(def.plugin, from ? from->Id() : 0, name, args);
-            return;
-        }
-        MatchResult m = MatchCommand(*this, from, name, def.overloads, args);
-        if (!m.ok) {
-            say("§c" + m.error);
-            if (!m.context.empty())
-                say("§c" + m.context);
-            return;
-        }
-        CommandCtx ctx{*this, from, args, m.overload, std::move(m.values)};
-        def.handler(ctx);
+        if (!it->second.plugin.empty())
+            plugins->DispatchCommand(it->second.plugin, 0, name, args);
+        else
+            it->second.run(nullptr, args);
     }
+
+    void Server::RegisterBuiltins() {
+        const auto reply = [](Session* to, const std::string& text) {
+            if (to)
+                to->SendRaw(text);
+            else
+                LogInfo(text);
+        };
+        const auto add = [this](const char* name, const char* description, bool op, std::function<void(Session*, const std::string&)> fn,
+                                const char* usage = "") {
+            CommandDef d;
+            d.name = name;
+            d.description = description;
+            d.usage = usage;
+            d.operatorOnly = op;
+            d.run = std::move(fn);
+            commands[name] = std::move(d);
+        };
+
+        add("help", "List the commands you can use", false, [this, reply](Session* from, const std::string&) {
+            std::string out = "§aCommands:";
+            for (const auto& [n, d] : commands)
+                if (!d.operatorOnly || !from || from->Operator())
+                    out += "\n§7/" + n + "§r - " + d.description;
+            reply(from, out);
+        });
+        add("list", "Show who is online", false, [this, reply](Session* from, const std::string&) {
+            std::string names;
+            const auto players = InGamePlayers();
+            for (Session* p : players)
+                names += (names.empty() ? "" : ", ") + p->Name();
+            reply(from, std::to_string(players.size()) + "/" + std::to_string(config.maxPlayers) + " online: " + names);
+        });
+        add("say", "Broadcast a message", true, [this](Session*, const std::string& args) {
+            if (!args.empty())
+                Broadcast("§d[Server] " + args);
+        }, "message");
+        add("tp", "Teleport yourself", true, [reply](Session* from, const std::string& args) {
+            if (!from) {
+                reply(from, "only players can teleport");
+                return;
+            }
+            std::istringstream in(args);
+            double x, y, z;
+            if (!(in >> x >> y >> z)) {
+                reply(from, "§cUsage: /tp <x> <y> <z>");
+                return;
+            }
+            // y is feet height; the protocol position is the eyes
+            from->Teleport(x, y + 1.62, z);
+        }, "x y z");
+        add("kick", "Kick a player", true, [this, reply](Session* from, const std::string& args) {
+            std::istringstream in(args);
+            std::string who;
+            in >> who;
+            std::string reason;
+            std::getline(in, reason);
+            reason = Trim(reason);
+            Session* target = FindByName(who);
+            if (!target) {
+                reply(from, "§cNo such player: " + who);
+                return;
+            }
+            target->Kick(reason.empty() ? "Kicked by an operator" : reason);
+        }, "player [reason]");
+        add("plugins", "List loaded plugins", false, [this, reply](Session* from, const std::string&) {
+            std::string out = "Plugins:";
+            for (const auto& p : plugins->List())
+                out += "\n" + p.name + (p.version.empty() ? "" : " " + p.version) + (p.enabled ? "" : " (disabled: " + p.error + ")");
+            reply(from, out);
+        });
+        // targets: a name, @s (the sender), @p (nearest = the sender, else the first player) or @a (everyone)
+        const auto targets = [this](Session* from, const std::string& who) {
+            std::vector<Session*> out;
+            if (who == "@a") {
+                out = InGamePlayers();
+            } else if (who == "@s" || who == "@p" || who == "@r") {
+                if (from)
+                    out.push_back(from);
+                else if (auto all = InGamePlayers(); !all.empty())
+                    out.push_back(all.front());
+            } else if (Session* s = FindByName(who); s && s->InGame()) {
+                out.push_back(s);
+            }
+            return out;
+        };
+        add("op", "Make a player an operator", true, [this, reply](Session* from, const std::string& args) {
+            if (args.empty()) {
+                reply(from, "§cUsage: /op <player>");
+                return;
+            }
+            reply(from, SetOperator(args, true));
+        }, "player");
+        add("deop", "Remove a player's operator status", true, [this, reply](Session* from, const std::string& args) {
+            if (args.empty()) {
+                reply(from, "§cUsage: /deop <player>");
+                return;
+            }
+            reply(from, SetOperator(args, false));
+        }, "player");
+        add("gamemode", "Change a player's game mode", true, [this, reply, targets](Session* from, const std::string& args) {
+            std::istringstream in(args);
+            std::string mode, who;
+            in >> mode >> who;
+            const std::string m = Lower(mode);
+            int value = -1;
+            if (m == "survival" || m == "s" || m == "0") value = 0;
+            else if (m == "creative" || m == "c" || m == "1") value = 1;
+            else if (m == "adventure" || m == "a" || m == "2") value = 2;
+            if (value < 0) {
+                reply(from, "§cUsage: /gamemode <survival|creative|adventure> [player]");
+                return;
+            }
+            if (who.empty())
+                who = "@s";
+            const auto list = targets(from, who);
+            if (list.empty()) {
+                reply(from, "§cNo such player: " + who);
+                return;
+            }
+            static const char* const names[] = {"Survival", "Creative", "Adventure"};
+            for (Session* s : list) {
+                s->SetGameMode(value);
+                if (s != from)
+                    s->SendRaw(std::string("Your game mode was set to ") + names[value]);
+                reply(from, "Set " + s->Name() + "'s game mode to " + names[value]);
+            }
+        }, "mode [player]");
+        add("give", "Give a player an item", true, [this, reply, targets](Session* from, const std::string& args) {
+            std::istringstream in(args);
+            std::string who, item;
+            int count = 1;
+            in >> who >> item;
+            if (!(in >> count))
+                count = 1;
+            // "/give <item> [amount]" from a player gives to themselves
+            if (!item.empty() && from && !FindByName(who) && who[0] != '@' && BlockCatalog::Instance().ItemByName(FullBlockName(Lower(who)))) {
+                try { count = std::stoi(item); } catch (...) { count = 1; }
+                item = who;
+                who = "@s";
+            }
+            if (who.empty() || item.empty()) {
+                reply(from, "§cUsage: /give <player> <item> [amount]");
+                return;
+            }
+            count = std::clamp(count, 1, 2304);
+            const CatalogItem* found = BlockCatalog::Instance().ItemByName(FullBlockName(Lower(item)));
+            if (!found) {
+                reply(from, "§cUnknown item: " + item);
+                return;
+            }
+            const auto list = targets(from, who);
+            if (list.empty()) {
+                reply(from, "§cNo such player: " + who);
+                return;
+            }
+            for (Session* s : list) {
+                const int left = s->Inventory().Give(found->networkId, count);
+                s->SendInventory();
+                const std::string shown = found->name.substr(found->name.find(':') + 1);
+                reply(from, "Gave " + std::to_string(count - left) + " " + shown + " to " + s->Name() + (left ? " (inventory full)" : ""));
+            }
+        }, "player item [amount]");
+        const auto allowlistCommand = [this, reply](Session* from, const std::string& args) {
+            std::istringstream in(args);
+            std::string sub, who;
+            in >> sub;
+            std::getline(in, who);
+            who = Trim(who);
+            // bds: a name with spaces is quoted
+            if (who.size() >= 2 && who.front() == '"' && who.back() == '"')
+                who = who.substr(1, who.size() - 2);
+            sub = Lower(sub);
+            const auto persist = [this] {
+                if (config.loopbackOnly)
+                    return;
+                // keep to the format the directory already uses, so a server.json setup does not grow a second config that overrides it
+                std::error_code ec;
+                const std::string legacy = config.dataDir + "/server.json";
+                if (!std::filesystem::exists(config.dataDir + "/server.properties", ec) && std::filesystem::exists(legacy, ec))
+                    config.Save(legacy);
+                else
+                    config.SaveProperties(config.dataDir + "/server.properties");
+            };
+            if (sub == "on" || sub == "off") {
+                config.whitelist = sub == "on";
+                persist();
+                reply(from, std::string("The allowlist is ") + (config.whitelist ? "on" : "off"));
+            } else if (sub == "add" && !who.empty()) {
+                Session* online = FindByName(who);
+                const bool added = allowList.Add(online ? online->Name() : who, online ? online->Xuid() : std::string());
+                reply(from, added ? "Added " + who + " to the allowlist" : who + " is already on the allowlist");
+            } else if (sub == "remove" && !who.empty()) {
+                Session* online = FindByName(who);
+                const bool removed = allowList.Remove(who) || (online && allowList.Remove(online->Xuid()));
+                reply(from, removed ? "Removed " + who + " from the allowlist" : who + " is not on the allowlist");
+            } else if (sub == "list") {
+                std::string out = std::string("The allowlist is ") + (config.whitelist ? "on" : "off") + ", " + std::to_string(allowList.Entries().size()) + " entries:";
+                for (const AccessEntry& e : allowList.Entries())
+                    out += "\n" + (e.name.empty() ? e.xuid : e.name);
+                reply(from, out);
+            } else if (sub == "reload") {
+                allowList.Load(AllowlistPath());
+                reply(from, "Reloaded " + AllowlistPath());
+            } else {
+                reply(from, "§cUsage: /allowlist <on|off|add|remove|list|reload> [player]");
+            }
+        };
+        add("allowlist", "Manage the allowlist", true, allowlistCommand, "action [player]");
+        // the name this command had before bds renamed it
+        add("whitelist", "Manage the allowlist (old name)", true, allowlistCommand, "action [player]");
+        add("permission", "List or reload permissions.json", true, [this, reply](Session* from, const std::string& args) {
+            const std::string sub = Lower(Trim(args));
+            if (sub == "list") {
+                std::string out = "Permissions (default " + config.defaultPermission + "), " + std::to_string(permissionList.Entries().size()) + " entries:";
+                for (const AccessEntry& e : permissionList.Entries())
+                    out += "\n" + (e.name.empty() ? e.xuid : e.name) + ": " + e.permission;
+                reply(from, out);
+            } else if (sub == "reload") {
+                permissionList.Load(PermissionsPath());
+                // players already in keep working with what they had until they rejoin; operators are refreshed now
+                for (Session* s : InGamePlayers())
+                    s->SetOperator(IsOperator(s->Name(), s->Xuid()));
+                reply(from, "Reloaded " + PermissionsPath());
+            } else {
+                reply(from, "§cUsage: /permission <list|reload>");
+            }
+        }, "list|reload");
+        add("tick", "Query or control the game's tick rate", true, [this](Session* from, const std::string& args) { RunTickCommand(from, args); },
+            "query|rate|freeze|unfreeze|step|sprint");
+        add("stop", "Stop the server", true, [this](Session*, const std::string&) { RequestStop(); });
+    }
+
     void Server::Broadcast(const std::string& text) {
         LogInfo(text);
         for (Session* s : InGamePlayers())
@@ -704,7 +903,6 @@ namespace perlin::server {
         s->Kick(reason);
         return true;
     }
-
 
     void Server::RegisterCommand(const std::string& plugin, const std::string& name, const std::string& description) {
         CommandDef d;
@@ -1007,86 +1205,5 @@ namespace perlin::server {
 
     std::string Server::Describe() const {
         return config.name + " (" + std::to_string(sessions.size()) + " connections, " + std::to_string(chunks ? chunks->Loaded() : 0) + " chunks)";
-    }
-}
-
-namespace perlin::server {
-    void Server::InitGameRules() {
-        struct Def {
-            const char* display;
-            bool boolean;
-            int value;
-        };
-        static const Def defs[] = {
-            {"commandBlockOutput", true, 1}, {"commandBlocksEnabled", true, 1}, {"doDaylightCycle", true, 1}, {"doEntityDrops", true, 1}, {"doFireTick", true, 1},
-            {"doImmediateRespawn", true, 0}, {"doInsomnia", true, 1}, {"doLimitedCrafting", true, 0}, {"doMobLoot", true, 1}, {"doMobSpawning", true, 1},
-            {"doTileDrops", true, 1}, {"doWeatherCycle", true, 1}, {"drowningDamage", true, 1}, {"fallDamage", true, 1}, {"fireDamage", true, 1},
-            {"freezeDamage", true, 1}, {"functionCommandLimit", false, 10000}, {"keepInventory", true, 0}, {"maxCommandChainLength", false, 65535},
-            {"mobGriefing", true, 1}, {"naturalRegeneration", true, 1}, {"playersSleepingPercentage", false, 100}, {"projectilesCanBreakBlocks", true, 1},
-            {"pvp", true, 1}, {"randomTickSpeed", false, 1}, {"recipesUnlock", true, 1}, {"respawnBlocksExplode", true, 1}, {"sendCommandFeedback", true, 1},
-            {"showBorderEffect", true, 1}, {"showCoordinates", true, 0}, {"showDaysPlayed", true, 0}, {"showDeathMessages", true, 1}, {"showTags", true, 1},
-            {"spawnRadius", false, 10}, {"tntExplodes", true, 1}, {"tntExplosionDropDecay", true, 0},
-        };
-        for (const Def& d : defs)
-            gameRules[Lower(d.display)] = {d.display, d.boolean, d.value};
-    }
-
-    int Server::RuleValue(const std::string& lowerName) const {
-        const auto it = gameRules.find(lowerName);
-        return it == gameRules.end() ? 0 : it->second.value;
-    }
-
-    bool Server::SetRule(const std::string& lowerName, int value) {
-        const auto it = gameRules.find(lowerName);
-        if (it == gameRules.end())
-            return false;
-        it->second.value = it->second.boolean ? (value != 0 ? 1 : 0) : value;
-        for (Session* s : InGamePlayers())
-            s->SendGameRule(lowerName, it->second.boolean, it->second.value);
-        return true;
-    }
-
-    void Server::SetDayTime(int64_t ticks) {
-        dayTime = std::max<int64_t>(0, ticks);
-        for (Session* s : InGamePlayers())
-            s->SendTime(static_cast<int32_t>(dayTime % 2147483647));
-    }
-
-    void Server::SetWeather(const std::string& kind, int durationTicks) {
-        raining = kind != "clear";
-        thundering = kind == "thunder";
-        weatherTicks = durationTicks;
-        for (Session* s : InGamePlayers())
-            s->SendWeather(raining, thundering);
-    }
-
-    void Server::SetWorldSpawn(int x, int y, int z) {
-        spawnX = x;
-        spawnY = y;
-        spawnZ = z;
-        for (Session* s : InGamePlayers())
-            s->SendSpawnPosition(x, y, z, true);
-    }
-
-    void Server::SendWorldState(Session& to) {
-        to.SendWeather(raining, thundering);
-        for (const auto& [key, rule] : gameRules)
-            to.SendGameRule(key, rule.boolean, rule.value);
-    }
-
-    void Server::DrainLocate() {
-        std::vector<std::pair<uint64_t, std::string>> done;
-        {
-            std::lock_guard<std::mutex> lock(locateMutex);
-            done.swap(locateDone);
-        }
-        for (auto& [id, text] : done) {
-            locating.erase(id);
-            if (id == 0) {
-                LogInfo(text);
-            } else if (Session* s = FindSession(id); s && s->InGame()) {
-                s->SendRaw(text);
-            }
-        }
     }
 }

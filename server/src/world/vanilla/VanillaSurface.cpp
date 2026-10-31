@@ -1,7 +1,6 @@
 #include "world/vanilla/VanillaSurface.hpp"
 
 #include "world/BlockCatalog.hpp"
-#include "world/vanilla/VanillaFeatures.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -113,7 +112,7 @@ namespace perlin::server::vanilla {
         }
     }
 
-    void VanillaSurface::Fill(const float* density, const uint8_t* biomes, ChunkColumn& column, const VanillaFeatures* features, int chunkX, int chunkZ) const {
+    void VanillaSurface::Fill(const float* density, const uint8_t* biomes, ChunkColumn& column) const {
         std::vector<uint16_t> blocks(static_cast<size_t>(16 * 16 * kHeight), 0);
         for (int x = 0; x < 16; x++)
             for (int z = 0; z < 16; z++) {
@@ -124,8 +123,6 @@ namespace perlin::server::vanilla {
                 for (int y = 0; y < kHeight; y++)
                     out[y] = BlockAt(m, y, top, d[y] > 0.0f);
             }
-        if (features)
-            features->Apply(chunkX, chunkZ, biomes, blocks.data());
         Store(blocks.data(), column);
     }
 }

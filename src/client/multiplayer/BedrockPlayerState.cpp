@@ -241,15 +241,40 @@ namespace perlin {
 
     // ActionSprintTriggerSystem 0x14b346c80 → 0x14b319130: the sprint modifier (0.3, multiply-total) is appended on
     // start, removed on stop; each change recalculates from the base, otherwise the value stays as sent
-    float BedrockSession::PredictedMovementSpeed(bool sprinting) {
+    float BedrockSession::PredictedMovementSpeed(bool sprinting, std::optional<float> freezeStrength) {
         std::lock_guard lock(attrMutex);
+        // FreezingSystem 0x145E14260: "Freeze effect" = strength * -0.05 (addition on the value), removed at
+        // |strength| <= 2^-23 and re-appended on every change
+        std::optional<float> freeze;
+        if (freezeStrength && std::fabs(*freezeStrength) > 0.00000011920929f)
+            freeze = *freezeStrength * -0.05f;
         if (!movementAttribute) {
             const float factor = 0.3f + 1.0f;
-            return sprinting ? factor * 0.1f : 0.1f;
+            const float value = freeze ? *freeze + 0.1f : 0.1f;
+            return sprinting ? factor * value : value;
         }
+        // the server's freeze modifier lags a tick behind its move: ours replaces it when they differ
+        const auto withFreeze = [&](float value) {
+            if (!freezeStrength)
+                return value;
+            const auto isFreeze = [](const PlayerAttributesEntryModifiersEntry& m) { return m.name == "Freeze effect"; };
+            std::optional<float> sent;
+            for (const auto& m : movementModifiers)
+                if (isFreeze(m))
+                    sent = m.amount;
+            if (sent == freeze)
+                return value;
+            std::vector<PlayerAttributesEntryModifiersEntry> modifiers = movementModifiers;
+            std::erase_if(modifiers, isFreeze);
+            auto values = ModifierValues(modifiers);
+            if (freeze)
+                values.push_back({*freeze, 0, 2});
+            std::array<float, 2> limits = movementLimits;
+            return physics::RecalculateAttribute(movementBase, values, value, limits);
+        };
         const bool present = std::any_of(movementModifiers.begin(), movementModifiers.end(), IsSprintModifier);
         if (sprinting == present)
-            return movementValue;
+            return withFreeze(movementValue);
         if (sprinting) {
             PlayerAttributesEntryModifiersEntry boost;
             boost.id = "d208fc00-42aa-4aad-9276-d5446530de43";
@@ -264,7 +289,7 @@ namespace perlin {
         }
         movementValue = physics::RecalculateAttribute(movementBase, ModifierValues(movementModifiers), movementValue,
                                                       movementLimits);
-        return movementValue;
+        return withFreeze(movementValue);
     }
 
     BedrockSession::TitleText BedrockSession::GetTitleText() const {
@@ -856,6 +881,7 @@ namespace perlin {
         On<MovementEffectPacket>([this](const MovementEffectPacket& p) {
             if (runtimeId == 0 || p.runtimeId != runtimeId)
                 return;
+            // type and duration are zigzag varints (reader 0x14072F7D0, retyped in overrides.json): unsigned doubles them
             const auto type = static_cast<uint32_t>(p.effectType);
             if (type > 1)
                 return;

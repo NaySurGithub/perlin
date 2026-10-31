@@ -66,8 +66,6 @@ endforeach()
 
 set(PS_SOURCES
     src/core/Access.cpp
-    src/core/Commands.cpp
-    src/core/CommandsBuiltin.cpp
     src/core/Auth.cpp
     src/core/CApi.cpp
     src/core/Config.cpp
@@ -93,8 +91,6 @@ set(PS_SOURCES
     src/world/vanilla/OverworldShapeData.cpp
     src/world/vanilla/BiomeData.cpp
     src/world/vanilla/VanillaSurface.cpp
-    src/world/vanilla/VanillaFeatures.cpp
-    src/world/vanilla/FeatureData.cpp
     src/gpu/VanillaGpuProgram.cpp)
 
 # wasm runtime: wasm3 through the client's own wrapper (WasmRuntimeWasm3.cpp), so plugins behave the same.
@@ -293,11 +289,6 @@ if(PERLIN_SERVER_BUILD_TESTS)
     target_include_directories(vanilla_biome_test PRIVATE src)
     target_link_libraries(vanilla_biome_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
     add_test(NAME vanilla_biome_test COMMAND vanilla_biome_test "${PERLIN_ROOT}/tools/javaref/biome_lookup_ref.txt")
-
-    add_executable(vanilla_features_test tests/vanilla_features_test.cpp)
-    target_include_directories(vanilla_features_test PRIVATE src)
-    target_link_libraries(vanilla_features_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
-    add_test(NAME vanilla_features_test COMMAND vanilla_features_test)
     add_executable(vanilla_gpu_test tests/vanilla_gpu_test.cpp)
     target_include_directories(vanilla_gpu_test PRIVATE src "${PERLIN_ROOT}/src")
     target_link_libraries(vanilla_gpu_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)

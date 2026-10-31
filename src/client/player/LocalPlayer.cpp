@@ -1,6 +1,7 @@
 #include "client/player/LocalPlayer.hpp"
 
 #include "client/player/BlockCollision.hpp"
+#include "client/player/PerlinPowderSnow.hpp"
 #include "client/player/PerlinScaffolding.hpp"
 #include "client/player/PerlinStatusEffect.hpp"
 #include "protocol/Packets.hpp"
@@ -15,6 +16,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <string_view>
 
 namespace perlin {
     namespace {
@@ -141,6 +143,51 @@ namespace perlin {
         ReplayFrom(session, first);
     }
 
+    // MovementEffectPacket 0x146BD3FB0: an event on frame T + 1 (0x142CD9D60), replayed from there; the replay sets
+    // the entry outright (0x143A18B90), durations below -1 read as 0. a stamp past our frames lands on the next tick
+    void LocalPlayer::ApplyMovementEffectUpdates(BedrockSession& session) {
+        size_t first = history.size();
+        for (const auto& effect : session.TakeMovementEffects()) {
+            const physics::bds::MovementEffect entry{effect.tick, effect.duration < -1 ? 0 : effect.duration,
+                                                    static_cast<int32_t>(effect.type), true};
+            bool inserted = false;
+            if (!history.empty()) {
+                const uint64_t boundary = std::max(effect.tick, history.front().tick);
+                for (size_t i = 0; i < history.size(); ++i) {
+                    if (history[i].tick <= boundary)
+                        continue;
+                    history[i].input.movementEffects.push_back(entry);
+                    first = std::min(first, i);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (!inserted)
+                futureMovementEffects.push_back(entry);
+        }
+        ReplayFrom(session, first);
+    }
+
+    // actor data stamped X is the strength the server moves X + 1 with (packet kept on frame X, replay from X + 1:
+    // 0x142CD9D60); a value none of our frames near it carry means the prediction drifted, so restart from it
+    void LocalPlayer::SyncFreeze(BedrockSession& session) {
+        for (const auto& update : session.TakeFreezeUpdates()) {
+            bool known = false, matched = false;
+            for (const Record& r : history)
+                if (update.tick == 0 || (r.tick >= update.tick && r.tick <= update.tick + 2)) {
+                    known = true;
+                    matched |= r.freeze == update.strength;
+                }
+            if (!known || matched)
+                continue;
+            float strength = update.strength;
+            for (const Record& r : history)
+                if (update.tick != 0 && r.tick > update.tick + 1)
+                    strength = physics::bds::FreezeStep(strength, r.freezeRising);
+            freezeStrength = strength;
+        }
+    }
+
     void LocalPlayer::ApplyMotionUpdate(BedrockSession& session, const BedrockSession::MotionUpdate& update) {
         if (teleportMotionBoundary && update.tick <= *teleportMotionBoundary) {
             if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
@@ -233,6 +280,12 @@ namespace perlin {
                 state.hasTeleported = false;
             while (!history.empty() && history.front().tick < motion.tick)
                 history.pop_front();
+            if (PERLIN_ENV("PERLIN_CORRECTION_LOG") && (history.empty() || history.front().tick != motion.tick))
+                std::cout << "[correction] unmatched tick=" << motion.tick << " historyFront="
+                          << (history.empty() ? -1 : static_cast<long long>(history.front().tick))
+                          << " historySize=" << history.size() << " server=(" << motion.pos[0] << "," << motion.pos[1]
+                          << "," << motion.pos[2] << ") ours=(" << state.x << "," << state.y << "," << state.z << ")"
+                          << " hasTeleported=" << state.hasTeleported << std::endl;
             if (!history.empty() && history.front().tick == motion.tick) {
                 Record& r = history.front();
                 const double dx = r.after.x - motion.pos[0], dy = r.after.y - motion.pos[1],
@@ -475,6 +528,9 @@ namespace perlin {
         // within 6 ticks of the first toggles flight
         if (flyTapTicks > 0)
             --flyTapTicks;
+        // the toggle flips PlayerInputRequest flying now, but FlyTriggerActionSystem 0x145e0fb40 only queues the
+        // ability: MovementAbilities (TravelTypeSensingSystem 0x147cce890) keeps the old travel for this tick
+        const bool flyingTravel = flying;
         if (session.MayFly() && !session.NoClip() && !session.Spectator() && !rideLock && jump && !jumpHeld) {
             if (flyTapTicks > 0) {
                 flying = !flying;
@@ -637,6 +693,7 @@ namespace perlin {
         in.sneak = sneakKey;
         in.sprint = sprinting;
         in.flying = flying;
+        in.flyToggled = flying != flyingTravel;
         in.flyUp = flying && jump;
         in.flyDown = flying && sneakKey;
         in.noClip = flying && (session.NoClip() || session.Spectator());
@@ -668,8 +725,27 @@ namespace perlin {
         in.overDescendableBlock = scaffold.descendable;
         in.gravity.descendThroughBlock = in.sneak && in.overDescendableBlock;
 
+        // FreezingSystem 0x145E14260 runs after the server's move: this tick moves with the strength left by the box
+        // after last tick; any leather armor piece (0x140BC68B0) or spectator mode only thaws
+        bool leatherArmor = false;
+        const auto inventory = session.GetInventory();
+        for (const auto& piece : inventory.armor) {
+            std::string_view name = piece.name;
+            if (name.starts_with("minecraft:"))
+                name.remove_prefix(10);
+            leatherArmor |= !piece.Empty() && (name == "leather_helmet" || name == "leather_chestplate" ||
+                                               name == "leather_leggings" || name == "leather_boots");
+        }
+        const bool spectatorMode = session.GameType() == 6 ||
+            (session.GameType() == 5 && session.World().worldGameMode == 6);
+        const bool freezeRising = !leatherArmor && !spectatorMode && physics::bds::TouchesPowderSnow(
+            static_cast<float>(contactBox.x0), static_cast<float>(contactBox.y0), static_cast<float>(contactBox.z0),
+            static_cast<float>(contactBox.x1), static_cast<float>(contactBox.y1), static_cast<float>(contactBox.z1),
+            [&](int x, int y, int z) { return world.Query(x, y, z).powderSnow; });
+        freezeStrength = physics::bds::FreezeStep(freezeStrength, freezeRising);
+
         physics::Attributes attributes;
-        attributes.speed = session.PredictedMovementSpeed(sprinting);
+        attributes.speed = session.PredictedMovementSpeed(sprinting, freezeStrength);
         attributes.flySpeed = session.FlySpeed();
         attributes.verticalFlySpeed = session.VFlySpeed();
         attributes.airDrag = session.AirDragAttribute();
@@ -688,10 +764,16 @@ namespace perlin {
                 attributes.weaving = true;
         }
 
-        if (simulate)
-            for (const auto& effect : session.TakeMovementEffects())
-                in.movementEffects.push_back({effect.tick, std::bit_cast<int32_t>(effect.duration),
-                                              static_cast<int32_t>(effect.type)});
+        // the prediction keeps the shorter-duration check (0x14355F1D0), the server's entry after it does not
+        if (predictGlideBoost && simulate)
+            in.movementEffects.push_back(
+                {nextTick, 20, static_cast<int32_t>(physics::bds::MovementEffectType::GlideBoost)});
+        predictGlideBoost = false;
+        if (simulate) {
+            in.movementEffects.insert(in.movementEffects.end(), futureMovementEffects.begin(),
+                                      futureMovementEffects.end());
+            futureMovementEffects.clear();
+        }
 
         state.yaw = BedrockYaw(camera.yaw);
         Record rec;
@@ -700,6 +782,8 @@ namespace perlin {
         rec.yaw = state.yaw;
         rec.before = state;
         rec.simulated = simulate;
+        rec.freeze = freezeStrength;
+        rec.freezeRising = freezeRising;
         rec.teleport = tickTeleport;
         // a stamp past the newest frame still lands on the live state at once (0x142CD98E0): next tick, whatever the stamp
         for (const auto& pending : futureMotion) {
@@ -1176,11 +1260,13 @@ namespace perlin {
             ApplyVehicleCorrections(session);
         } else {
             ApplyEffectUpdates(session);
+            ApplyMovementEffectUpdates(session);
             BedrockSession::ServerMotion motion;
             while (session.TakeServerMotion(motion))
                 ApplyServerMotion(session, camera, motion);
             ApplyVehicleCorrections(session);
         }
+        SyncFreeze(session);
         ApplyModCommands();
 
         const auto now = std::chrono::steady_clock::now();
@@ -1196,7 +1282,10 @@ namespace perlin {
         }
         if (flyPending && (session.IsFlying() == flying || now - flyPendingAt > std::chrono::milliseconds(750)))
             flyPending = false;
-        if (!flyPending && session.IsFlying() != serverFlying) {
+        // an abilities update overwrites flying even when it repeats the last value: our double tap may differ
+        const bool abilitiesSent = session.AbilitiesSeq() != abilitiesSeq;
+        abilitiesSeq = session.AbilitiesSeq();
+        if (!flyPending && (abilitiesSent || session.IsFlying() != serverFlying)) {
             serverFlying = session.IsFlying();
             if (serverFlying && session.MayFly() && !flying) {
                 flying = true;

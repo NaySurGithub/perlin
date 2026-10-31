@@ -107,6 +107,8 @@ namespace perlin::physics {
         bool sneak = false;
         bool sprint = false;
         bool flying = false;
+        // double tap this tick: flying is already the new state, the travel type still the old one
+        bool flyToggled = false;
         bool flyUp = false;
         bool flyDown = false;
         bool flyUpSlow = false;

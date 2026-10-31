@@ -40,9 +40,10 @@ namespace perlin {
         bool Gliding() const { return gliding; }
         bool Crawling() const { return crawling; }
         void SetElytra(bool value) { hasElytra = value; }
+        // completeUsingItem 0x1402C5390 ends in stopUsingItem 0x1402C3F70 (ItemInUse removed): held use stays
+        // unslowed until a new press sends a new use
         void SetItemSlow(bool slow, uint32_t duration = 0, bool restart = false) {
-            const bool completed = itemSlowUntil && tickCounter >= itemSlowUntil;
-            if (slow && (!itemSlow || restart || completed)) itemSlowUntil = duration ? tickCounter + duration : 0;
+            if (slow && (!itemSlow || restart)) itemSlowUntil = duration ? tickCounter + duration : 0;
             if (!slow || !duration) itemSlowUntil = 0;
             itemSlow = slow;
         }
@@ -52,6 +53,12 @@ namespace perlin {
         void ReleaseTrident(int riptideLevel, bool raining) {
             if (riptideLevel > 0 && tickCounter - itemUseStart >= 10 && (state.inWater || raining) && !rideLock)
                 pendingRiptide = riptideLevel;
+        }
+        // FireworksItem::use 0x147BA7640, client side: a use while gliding predicts GLIDE_BOOST for 20 ticks;
+        // the server's MovementEffect gives the real duration later
+        void UseFirework() {
+            if (gliding)
+                predictGlideBoost = true;
         }
         bool SpinAttack() const { return state.spinAttack; }
         void SetMobBoxes(std::vector<physics::Box> boxes) { mobBoxes = std::move(boxes); }
@@ -78,6 +85,7 @@ namespace perlin {
         void ApplyModCommands();
         void ApplyServerMotion(BedrockSession& session, Camera& camera, BedrockSession::ServerMotion motion);
         void ApplyEffectUpdates(BedrockSession& session);
+        void ApplyMovementEffectUpdates(BedrockSession& session);
         void ApplyMotionUpdate(BedrockSession& session, const BedrockSession::MotionUpdate& update);
         void ReplayFrom(BedrockSession& session, size_t first);
         void ApplyVehicleCorrections(BedrockSession& session);
@@ -97,10 +105,14 @@ namespace perlin {
             physics::State after;
             std::optional<std::array<double, 3>> motion;
             std::optional<BedrockSession::ServerMotion> teleport;
+            // freeze strength this tick moves with, and whether the box before it rose it
+            float freeze = 0;
+            bool freezeRising = false;
         };
         std::deque<Record> history;
         std::deque<BedrockSession::MotionUpdate> futureMotion;
         std::deque<BedrockSession::ServerMotion> futureTeleports;
+        std::vector<physics::bds::MovementEffect> futureMovementEffects;
         std::optional<uint64_t> teleportMotionBoundary;
         std::optional<int> replayDimension;
         double smoothOffset[3] = {0, 0, 0};
@@ -118,6 +130,7 @@ namespace perlin {
         PlayerFov fov;
         bool flying = false;
         bool serverFlying = false;
+        uint32_t abilitiesSeq = 0;
         bool sprinting = false;
         bool tooHungryToSprint = false;
         bool swimming = false;
@@ -169,6 +182,7 @@ namespace perlin {
         float eyeDrop = 0.0f, eyeDropPrevious = 0.0f;
         uint64_t itemUseStart = 0;
         int pendingRiptide = 0;
+        bool predictGlideBoost = false;
         std::vector<physics::Box> mobBoxes;
         // ticks left to double-tap jump for flight (VanillaClientGameplayComponent +8)
         int flyTapTicks = 0;
@@ -177,5 +191,8 @@ namespace perlin {
         // StorePreviousClientInputSystem: last tick's sneak input and forward >= 0.70710677 (VanillaClientGameplay +22/+23)
         bool prevSneakInput = false, prevForwardHigh = false;
         int fallFlyTicks = 0;
+        // FreezingComponent strength, predicted: the server's actor data arrives a tick after its move used it
+        float freezeStrength = 0;
+        void SyncFreeze(BedrockSession& session);
     };
 }

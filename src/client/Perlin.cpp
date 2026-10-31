@@ -7379,6 +7379,49 @@ namespace perlin {
 
             PumpReplay(dt);
             BedrockSession* live = sessionReady && session && !session->Transferring() ? session.get() : nullptr;
+            // every release of a held use, from both input paths: the server's releaseUsing launches the riptide on any
+            const auto releaseItem = [&](const ui::HudItem& held, const float eye[3]) {
+                usingItem = false;
+                if (!live)
+                    return;
+                live->SendReleaseItem(eye);
+                // riptide is enchantment 30
+                if (held.name != "minecraft:trident")
+                    return;
+                // rain at the player, Weather 0x145E27B00: overworld, (cur - prev) + prev > 0.2f, the column
+                // clear from the probe up, biome precipitation and temperature > 0.15f (0x145D3B680).
+                // the probe is floor(position + box height); the network position is at eye level
+                const auto rainingOnPlayer = [&] {
+                    if (live->DimensionId() != 0)
+                        return false;
+                    const float delta = rainLevel - previousRainLevel;
+                    if (!(delta + previousRainLevel > 0.2f))
+                        return false;
+                    const physics::State& pst = player.State();
+                    const float eyeY = static_cast<float>(pst.y) + static_cast<float>(physics::kStandEye);
+                    const int x = static_cast<int>(std::floor(static_cast<float>(pst.x)));
+                    const int y = static_cast<int>(std::floor(eyeY + pst.collisionHeight));
+                    const int z = static_cast<int>(std::floor(static_cast<float>(pst.z)));
+                    auto& level = live->NetLevel();
+                    for (int top = 319; top >= y; --top) {
+                        bool loaded = false;
+                        const uint16_t id = level.GetBlock(x, top, z, loaded);
+                        if (!loaded || weather.BlocksRain(level, id) || level.GetLiquid(x, top, z) != 0)
+                            return false;
+                    }
+                    const BiomeTints& tints = levelRenderer->Tints();
+                    float temperature = 0.5f, downfall = 0.5f;
+                    if (!tints.Ready() || !tints.Climate(tints.NameForId(level.GetBiome(x, y, z)), temperature, downfall))
+                        return false;
+                    // TODO: block precipitation_interactions, biome rain flag and the temperature noise/altitude
+                    // terms (0x145D3B680) are approximated by the renderer's blocker list and climate data
+                    return downfall > 0.0f && temperature > 0.15f;
+                };
+                const bool raining = rainingOnPlayer();
+                for (const auto& [id, level] : held.enchants)
+                    if (id == 30)
+                        player.ReleaseTrident(level, raining);
+            };
             static std::vector<entity::Entity> frameEntities;
             if (live) {
                 const physics::State& viewerState = player.State();
@@ -7479,8 +7522,7 @@ namespace perlin {
                     }
                     if (!use && usingItem) {
                         const float eye[3] = {static_cast<float>(camera.x), static_cast<float>(camera.y), static_cast<float>(camera.z)};
-                        live->SendReleaseItem(eye);
-                        usingItem = false;
+                        releaseItem(held, eye);
                     }
                     const uint32_t useTicks = eating ? (name == "minecraft:dried_kelp" ? 16 :
                                                        name == "minecraft:honey_bottle" ? 40 : 32) : 0;
@@ -7591,25 +7633,11 @@ namespace perlin {
                     if (inputManager.Pressed(static_cast<Action>(static_cast<int>(Action::Hotbar1) + i)))
                         newSlot = i;
                 static float scrollAccum = 0.0f;
-                // in spectator the wheel sets the flying speed (1x, 2x, 5x, 10x, 20x) instead of picking a hotbar slot; the server resets to 1x on entering the mode
-                static int spectatorSpeed = 0;
-                static const int kSpectatorSpeeds[5] = {1, 2, 5, 10, 20};
-                const bool wheelFliesFaster = live && hudState.mode == ui::GameMode::Spectator;
-                if (!wheelFliesFaster)
-                    spectatorSpeed = 0;
                 if (!inputManager.IsDown(Action::Zoom)) {
                     scrollAccum += inputManager.Scroll();
                     while (scrollAccum >= 1.0f || scrollAccum <= -1.0f) {
                         const int step = scrollAccum > 0.0f ? 1 : -1;
                         scrollAccum -= static_cast<float>(step);
-                        if (wheelFliesFaster) {
-                            const int next = std::clamp(spectatorSpeed + step, 0, 4);
-                            if (next != spectatorSpeed) {
-                                spectatorSpeed = next;
-                                live->SendCommand("flyspeed " + std::to_string(kSpectatorSpeeds[next]));
-                            }
-                            continue;
-                        }
                         const int from = newSlot >= 0 ? newSlot : hudState.selectedSlot;
                         newSlot = ((from - step) % 9 + 9) % 9;
                     }
@@ -8135,6 +8163,8 @@ namespace perlin {
                                                      ? custom.useTicks > 0
                                                      : blockuse::VanillaUseTicks(held.name, HandRenderer::IsFood(held.name)) > 0;
                             live->SendUseItemInAir(eyeF, heldUse);
+                            if (held.name == "minecraft:firework_rocket")
+                                player.UseFirework();
                             usingItem = heldUse;
                             if (heldUse)
                                 player.BeginItemUse();
@@ -8142,47 +8172,8 @@ namespace perlin {
                     }
                     if (!useHeld && live)
                         live->EndItemUseOn();
-                    if (usingItem && !useHeld) {
-                        usingItem = false;
-                        if (live)
-                            live->SendReleaseItem(eyeF);
-                        // riptide is enchantment 30
-                        if (held.name == "minecraft:trident" && live) {
-                            // rain at the player, Weather 0x145E27B00: overworld, (cur - prev) + prev > 0.2f, the column
-                            // clear from the probe up, biome precipitation and temperature > 0.15f (0x145D3B680).
-                            // the probe is floor(position + box height); the network position is at eye level
-                            const auto rainingOnPlayer = [&] {
-                                if (live->DimensionId() != 0)
-                                    return false;
-                                const float delta = rainLevel - previousRainLevel;
-                                if (!(delta + previousRainLevel > 0.2f))
-                                    return false;
-                                const physics::State& pst = player.State();
-                                const float eyeY = static_cast<float>(pst.y) + static_cast<float>(physics::kStandEye);
-                                const int x = static_cast<int>(std::floor(static_cast<float>(pst.x)));
-                                const int y = static_cast<int>(std::floor(eyeY + pst.collisionHeight));
-                                const int z = static_cast<int>(std::floor(static_cast<float>(pst.z)));
-                                auto& level = live->NetLevel();
-                                for (int top = 319; top >= y; --top) {
-                                    bool loaded = false;
-                                    const uint16_t id = level.GetBlock(x, top, z, loaded);
-                                    if (!loaded || weather.BlocksRain(level, id) || level.GetLiquid(x, top, z) != 0)
-                                        return false;
-                                }
-                                const BiomeTints& tints = levelRenderer->Tints();
-                                float temperature = 0.5f, downfall = 0.5f;
-                                if (!tints.Ready() || !tints.Climate(tints.NameForId(level.GetBiome(x, y, z)), temperature, downfall))
-                                    return false;
-                                // TODO: block precipitation_interactions, biome rain flag and the temperature noise/altitude
-                                // terms (0x145D3B680) are approximated by the renderer's blocker list and climate data
-                                return downfall > 0.0f && temperature > 0.15f;
-                            };
-                            const bool raining = rainingOnPlayer();
-                            for (const auto& [id, level] : held.enchants)
-                                if (id == 30)
-                                    player.ReleaseTrident(level, raining);
-                        }
-                    }
+                    if (usingItem && !useHeld)
+                        releaseItem(held, eyeF);
 
                     if (live && inputManager.Pressed(Action::PickBlock)) {
                         entity::Entity picked;

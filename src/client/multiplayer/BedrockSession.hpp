@@ -239,8 +239,17 @@ namespace perlin {
             const auto it = ownAttributes.find("minecraft:movement");
             return it == ownAttributes.end() ? 0.1f : it->second;
         }
-        // adds or removes the sprint modifier like the game's sprint action, then returns the instance value
-        float PredictedMovementSpeed(bool sprinting);
+        // adds or removes the sprint modifier like the game's sprint action, then returns the instance value;
+        // a freeze strength swaps the sent "Freeze effect" modifier for ours
+        float PredictedMovementSpeed(bool sprinting, std::optional<float> freezeStrength = std::nullopt);
+        // own FREEZING_EFFECT_STRENGTH (actor data 120) with the server tick it was set on
+        struct FreezeUpdate { uint64_t tick = 0; float strength = 0; };
+        std::vector<FreezeUpdate> TakeFreezeUpdates() {
+            std::lock_guard lock(attrMutex);
+            std::vector<FreezeUpdate> updates;
+            updates.swap(freezeUpdates);
+            return updates;
+        }
         std::optional<proto::PlayerAttributesEntry> MovementAttribute() const {
             std::lock_guard lock(attrMutex);
             return movementAttribute;
@@ -529,6 +538,23 @@ void RequestRespawn();
         bool MayFly() const { return mayFly; }
         bool Instabuild() const { return instabuild; }
         bool IsFlying() const { return isFlying; }
+        // bumped by every UpdateAbilities: the game applies the whole set, not only changes
+        uint32_t AbilitiesSeq() const { return abilitiesSeq; }
+        // Player::setPlayerGameType 0x1402b9ab0 -> base ability layer 0x1402e1980 (5: the world's type);
+        // creative keeps flying, survival and adventure drop it; spectator lives in its own layer
+        void ApplyGameTypeAbilities(int worldGameType) {
+            const int type = gameType == 5 ? worldGameType : gameType;
+            if (type == 1) {
+                mayFly = true;
+                instabuild = true;
+                noClip = false;
+            } else if (type == 0 || type == 2) {
+                mayFly = false;
+                instabuild = false;
+                isFlying = false;
+                noClip = false;
+            }
+        }
         // entity flag 32 (gliding), last from server for local player
         // actor flag 75 (sleeping): extended flag word
         // local invisibility (actor flag 5) from our SetActorData
@@ -699,7 +725,7 @@ void RequestRespawn();
         struct EffectUpdate { uint64_t tick = 0; int id = 0, amplifier = 0; bool active = false; int32_t duration = 0; };
         std::vector<EffectUpdate> TakeEffectUpdates();
         struct MotionUpdate { uint64_t tick = 0; std::array<double, 3> velocity{}; };
-        struct ServerMovementEffect { uint32_t type = 0, duration = 0; uint64_t tick = 0; };
+        struct ServerMovementEffect { uint32_t type = 0; int32_t duration = 0; uint64_t tick = 0; };
         std::vector<ServerMovementEffect> TakeMovementEffects();
         bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
         bool TakeWorkbenchOpened();
@@ -1048,6 +1074,7 @@ void RequestRespawn();
         std::array<float, 3> movementBase{};
         std::array<float, 2> movementLimits{};
         float movementValue = 0.1f;
+        std::vector<FreezeUpdate> freezeUpdates;
         void ApplyMovementAttribute(const proto::PlayerAttributesEntry& entry);
         int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
@@ -1083,6 +1110,7 @@ void RequestRespawn();
         bool instabuild = false;
         int gameType = 0;
         bool isFlying = false;
+        uint32_t abilitiesSeq = 0;
         float flySpeed = 0.05f;
         float vFlySpeed = 1.0f;
         float walkSpeed = 0.1f;

@@ -11,7 +11,6 @@ using namespace perlin::server;
 
 int main() {
     ServerConfig config;
-    config.generator = "flat";
     // "gpu" accepts a software device; "auto" would not
     config.terrainBackend = "gpu";
     config.seed = 0x1234567890abcdefull;

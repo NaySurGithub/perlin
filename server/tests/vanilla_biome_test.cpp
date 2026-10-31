@@ -5,9 +5,6 @@
 #include "world/BlockCatalog.hpp"
 #include "world/vanilla/VanillaTerrain.hpp"
 
-#include <atomic>
-#include <chrono>
-#include <cmath>
 #include <fstream>
 #include <map>
 #include <set>
@@ -131,43 +128,6 @@ static void TestWorld() {
     CHECK(noGround == 0);
 }
 
-static void TestLocate() {
-    ServerConfig config;
-    config.seed = 4242;
-    std::string error;
-    auto backend = VanillaCpuBackend::Create(config, error);
-    CHECK(backend != nullptr);
-    if (!backend)
-        return;
-    std::atomic<bool> never{false};
-    CHECK(backend->HasBiomes());
-    // biomes that are common should turn up close by, and the biome of the column found must really be the one asked for
-    int found = 0;
-    for (const char* name : {"ocean", "plains", "forest", "desert", "taiga", "swamp", "savanna", "river", "beach"}) {
-        const int biome = IndexOf(name);
-        CHECK(biome >= 0);
-        int x = 0, y = 0, z = 0;
-        const auto began = std::chrono::steady_clock::now();
-        const bool ok = backend->LocateBiome(biome, 100, -200, 3200, never, x, y, z);
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
-        if (!ok) {
-            std::printf("locate %s: none within 3200 blocks (%.0f ms)\n", name, ms);
-            continue;
-        }
-        found++;
-        const int actual = backend->ColumnBiome(x, z);
-        std::printf("locate %s: [%d, %d, %d], %.0f blocks away, column biome %s (%.0f ms)\n", name, x, y, z,
-                    std::hypot(static_cast<double>(x - 100), static_cast<double>(z + 200)), kBiomes[actual].java, ms);
-        CHECK(actual == biome);
-    }
-    CHECK(found >= 5);
-    // a search that is cancelled stops, and one for a biome that is not in the data finds nothing
-    std::atomic<bool> stop{true};
-    int x = 0, y = 0, z = 0;
-    CHECK(!backend->LocateBiome(IndexOf("desert"), 0, 0, 6400, stop, x, y, z));
-    CHECK(!backend->LocateBiome(-1, 0, 0, 100, never, x, y, z));
-}
-
 int main(int argc, char** argv) {
     BlockCatalog::Instance().LoadBuiltin();
     TestTable();
@@ -175,7 +135,6 @@ int main(int argc, char** argv) {
     if (argc > 1)
         TestLookup(argv[1]);
     TestWorld();
-    TestLocate();
     if (g_failed) {
         std::printf("vanilla_biome_test: %d failed\n", g_failed);
         return 1;

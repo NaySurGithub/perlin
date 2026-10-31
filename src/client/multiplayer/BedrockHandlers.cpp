@@ -1257,6 +1257,8 @@ namespace perlin {
                         continue;
                     if (m.key == MetadataDictionaryEntryKey::PlayerFlags)
                         ownPlayerFlags = static_cast<int64_t>(n);
+                    else if (m.key == MetadataDictionaryEntryKey::FreezingEffectStrength)
+                        freezeUpdates.push_back({p.tick, static_cast<float>(n)});
                     else if (m.key == MetadataDictionaryEntryKey::Scale)
                         ownScale = static_cast<float>(n);
                     else if (m.key == MetadataDictionaryEntryKey::BoundingboxWidth)
@@ -1526,6 +1528,7 @@ namespace perlin {
             mayFly = fly;
             instabuild = build;
             isFlying = flying;
+            ++abilitiesSeq;
             noClip = clip;
             std::cout << "[bedrock] abilities mayFly=" << mayFly << " flying=" << isFlying
                       << " noclip=" << noClip << " fly=" << flySpeed << std::endl;
@@ -1535,8 +1538,12 @@ namespace perlin {
             if (uniqueId != 0 && p.playerUniqueId != uniqueId)
                 return;
             gameType = static_cast<int>(p.gamemode);
-            if (gameType == 1)
-                mayFly = true;
+            int worldGameType;
+            {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                worldGameType = world.worldGameMode;
+            }
+            ApplyGameTypeAbilities(worldGameType);
         });
         On<SetDefaultGameTypePacket>([this](const SetDefaultGameTypePacket& p) {
             std::lock_guard<std::mutex> lk(worldMutex);
@@ -1560,8 +1567,12 @@ namespace perlin {
 
         On<SetPlayerGameTypePacket>([this](const SetPlayerGameTypePacket& p) {
             gameType = static_cast<int>(p.gamemode);
-            if (gameType == 1)
-                mayFly = true;
+            int worldGameType;
+            {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                worldGameType = world.worldGameMode;
+            }
+            ApplyGameTypeAbilities(worldGameType);
         });
 
         On<NetworkStackLatencyPacket>([this](const NetworkStackLatencyPacket& p) {

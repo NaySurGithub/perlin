@@ -211,7 +211,6 @@ int main() {
     ServerConfig config;
     config.port = kPort;
     config.bindAddress = "127.0.0.1";
-    config.generator = "flat";
     config.terrainBackend = "cpu";
     config.iceServers = {"none"};
     config.iceBindAddress = "127.0.0.1";

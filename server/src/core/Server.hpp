@@ -1,6 +1,5 @@
 #pragma once
 #include "core/Access.hpp"
-#include "core/Commands.hpp"
 #include "core/Config.hpp"
 #include "net/Connection.hpp"
 #include "net/LoopbackListener.hpp"
@@ -16,9 +15,6 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <thread>
-#include <set>
-#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -27,13 +23,13 @@ namespace perlin::server {
     struct CommandDef {
         std::string name;
         std::string description;
-        // the overloads, in the notation of core/Commands.hpp; empty for plugin commands, which take any text
-        std::vector<OverloadSpec> overloads;
+        // shown in the client's command hint, e.g. "player item [amount]"
+        std::string usage;
         // plugin that owns it, empty for built-ins
         std::string plugin;
         bool operatorOnly = false;
-        // built-ins run here once their arguments have parsed; plugin commands are forwarded to the plugin
-        std::function<void(CommandCtx&)> handler;
+        // built-ins run here; plugin commands are forwarded to the plugin
+        std::function<void(Session* source, const std::string& args)> run;
     };
 
     class Server final : public PluginApi {
@@ -90,34 +86,7 @@ namespace perlin::server {
         // grants or removes operator by name (online or not); returns a one-line result for the caller
         std::string SetOperator(const std::string& name, bool op);
         bool Full() const;
-        // the world spawn (the first free block above the ground); the flat default until Start asks the terrain backend
-        double SpawnX() const { return static_cast<double>(spawnX); }
-        double SpawnY() const { return static_cast<double>(spawnY); }
-        double SpawnZ() const { return static_cast<double>(spawnZ); }
-        void SetWorldSpawn(int x, int y, int z);
-
-        // the world clock and weather that /time and /weather drive; the clock advances with the daylight cycle rule
-        int64_t DayTime() const { return dayTime; }
-        void SetDayTime(int64_t ticks);
-        // "clear", "rain" or "thunder"; the duration is in ticks (0 = until changed)
-        void SetWeather(const std::string& kind, int durationTicks);
-        bool Raining() const { return raining; }
-        bool Thundering() const { return thundering; }
-        // weather and game rules, for a player who just joined
-        void SendWorldState(Session& to);
-
-        // /gamerule. keys are lowercase
-        struct GameRule {
-            std::string display;
-            bool boolean = true;
-            int value = 0;
-        };
-        const std::map<std::string, GameRule>& GameRules() const { return gameRules; }
-        int RuleValue(const std::string& lowerName) const;
-        bool SetRule(const std::string& lowerName, int value);
-
-        bool IsBanned(const std::string& name, const std::string& xuid) const { return banList.Contains(name, xuid); }
-        AccessList& Bans() { return banList; }
+        double SpawnY() const;
 
         // players editing the world: the server validates, runs plugin events, applies and tells everyone who has the chunk
         bool PlayerBreak(Session& by, int x, int y, int z);
@@ -159,20 +128,6 @@ namespace perlin::server {
         std::unique_ptr<LoopbackListener> loopback;
         std::unique_ptr<Listener> nethernet;
         EventQueue events;
-        int spawnX = 0, spawnY = 0, spawnZ = 0;
-        int64_t dayTime = 6000;
-        bool raining = false, thundering = false;
-        int weatherTicks = 0;
-        std::map<std::string, GameRule> gameRules;
-        AccessList banList{AccessList::Kind::Allowlist};
-        void InitGameRules();
-        void DrainLocate();
-        // /locate searches: run on their own threads, answered from the tick thread
-        std::mutex locateMutex;
-        std::vector<std::pair<uint64_t, std::string>> locateDone;
-        std::vector<std::thread> locateThreads;
-        std::set<uint64_t> locating;
-        std::atomic<bool> locateCancel{false};
         AccessList permissionList{AccessList::Kind::Permissions}, allowList{AccessList::Kind::Allowlist};
 
         std::unordered_map<uint64_t, std::unique_ptr<Session>> sessions;
@@ -192,7 +147,6 @@ namespace perlin::server {
         std::deque<double> tickMillis;
         std::string TickQuery() const;
         void RunTickCommand(Session* from, const std::string& args);
-        void RunCommand(Session* from, const std::string& line);
         std::atomic<bool> stopRequested{false};
         bool started = false;
     };

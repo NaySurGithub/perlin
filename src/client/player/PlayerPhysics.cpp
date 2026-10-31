@@ -249,7 +249,8 @@ namespace perlin::physics {
             return {result.velocity.x, result.velocity.y, result.velocity.z};
         }
 
-        Vec3 LandingResponse(State& state, Vec3 velocity, uint8_t supportingSurface, bool collided, bool sneaking) {
+        Vec3 LandingResponse(State& state, Vec3 velocity, uint8_t supportingSurface, bool collided, bool sneaking,
+                             std::optional<float>* appliedRestitutionY = nullptr) {
             bds::Float3 motion{static_cast<float>(velocity.x), static_cast<float>(velocity.y),
                                static_cast<float>(velocity.z)};
             if (collided) {
@@ -265,6 +266,8 @@ namespace perlin::physics {
                 motion.y = 0.0f;
             }
             if (state.restitution) {
+                if (appliedRestitutionY)
+                    *appliedRestitutionY = state.restitution->y;
                 motion = bds::ApplyRestitution(motion, *state.restitution);
                 state.restitution.reset();
             }
@@ -649,14 +652,18 @@ namespace perlin::physics {
         const double forward = intent.movement.z;
         const double strafe = intent.movement.x;
 
-        if (in.flying) {
+        // TravelTypeSensingSystem 0x147cce890 reads MovementAbilities, updated a tick after a double tap; the
+        // vertical control and its hover friction (VerticalFlySpeedControlSystem 0x142cf1c60) follow the new state
+        const bool flyingTravel = in.flying != in.flyToggled;
+        if (flyingTravel) {
             if (s.hasTeleported)
                 return;
-            const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
+            const bool hover = in.flying && std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
             MoveRelative(s, strafe, forward, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0),
                          attr.currentMovementMath);
-            s.vy = bds::FlyingControl(static_cast<float>(s.vy), attr.verticalFlySpeed,
-                hover, in.creativeFlight, in.flyUp, in.flyDown, in.flyUpSlow, in.flyDownSlow);
+            if (in.flying)
+                s.vy = bds::FlyingControl(static_cast<float>(s.vy), attr.verticalFlySpeed,
+                    hover, in.creativeFlight, in.flyUp, in.flyDown, in.flyUpSlow, in.flyDownSlow);
             // FlyingPlayerStuckOnGroundWorkaroundSystem 0x14333df70: runs before collision, lets a grounded flyer lift off
             if (grounded && s.vy == 0)
                 s.vy = std::numeric_limits<float>::denorm_min();
@@ -710,6 +717,16 @@ namespace perlin::physics {
             return;
         }
 
+        // flight starts this tick: input-phase vertical control on top of ground/air travel, gravity and drag
+        std::optional<float> flyFrictionOverride;
+        if (in.flying && !s.hasTeleported) {
+            const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
+            s.vy = bds::FlyingControl(static_cast<float>(s.vy), attr.verticalFlySpeed,
+                hover, in.creativeFlight, in.flyUp, in.flyDown, in.flyUpSlow, in.flyDownSlow);
+            if (hover)
+                flyFrictionOverride = in.creativeFlight ? 0.375f : 0.75f;
+        }
+
         const bool water = s.inWater, lava = s.inLava;
         auto gravity = in.gravity;
         if (in.overDescendableBlock)
@@ -718,7 +735,10 @@ namespace perlin::physics {
             s.vy = -0.15f;
             s.fallDistance = 0;
         }
-        const float friction = grounded ? 0.91f * blockFriction : 0.91f;
+        // ground and air friction (0x1433563e0, 0x1433307f0) take the hover override as 0.91 * (coef * override)
+        const float friction = flyFrictionOverride
+            ? bds::FlyingHorizontalRetention(grounded ? blockFriction : 1.0f, flyFrictionOverride, attr.airDrag)
+            : grounded ? 0.91f * blockFriction : 0.91f;
         double relSpeed;
         if (water) {
             relSpeed = bds::WaterAcceleration(attr.speed, attr.underwaterSpeed, attr.speed,
@@ -768,17 +788,6 @@ namespace perlin::physics {
         }
 
         const bool glide = in.gliding && !water && !lava && !s.hasTeleported;
-        if (glide) {
-            const bool boost = s.movementEffects[static_cast<int32_t>(bds::MovementEffectType::GlideBoost)].type != -1;
-            const auto velocity = bds::GlideVelocity(
-                {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)},
-                s.previousRotation, {in.pitch, s.yaw}, attr.slowFalling, boost, s.fallDistance);
-            s.vx = velocity.x;
-            s.vy = velocity.y;
-            s.vz = velocity.z;
-        } else if (!s.hasTeleported) {
-            MoveRelative(s, strafe, forward, relSpeed, attr.currentMovementMath);
-        }
 
         // the scaffolding lift returns before the climb branch in the jump system
         const bool climbJump = in.jump && !jumpBlockedBySwim && !scaffoldJump && s.onClimbable;
@@ -818,6 +827,20 @@ namespace perlin::physics {
             s.jumpDelay = 10;
         }
 
+        // JumpFromGroundSystem (0x147028c25) is registered before DefaultMoveSystems (0x14702b483): the sprint jump
+        // boost 0x14ad32d50 lands in posDelta before the input acceleration 0x1484c0920 is added
+        if (glide) {
+            const bool boost = s.movementEffects[static_cast<int32_t>(bds::MovementEffectType::GlideBoost)].type != -1;
+            const auto velocity = bds::GlideVelocity(
+                {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)},
+                s.previousRotation, {in.pitch, s.yaw}, attr.slowFalling, boost, s.fallDistance);
+            s.vx = velocity.x;
+            s.vy = velocity.y;
+            s.vz = velocity.z;
+        } else if (!s.hasTeleported) {
+            MoveRelative(s, strafe, forward, relSpeed, attr.currentMovementMath);
+        }
+
         if (s.hasTeleported)
             return;
 
@@ -845,7 +868,11 @@ namespace perlin::physics {
                                        gravity.descendThroughBlock, s.fallDistance, in.canStandOnPowderSnow);
         bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
         Vec3 v = FinalizeMotion(s, m, m.velocity);
-        v = LandingResponse(s, v, m.supportingSurface, m.cy, sneaking);
+        std::optional<float> restitutionY;
+        v = LandingResponse(s, v, m.supportingSurface, m.cy, sneaking, &restitutionY);
+        const auto bounceGravity = restitutionY
+            ? bds::RequestGravityCorrection(*restitutionY, m.requested.y, static_cast<float>(m.resolved.y))
+            : std::nullopt;
 
         // AutoClimbSystem Ground/Air 0x14332c490: needs ground or air travel (no water, lava or glide)
         const bool autoClimb =
@@ -867,14 +894,16 @@ namespace perlin::physics {
                 v.z = F(static_cast<float>(v.z) * 0.5f);
             }
             if (water)
-                v.y = bds::PostWaterVertical(static_cast<float>(v.y), s.fallDistance, attr.levitation, in.swimming);
+                v.y = bds::PostWaterVertical(static_cast<float>(v.y), s.fallDistance, attr.levitation, in.swimming,
+                                             bounceGravity);
             else if (attr.levitation > 0)
                 v.y = bds::LevitateVelocity(static_cast<float>(v.y), attr.levitation);
             else
-                v.y = F(static_cast<float>(v.y) - 0.02f);
+                v.y = bds::ApplyGravity(static_cast<float>(v.y), s.fallDistance, {-0.02f, false}, bounceGravity);
         } else if (!glide) {
             v.y = bds::PostGroundVertical(static_cast<float>(v.y), s.fallDistance, gravity,
-                                         attr.levitation, attr.slowFalling, autoClimb, false, attr.airDrag);
+                                         attr.levitation, attr.slowFalling, autoClimb, false, attr.airDrag,
+                                         bounceGravity);
             v.x = DampHorizontal(v.x, friction);
             v.z = DampHorizontal(v.z, friction);
         }

@@ -28,8 +28,6 @@ namespace perlin::server {
         ~ChunkManager();
 
         const char* BackendName() const { return backend->Name(); }
-        // for the queries a terrain backend answers besides chunks (biome search)
-        TerrainBackend& Backend() { return *backend; }
 
         // null while the column is still being generated; asks for it on the first miss
         std::shared_ptr<ChunkEntry> Get(ChunkPos pos);
@@ -58,7 +56,7 @@ namespace perlin::server {
         std::deque<ChunkPos> queue;
         std::vector<std::pair<ChunkPos, std::shared_ptr<ChunkEntry>>> done;
         bool stopping = false;
-        // chunk generation scales with cores; the gpu backend serialises only its device section, so its cpu stages overlap across the workers
+        // chunk generation scales with cores for cpu backends; a gpu backend keeps a single submitting thread
         std::vector<std::thread> workers;
     };
 }
